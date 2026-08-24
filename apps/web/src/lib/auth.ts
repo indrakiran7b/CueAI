@@ -17,6 +17,18 @@ export type CueSession = {
 const USERS_KEY = "cueai-users";
 const SESSION_KEY = "cueai-session";
 
+/** Temporary local bypass — set NEXT_PUBLIC_SKIP_AUTH=false to re-enable login. */
+export const AUTH_BYPASS =
+  process.env.NEXT_PUBLIC_SKIP_AUTH !== "false" &&
+  process.env.NEXT_PUBLIC_SKIP_AUTH !== "0";
+
+export const DEV_GUEST_SESSION: CueSession = {
+  userId: "dev-guest",
+  name: "Indra",
+  email: "dev@cueai.local",
+  workspace: "Indra's Workspace",
+};
+
 function readUsers(): CueUser[] {
   if (typeof window === "undefined") return [];
   try {
@@ -35,10 +47,15 @@ export function getSession(): CueSession | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as CueSession) : null;
+    if (raw) return JSON.parse(raw) as CueSession;
   } catch {
-    return null;
+    // ignore
   }
+  if (AUTH_BYPASS) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(DEV_GUEST_SESSION));
+    return { ...DEV_GUEST_SESSION };
+  }
+  return null;
 }
 
 function setSession(user: CueUser) {

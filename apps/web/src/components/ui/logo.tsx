@@ -24,14 +24,14 @@ export function Logo({
     >
       <span
         className={cn(
-          "relative flex items-center justify-center rounded-xl btn-gradient shadow-md shadow-teal-500/30",
+          "relative flex items-center justify-center rounded-xl bg-foreground text-[var(--background)]",
           sizes.mark
         )}
       >
         <svg
           viewBox="0 0 24 24"
           fill="none"
-          className="h-[55%] w-[55%] text-white"
+          className="h-[55%] w-[55%]"
           aria-hidden
         >
           <path
@@ -39,8 +39,8 @@ export function Logo({
             fill="currentColor"
             opacity="0.95"
           />
-          <circle cx="10" cy="7.5" r="1" fill="#09090b" />
-          <circle cx="14" cy="7.5" r="1" fill="#09090b" />
+          <circle cx="10" cy="7.5" r="1" fill="var(--background)" />
+          <circle cx="14" cy="7.5" r="1" fill="var(--background)" />
         </svg>
       </span>
       <span
@@ -49,7 +49,7 @@ export function Logo({
           sizes.text
         )}
       >
-        Cue<span className="text-gradient">AI</span>
+        Cue<span className="text-foreground">AI</span>
       </span>
     </Link>
   );

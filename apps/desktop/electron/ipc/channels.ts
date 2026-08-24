@@ -19,6 +19,7 @@ export const IpcChannels = {
   COMPANION_ACTIVITY: "companion:activity",
   COMPANION_GET_CAPTURE_STATUS: "companion:get-capture-status",
   COMPANION_SET_EXCLUDE_CAPTURE: "companion:set-exclude-capture",
+  COMPANION_END_SESSION: "companion:end-session",
 
   // Meeting / screen-share session
   MEETING_SET_SESSION: "meeting:set-session",

@@ -1,0 +1,233 @@
+/* Framer-faithful marketing canvas for CueAI
+   Spec anchors: #090909 canvas, white pills, #0099ff links, gradient spotlights */
+
+[data-landing] {
+  --lp-canvas: #090909;
+  --lp-surface-1: #141414;
+  --lp-surface-2: #1c1c1c;
+  --lp-hairline: #262626;
+  --lp-hairline-soft: #1a1a1a;
+  --lp-ink: #ffffff;
+  --lp-ink-muted: #999999;
+  --lp-ink-dim: #666666;
+  --lp-on-primary: #000000;
+  --lp-accent: #0099ff;
+  --lp-grad-magenta: #d44df0;
+  --lp-grad-violet: #6a4cf5;
+  --lp-grad-orange: #ff7a3d;
+  --lp-grad-coral: #ff5577;
+  --lp-parx: 0;
+  --lp-pary: 0;
+  --lp-pars: 0;
+
+  color: var(--lp-ink);
+  background: var(--lp-canvas);
+  font-family: var(--font-landing-sans), Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-landing] ::selection {
+  background: rgba(0, 153, 255, 0.35);
+  color: #fff;
+}
+
+[data-landing] .lp-display {
+  font-family: var(--font-landing-display), var(--font-landing-sans), system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.94;
+}
+
+[data-landing] .lp-link {
+  color: var(--lp-accent);
+  text-decoration: none;
+}
+[data-landing] .lp-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-landing] .lp-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 100px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--lp-on-primary);
+  background: #ffffff;
+  transition: transform 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+[data-landing] .lp-btn-primary:hover {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+}
+
+[data-landing] .lp-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 100px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--lp-ink);
+  background: transparent;
+  border: 1px solid var(--lp-hairline);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+[data-landing] .lp-btn-ghost:hover {
+  border-color: #3a3a3a;
+  background: rgba(255, 255, 255, 0.03);
+  transform: translateY(-1px);
+}
+
+[data-landing] .lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(9, 9, 9, 0.72);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-bottom: 1px solid var(--lp-hairline-soft);
+}
+
+[data-landing] .lp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 100px;
+  border: 1px solid var(--lp-hairline);
+  background: var(--lp-surface-1);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--lp-ink-muted);
+}
+
+[data-landing] .lp-card {
+  border: 1px solid var(--lp-hairline);
+  background: var(--lp-surface-1);
+  border-radius: 20px;
+}
+
+[data-landing] .lp-spotlight {
+  position: relative;
+  overflow: hidden;
+  border-radius: 30px;
+  min-height: 220px;
+  padding: 1.5rem;
+  color: #fff;
+}
+
+[data-landing] .lp-spotlight-magenta {
+  background: linear-gradient(145deg, #d44df0 0%, #8b2cf5 55%, #4a1d6e 100%);
+}
+[data-landing] .lp-spotlight-violet {
+  background: linear-gradient(145deg, #8b7cff 0%, #6a4cf5 45%, #2a1a7a 100%);
+}
+[data-landing] .lp-spotlight-orange {
+  background: linear-gradient(145deg, #ff9a5c 0%, #ff7a3d 50%, #c4451a 100%);
+}
+[data-landing] .lp-spotlight-coral {
+  background: linear-gradient(145deg, #ff7a9a 0%, #ff5577 50%, #c41d4a 100%);
+}
+
+[data-landing] .lp-marquee {
+  position: relative;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+[data-landing] .lp-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: lp-marquee 38s linear infinite;
+  will-change: transform;
+}
+
+[data-landing] .lp-marquee-group {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1.5rem;
+  padding-inline-end: 1.5rem;
+}
+
+[data-landing] .lp-marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5rem;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lp-ink-muted);
+}
+
+[data-landing] .lp-marquee-sep {
+  color: var(--lp-accent);
+  opacity: 0.8;
+}
+
+@keyframes lp-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+[data-landing] .lp-par-far {
+  transform: translate3d(
+    calc(var(--lp-parx) * 18px),
+    calc(var(--lp-pary) * 10px + var(--lp-pars) * 0.04px),
+    0
+  );
+  will-change: transform;
+}
+[data-landing] .lp-par-copy {
+  transform: translate3d(
+    calc(var(--lp-parx) * -8px),
+    calc(var(--lp-pary) * -5px + var(--lp-pars) * 0.02px),
+    0
+  );
+  will-change: transform;
+}
+[data-landing] .lp-par-stage {
+  transform: translate3d(
+    calc(var(--lp-parx) * 20px),
+    calc(var(--lp-pary) * 12px - var(--lp-pars) * 0.04px),
+    0
+  );
+  will-change: transform;
+}
+
+[data-landing] .lp-mock {
+  border: 1px solid var(--lp-hairline);
+  background: linear-gradient(180deg, #141414 0%, #0e0e0e 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+[data-landing] .lp-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #333;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-landing] .lp-marquee-track,
+  [data-landing] .lp-par-far,
+  [data-landing] .lp-par-copy,
+  [data-landing] .lp-par-stage {
+    animation: none !important;
+    transform: none !important;
+  }
+}

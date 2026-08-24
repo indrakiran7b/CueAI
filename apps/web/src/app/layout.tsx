@@ -3,6 +3,8 @@ import { Outfit, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { DesktopTitleBar } from "@/components/desktop/title-bar";
+import { DesktopBridge } from "@/components/desktop/desktop-bridge";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -45,7 +47,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col font-sans">
         <ThemeProvider>
           <AuthSessionProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              {/* Electron chrome for all routes (landing + app shell). No-op in browser. */}
+              <DesktopTitleBar />
+              <DesktopBridge />
+              {children}
+            </AuthProvider>
           </AuthSessionProvider>
         </ThemeProvider>
       </body>

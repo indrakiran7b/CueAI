@@ -29,7 +29,7 @@ export function Progress({
     >
       <div
         className={cn(
-          "h-full rounded-full bg-gradient-to-r from-[#14b8a6] to-[#0d9488] transition-all duration-500",
+          "h-full rounded-full bg-foreground transition-all duration-500",
           indicatorClassName
         )}
         style={{ width: `${clamped}%` }}
@@ -166,7 +166,7 @@ export function Avatar({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-gradient-to-br from-teal-600 to-teal-500 font-semibold text-white",
+        "inline-flex items-center justify-center rounded-full bg-foreground font-semibold text-[var(--background)]",
         dim,
         className
       )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -14,7 +15,33 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { actionItems } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
+const BASE_EMAIL = `Hi team — thanks for a focused sync. We locked Phase 1/2 scope for Companion, confirmed the 800ms latency budget, and kept Screen Context opt-in. Action items and owners are listed below. Reply if anything looks off.`;
+
 export default function MeetingSummaryPage() {
+  const [emailBody, setEmailBody] = useState(BASE_EMAIL);
+  const [copied, setCopied] = useState(false);
+  const [regenCount, setRegenCount] = useState(0);
+
+  async function copyEmail() {
+    const full = `Subject: Notes from Q3 Product Sync\n\n${emailBody}`;
+    try {
+      await navigator.clipboard.writeText(full);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  function regenerateEmail() {
+    const next = regenCount + 1;
+    setRegenCount(next);
+    setEmailBody(
+      `${BASE_EMAIL}\n\n(Updated draft v${next + 1}) Please also review the open risks section before sending.`
+    );
+    setCopied(false);
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -144,17 +171,13 @@ export default function MeetingSummaryPage() {
         <CardTitle className="mb-3">Follow-up email draft</CardTitle>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4 text-sm leading-relaxed text-muted">
           <p className="text-foreground">Subject: Notes from Q3 Product Sync</p>
-          <p className="mt-3">
-            Hi team — thanks for a focused sync. We locked Phase 1/2 scope for Companion,
-            confirmed the 800ms latency budget, and kept Screen Context opt-in. Action
-            items and owners are listed below. Reply if anything looks off.
-          </p>
+          <p className="mt-3 whitespace-pre-wrap">{emailBody}</p>
         </div>
         <div className="mt-3 flex gap-2">
-          <Button size="sm" variant="primary">
-            Copy email
+          <Button size="sm" variant="primary" onClick={() => void copyEmail()}>
+            {copied ? "Copied" : "Copy email"}
           </Button>
-          <Button size="sm" variant="ghost">
+          <Button size="sm" variant="ghost" onClick={regenerateEmail}>
             Regenerate
           </Button>
         </div>

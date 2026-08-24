@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react";
-import { signupWithEmail } from "@/lib/auth";
+import { signupWithEmail, AUTH_BYPASS } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
 
@@ -60,6 +60,17 @@ export default function SignupPage() {
   const { refresh } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (AUTH_BYPASS) {
+      refresh();
+      router.replace("/dashboard");
+    }
+  }, [router, refresh]);
+
+  if (AUTH_BYPASS) {
+    return <div className="min-h-screen bg-background" />;
+  }
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

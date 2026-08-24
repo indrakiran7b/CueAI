@@ -10,7 +10,7 @@ const defaults: CueStoreSchema = {
   companionBounds: null,
   companionMode: "full",
   companionModeBeforeShare: null,
-  companionOpacity: 0.96,
+  companionOpacity: 1,
   companionPinned: true,
   launchAtStartup: false,
   recentMeetings: [],

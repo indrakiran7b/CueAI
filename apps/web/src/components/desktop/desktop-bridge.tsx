@@ -22,6 +22,9 @@ export function DesktopBridge() {
         // Existing topbar search is the command surface for MVP
         document.querySelector<HTMLButtonElement>("[data-command-trigger]")?.click();
       }
+      if (name === "end-session") {
+        window.dispatchEvent(new CustomEvent("cueai:end-session"));
+      }
     });
 
     document.documentElement.dataset.desktop = "true";

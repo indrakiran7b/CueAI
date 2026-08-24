@@ -12,6 +12,8 @@ import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
 import {
   clearSession,
   getSession,
+  AUTH_BYPASS,
+  DEV_GUEST_SESSION,
   type CueSession,
 } from "@/lib/auth";
 
@@ -43,6 +45,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
+    if (AUTH_BYPASS) {
+      const guest = getSession() || DEV_GUEST_SESSION;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("cueai-session", JSON.stringify(guest));
+      }
+      setLocalSession(guest);
+      setReady(true);
+      return;
+    }
+
     if (status === "loading") return;
 
     if (nextSession?.user) {
@@ -66,6 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [nextSession, status]);
 
   const logout = useCallback(async () => {
+    if (AUTH_BYPASS) {
+      // Keep a guest session while auth is bypassed.
+      localStorage.setItem("cueai-session", JSON.stringify(DEV_GUEST_SESSION));
+      setLocalSession({ ...DEV_GUEST_SESSION });
+      return;
+    }
     clearSession();
     setLocalSession(null);
     if (status === "authenticated") {

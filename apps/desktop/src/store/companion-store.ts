@@ -19,7 +19,7 @@ type CompanionUiState = {
 export const useCompanionStore = create<CompanionUiState>((set) => ({
   mode: "full",
   pinned: true,
-  opacity: 0.96,
+  opacity: 1,
   panel: "answer",
   session: { active: false, screenSharing: false, cueAiMode: "inactive" },
   capture: null,

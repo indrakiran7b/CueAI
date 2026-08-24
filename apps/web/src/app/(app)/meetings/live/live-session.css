@@ -1,0 +1,258 @@
+/* Live Session — Framer product chrome
+   Tokens follow global theme vars so light/dark stay in sync. */
+
+[data-live] {
+  --ls-canvas: var(--background);
+  --ls-surface: var(--background-elevated);
+  --ls-surface-2: var(--surface-solid);
+  --ls-hairline: var(--border);
+  --ls-ink: var(--foreground);
+  --ls-muted: var(--foreground-muted);
+  --ls-dim: var(--foreground-subtle);
+  --ls-accent: var(--accent);
+  --ls-primary: var(--primary);
+  --ls-on-primary: var(--primary-foreground);
+  --ls-radius: 14px;
+
+  color: var(--ls-ink);
+  max-width: 80rem;
+  margin-inline: auto;
+}
+
+[data-live] .ls-hero-title {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-size: clamp(1.5rem, 3vw, 1.875rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  color: var(--ls-ink);
+}
+
+[data-live] .ls-hero-sub {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ls-muted);
+  max-width: 36rem;
+}
+
+[data-live] .ls-panel {
+  border: 1px solid var(--ls-hairline);
+  background: var(--ls-surface);
+  border-radius: var(--ls-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-live] .ls-panel-hover {
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+[data-live] .ls-panel-hover:hover {
+  border-color: var(--border-strong);
+  background: var(--ls-surface-2);
+  transform: translateY(-1px);
+}
+
+[data-live] .ls-platform-icon {
+  display: inline-flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--ls-hairline);
+  background: var(--surface-active);
+  color: var(--ls-ink);
+}
+
+[data-live] .ls-live-dot {
+  display: inline-block;
+  height: 0.375rem;
+  width: 0.375rem;
+  border-radius: 9999px;
+  background: var(--cue-success);
+  animation: ls-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ls-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+[data-live] .ls-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 100px;
+  border: 1px solid var(--ls-hairline);
+  background: var(--ls-surface-2);
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+}
+
+[data-live] .ls-mode-toggle {
+  display: flex;
+  border-radius: 100px;
+  background: var(--background);
+  padding: 0.15rem;
+}
+
+[data-live] .ls-mode-btn {
+  border-radius: 100px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ls-muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+[data-live] .ls-mode-btn:hover {
+  color: var(--ls-ink);
+}
+
+[data-live] .ls-mode-btn[aria-pressed="true"] {
+  background: var(--ls-primary);
+  color: var(--ls-on-primary);
+}
+
+[data-live] .ls-timer {
+  border-radius: 100px;
+  border: 1px solid var(--ls-hairline);
+  background: var(--ls-surface-2);
+  padding: 0.45rem 0.85rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-live] .ls-wave-bar {
+  flex: 1;
+  border-radius: 9999px;
+  background: var(--ls-primary);
+  opacity: 0.55;
+}
+
+[data-live] .ls-wave-bar.is-active {
+  opacity: 0.9;
+}
+
+[data-live] .ls-line {
+  border-radius: 12px;
+  border: 1px solid var(--ls-hairline);
+  background: transparent;
+  padding: 0.75rem 1rem;
+}
+
+[data-live] .ls-line.is-you {
+  border-color: var(--border-strong);
+  background: var(--primary-muted);
+}
+
+[data-live] .ls-line.is-bookmarked {
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+
+[data-live] .ls-suggestion {
+  border-radius: 12px;
+  border: 1px solid var(--ls-hairline);
+  background: var(--ls-surface-2);
+  padding: 1rem;
+}
+
+[data-live] .ls-suggestion-q {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ls-muted);
+}
+
+[data-live] .ls-playhead {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--surface-active);
+}
+
+[data-live] .ls-playhead-fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: 9999px;
+  background: var(--ls-primary);
+}
+
+[data-live] .ls-playhead-knob {
+  position: absolute;
+  top: 50%;
+  height: 0.75rem;
+  width: 0.75rem;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  border: 2px solid var(--ls-ink);
+  background: var(--ls-primary);
+}
+
+[data-live] .ls-bookmark-mark {
+  position: absolute;
+  top: -0.25rem;
+  height: 1rem;
+  width: 2px;
+  background: var(--cue-warning);
+}
+
+[data-live] .ls-ask-input {
+  height: 2.75rem;
+  flex: 1;
+  border-radius: 100px;
+  border: 1px solid var(--border-strong);
+  background: var(--background);
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  color: var(--ls-ink);
+  outline: none;
+}
+
+[data-live] .ls-ask-input::placeholder {
+  color: var(--ls-dim);
+}
+
+[data-live] .ls-ask-input:focus {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px var(--primary-muted);
+}
+
+[data-live] .ls-ask-input:disabled {
+  opacity: 0.5;
+}
+
+[data-live] .ls-empty {
+  display: flex;
+  min-height: 12.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+
+[data-live] .ls-highlight {
+  color: var(--ls-ink);
+  font-weight: 500;
+}
+
+[data-live] .ls-reply {
+  margin-top: 0.75rem;
+  max-width: 24rem;
+  border-radius: 12px;
+  border: 1px solid var(--ls-hairline);
+  background: var(--primary-muted);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--ls-ink);
+  opacity: 0.92;
+}

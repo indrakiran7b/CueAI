@@ -24,10 +24,15 @@ import {
   getMeetingSession,
   setMeetingSession,
 } from "../services/screen-share";
+import { getWebOrigin } from "../services/web-server";
 
 function getMainWindow() {
   return BrowserWindow.getAllWindows().find(
-    (w) => w.getTitle() === "CueAI" || w.webContents.getURL().includes("localhost:3000")
+    (w) =>
+      w.getTitle() === "CueAI" ||
+      w.webContents.getURL().includes("localhost:3000") ||
+      w.webContents.getURL().includes("127.0.0.1:39100") ||
+      w.webContents.getURL().includes("/dashboard")
   );
 }
 
@@ -47,11 +52,15 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.WINDOW_CLOSE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
-    if (getStoreValue("desktopSettings").minimizeToTray) {
-      win.hide();
-    } else {
-      win.close();
+
+    const companion = getCompanionWindow();
+    if (companion && win === companion) {
+      hideCompanion();
+      return;
     }
+
+    // Main shell always hides — companion / tray keep the process alive.
+    win.hide();
   });
 
   ipcMain.handle(IpcChannels.WINDOW_IS_MAXIMIZED, (event) => {
@@ -78,12 +87,29 @@ export function registerIpcHandlers() {
       main.focus();
       main.webContents.send("navigate", "/dashboard");
     } else {
-      await shell.openExternal("http://localhost:3000/dashboard");
+      await shell.openExternal(`${getWebOrigin().replace(/\/$/, "")}/dashboard`);
     }
   });
 
   ipcMain.handle(IpcChannels.COMPANION_ACTIVITY, () => {
     companionUserActivity();
+  });
+
+  ipcMain.handle(IpcChannels.COMPANION_END_SESSION, () => {
+    setMeetingSession({
+      active: false,
+      screenSharing: false,
+      cueAiMode: "inactive",
+    });
+    hideCompanion();
+    const main = getMainWindow();
+    if (main && !main.isDestroyed()) {
+      main.show();
+      main.focus();
+      main.webContents.send("shortcut", "end-session");
+      main.webContents.send("navigate", "/meetings/live");
+    }
+    return getMeetingSession();
   });
 
   ipcMain.handle(IpcChannels.COMPANION_GET_CAPTURE_STATUS, () => getCaptureProtectionStatus());
@@ -92,14 +118,15 @@ export function registerIpcHandlers() {
     const settings = getStoreValue("desktopSettings");
     setStoreValue("desktopSettings", { ...settings, excludeFromCapture: Boolean(enabled) });
     const win = getCompanionWindow();
-    if (!win) return getCaptureProtectionStatus();
-    if (enabled) return applyCaptureExclusion(win);
-    try {
-      win.setContentProtection(false);
-    } catch {
-      // unsupported — ignore
+    const status = applyCaptureExclusion(win);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("companion:capture-status", status);
     }
-    return getCaptureProtectionStatus();
+    const main = getMainWindow();
+    if (main && !main.isDestroyed()) {
+      main.webContents.send("companion:capture-status", status);
+    }
+    return status;
   });
 
   ipcMain.handle(
@@ -111,6 +138,7 @@ export function registerIpcHandlers() {
         screenSharing?: boolean;
         meetingId?: string;
         title?: string;
+        cueAiMode?: "inactive" | "private" | "live";
       }
     ) => {
       setMeetingSession(payload || {});

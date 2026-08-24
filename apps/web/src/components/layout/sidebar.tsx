@@ -12,8 +12,7 @@ import {
   Settings,
   Shield,
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
+  PanelLeft,
   AppWindow,
   Palette,
 } from "lucide-react";
@@ -35,6 +34,24 @@ const nav = [
   { href: "/design-system", label: "Design System", icon: Palette },
 ];
 
+/** Avoid `/meetings` staying active on `/meetings/live` (and similar overlaps). */
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") {
+    return pathname === "/dashboard";
+  }
+  if (href === "/meetings/live") {
+    return pathname === "/meetings/live" || pathname.startsWith("/meetings/live/");
+  }
+  if (href === "/meetings") {
+    if (pathname === "/meetings") return true;
+    if (!pathname.startsWith("/meetings/")) return false;
+    return (
+      pathname !== "/meetings/live" && !pathname.startsWith("/meetings/live/")
+    );
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -46,14 +63,33 @@ export function Sidebar() {
         collapsed ? "w-[72px]" : "w-[var(--sidebar-width)]"
       )}
     >
-      <div className={cn("flex h-14 items-center px-4", collapsed && "justify-center px-2")}>
+      <div
+        className={cn(
+          "flex items-center border-b border-[var(--border)]",
+          collapsed
+            ? "flex-col gap-1 px-2 py-3"
+            : "h-14 justify-between px-3"
+        )}
+      >
         {collapsed ? (
-          <Link href="/dashboard" aria-label="CueAI" className="flex h-8 w-8 items-center justify-center rounded-xl btn-gradient">
-            <Sparkles className="h-4 w-4 text-white" />
+          <Link
+            href="/dashboard"
+            aria-label="CueAI"
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-foreground text-[var(--background)]"
+          >
+            <Sparkles className="h-4 w-4" />
           </Link>
         ) : (
           <Logo size="sm" href="/dashboard" />
         )}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeft className="h-4 w-4" />
+        </button>
       </div>
 
       <nav className="cue-scroll flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
@@ -63,11 +99,7 @@ export function Sidebar() {
           </p>
         )}
         {nav.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== "/dashboard" &&
-              item.href !== "/meetings/live" &&
-              pathname.startsWith(item.href));
+          const active = isNavActive(pathname, item.href);
           const Icon = item.icon;
           return (
             <Link
@@ -77,7 +109,7 @@ export function Sidebar() {
               className={cn(
                 "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 active
-                  ? "bg-[var(--primary-muted)] text-primary"
+                  ? "bg-[var(--surface-active)] text-foreground"
                   : "text-muted hover:bg-[var(--surface-hover)] hover:text-foreground",
                 collapsed && "justify-center px-2"
               )}
@@ -85,32 +117,17 @@ export function Sidebar() {
               <Icon
                 className={cn(
                   "h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105",
-                  active && "text-primary"
+                  active && "text-foreground"
                 )}
               />
               {!collapsed && <span className="truncate">{item.label}</span>}
               {!collapsed && active && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground" />
               )}
             </Link>
           );
         })}
       </nav>
-
-      <div className="border-t border-[var(--border)] p-2">
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : (
-            <>
-              <ChevronLeft className="h-4 w-4" />
-              <span>Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
     </aside>
   );
 }

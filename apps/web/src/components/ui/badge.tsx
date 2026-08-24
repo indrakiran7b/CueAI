@@ -5,11 +5,11 @@ type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "pur
 
 const variants: Record<BadgeVariant, string> = {
   default: "bg-[var(--surface-active)] text-muted border-[var(--border)]",
-  success: "bg-teal-500/15 text-teal-400 border-teal-500/20",
+  success: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
   warning: "bg-amber-500/15 text-amber-400 border-amber-500/20",
   danger: "bg-[rgba(220,20,60,0.15)] text-[#f87171] border-[rgba(220,20,60,0.25)]",
-  info: "bg-teal-500/15 text-teal-400 border-teal-500/20",
-  purple: "bg-violet-500/15 text-violet-400 border-violet-500/25",
+  info: "bg-[var(--accent-muted)] text-[var(--accent)] border-[rgba(0,153,255,0.25)]",
+  purple: "bg-[var(--surface-active)] text-muted border-[var(--border)]",
 };
 
 export function Badge({

@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.node.json --noEmit && vite build && tsc -p tsconfig.electron.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win portable --x64"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -46,14 +46,14 @@
       "dist-electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build-resources/web",
+        "to": "web"
+      }
+    ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "portable",
           "arch": [
@@ -61,14 +61,14 @@
           ]
         }
       ],
-      "artifactName": "CueAI-Setup-${version}.${ext}"
+      "artifactName": "CueAI-${version}-portable.${ext}",
+      "signAndEditExecutable": false
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "CueAI"
-    }
+    "protocols": [
+      {
+        "name": "CueAI",
+        "schemes": ["cueai"]
+      }
+    ]
   }
 }

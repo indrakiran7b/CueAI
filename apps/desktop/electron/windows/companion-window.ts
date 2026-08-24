@@ -7,18 +7,20 @@ import {
   bindScreenShareController,
   clampBoundsToVisibleDisplay,
   dockPresenterToEdge,
+  getMeetingSession,
 } from "../services/screen-share";
 
 const MODE_SIZE: Record<CompanionMode, { width: number; height: number }> = {
-  full: { width: 420, height: 560 },
-  mini: { width: 320, height: 280 },
-  collapsed: { width: 260, height: 72 },
-  presenter: { width: 360, height: 220 },
+  full: { width: 380, height: 420 },
+  mini: { width: 300, height: 220 },
+  collapsed: { width: 240, height: 64 },
+  presenter: { width: 340, height: 200 },
 };
 
 let companionWin: BrowserWindow | null = null;
 let allowQuit = false;
 let animating = false;
+let visibilityEpoch = 0;
 let idleTimer: NodeJS.Timeout | null = null;
 let hideTimer: NodeJS.Timeout | null = null;
 
@@ -78,11 +80,13 @@ export function createCompanionWindow(): BrowserWindow {
     },
   });
 
-  companionWin.setAlwaysOnTop(getStoreValue("companionPinned"), "screen-saver");
+  // OS-level always-on-top (screen-saver level beats most fullscreen apps on Windows).
+  const pinned = getStoreValue("companionPinned") !== false;
+  companionWin.setAlwaysOnTop(pinned, "screen-saver");
   companionWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   companionWin.setOpacity(getStoreValue("companionOpacity"));
 
-  // Documented capture exclusion — never crash if unsupported.
+  // Privacy / exclude-from-capture ON by default (desktopSettings.excludeFromCapture).
   applyCaptureExclusion(companionWin);
 
   if (isDev) {
@@ -176,6 +180,9 @@ function scheduleAutoHideOrCollapse() {
   const settings = getStoreValue("desktopSettings");
   const mode = getStoreValue("companionMode");
 
+  // Never auto-dismiss during an active meeting session — only End Session / Close.
+  if (getMeetingSession().active) return;
+
   if (settings.autoCollapse && mode === "full") {
     idleTimer = setTimeout(() => {
       if (!companionWin?.isFocused()) setCompanionMode("collapsed");
@@ -208,28 +215,41 @@ async function fadeOpacity(win: BrowserWindow, from: number, to: number, ms = 14
 }
 
 export async function showCompanionAnimated() {
+  const epoch = ++visibilityEpoch;
   const win = createCompanionWindow();
+
+  // Re-assert OS overlay traits every show (survives display changes / unpin edge cases).
+  const pinned = getStoreValue("companionPinned") !== false;
+  win.setAlwaysOnTop(pinned, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   applyCaptureExclusion(win);
-  const target = getStoreValue("companionOpacity");
-  if (!win.isVisible()) {
-    win.setOpacity(0);
-    win.showInactive();
-    await fadeOpacity(win, 0, target, 120);
+
+  // Always full window opacity — panel transparency is handled in CSS.
+  setStoreValue("companionOpacity", 1);
+  win.setOpacity(1);
+
+  // Already visible: don't re-run fade animations (stops Private/Live flicker).
+  if (win.isVisible()) {
+    win.moveTop();
     win.focus();
-  } else {
-    win.setOpacity(target);
-    win.focus();
+    win.webContents.send("companion:visibility", true);
+    return;
   }
+
+  win.showInactive();
+  if (epoch !== visibilityEpoch || win.isDestroyed()) return;
+  win.focus();
   win.webContents.send("companion:visibility", true);
 }
 
 export async function hideCompanionAnimated() {
+  const epoch = ++visibilityEpoch;
   if (!companionWin || companionWin.isDestroyed() || !companionWin.isVisible()) return;
-  const from = companionWin.getOpacity();
-  await fadeOpacity(companionWin, from, 0, 100);
+  // Instant hide — no opacity fade (overlay is CSS-transparent, not window-dimmed).
+  if (epoch !== visibilityEpoch) return;
   if (!companionWin.isDestroyed()) {
     companionWin.hide();
-    companionWin.setOpacity(getStoreValue("companionOpacity"));
+    companionWin.setOpacity(1);
     companionWin.webContents.send("companion:visibility", false);
   }
 }
@@ -281,13 +301,19 @@ export function setCompanionMode(mode: CompanionMode) {
 
 export function setCompanionPinned(pinned: boolean) {
   setStoreValue("companionPinned", pinned);
-  companionWin?.setAlwaysOnTop(pinned, "screen-saver");
+  if (companionWin && !companionWin.isDestroyed()) {
+    companionWin.setAlwaysOnTop(pinned, "screen-saver");
+    if (pinned) {
+      companionWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      companionWin.moveTop();
+    }
+  }
 }
 
-export function setCompanionOpacity(opacity: number) {
-  const value = Math.min(1, Math.max(0.4, opacity));
-  setStoreValue("companionOpacity", value);
+export function setCompanionOpacity(_opacity: number) {
+  // Overlay stays fully opaque at the window level; visual transparency is CSS-only.
+  setStoreValue("companionOpacity", 1);
   if (companionWin && !companionWin.isDestroyed() && companionWin.isVisible()) {
-    companionWin.setOpacity(value);
+    companionWin.setOpacity(1);
   }
 }

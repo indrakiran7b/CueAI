@@ -7,7 +7,7 @@ import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Mail, Lock, ArrowRight, Sparkles } from "lucide-react";
-import { loginWithEmail } from "@/lib/auth";
+import { loginWithEmail, AUTH_BYPASS } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
 
@@ -65,6 +65,13 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (AUTH_BYPASS) {
+      refresh();
+      router.replace("/dashboard");
+    }
+  }, [router, refresh]);
+
+  useEffect(() => {
     const authError = searchParams.get("error");
     if (!authError) return;
     if (authError === "Configuration") {
@@ -75,6 +82,10 @@ function LoginForm() {
       setError("Sign-in failed. Please try again or use email.");
     }
   }, [searchParams]);
+
+  if (AUTH_BYPASS) {
+    return <div className="min-h-screen bg-background" />;
+  }
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

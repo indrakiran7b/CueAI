@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Bookmark,
   Hash,
@@ -17,11 +17,17 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { aiAnswers, transcript } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
-import { getDesktop, isDesktopApp } from "@/lib/desktop";
+import {
+  getDesktop,
+  hideCompanionOverlay,
+  isDesktopApp,
+  openCompanionOverlay,
+  startDesktopMeetingSession,
+} from "@/lib/desktop";
 import Link from "next/link";
+import "./live-session.css";
 
 type MeetingPlatform = "meet" | "teams" | "zoom" | "slack" | "webex";
 
@@ -30,8 +36,9 @@ type PlatformOption = {
   name: string;
   description: string;
   icon: ReactNode;
-  accent: string;
 };
+
+type Suggestion = (typeof aiAnswers)[number] & { regenerating?: boolean };
 
 const PLATFORMS: PlatformOption[] = [
   {
@@ -39,35 +46,30 @@ const PLATFORMS: PlatformOption[] = [
     name: "Google Meet",
     description: "Join or create a Google Meet session",
     icon: <Video className="h-5 w-5" />,
-    accent: "bg-emerald-500/15 text-emerald-400 ring-emerald-500/25",
   },
   {
     id: "teams",
     name: "Microsoft Teams",
     description: "Join or create a Microsoft Teams session",
     icon: <Users className="h-5 w-5" />,
-    accent: "bg-sky-500/15 text-sky-400 ring-sky-500/25",
   },
   {
     id: "zoom",
     name: "Zoom",
     description: "Join or create a Zoom session",
     icon: <Video className="h-5 w-5" />,
-    accent: "bg-blue-500/15 text-blue-400 ring-blue-500/25",
   },
   {
     id: "slack",
     name: "Slack Huddles",
     description: "Join or create a Slack Huddle",
     icon: <Hash className="h-5 w-5" />,
-    accent: "bg-violet-500/15 text-violet-300 ring-violet-500/25",
   },
   {
     id: "webex",
     name: "Webex",
     description: "Join or create a Webex session",
     icon: <MonitorPlay className="h-5 w-5" />,
-    accent: "bg-teal-500/15 text-teal-400 ring-teal-500/25",
   },
 ];
 
@@ -78,6 +80,9 @@ const PLATFORM_LABEL: Record<MeetingPlatform, string> = {
   slack: "Slack Huddles",
   webex: "Webex",
 };
+
+const DEFAULT_ASK_ANSWER =
+  "Based on the live transcript, the team is aligned on shipping before the board meeting if QA clears by Thursday.";
 
 export default function LiveMeetingPage() {
   const [session, setSession] = useState<{
@@ -92,17 +97,24 @@ export default function LiveMeetingPage() {
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
-      if (isDesktopApp()) {
-        const desktop = getDesktop();
-        const current = await desktop?.getMeetingSession();
-        if (current?.active) {
-          await desktop?.setMeetingSession({
-            active: false,
-            screenSharing: false,
-            cueAiMode: "inactive",
-          });
-          await desktop?.hideCompanion();
+      try {
+        if (isDesktopApp()) {
+          const desktop = getDesktop();
+          const current = await Promise.race([
+            desktop?.getMeetingSession() ?? Promise.resolve(undefined),
+            new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1500)),
+          ]);
+          if (current?.active) {
+            await desktop?.setMeetingSession({
+              active: false,
+              screenSharing: false,
+              cueAiMode: "inactive",
+            });
+            await desktop?.hideCompanion();
+          }
         }
+      } catch {
+        // Ignore desktop IPC failures — still show the setup UI.
       }
       if (!cancelled) setHydrated(true);
     }
@@ -112,26 +124,50 @@ export default function LiveMeetingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    function onEndFromOverlay() {
+      setSession(null);
+      void hideCompanionOverlay();
+      void startDesktopMeetingSession({
+        active: false,
+        screenSharing: false,
+        cueAiMode: "inactive",
+        hideCompanion: true,
+      });
+    }
+    window.addEventListener("cueai:end-session", onEndFromOverlay);
+    return () => window.removeEventListener("cueai:end-session", onEndFromOverlay);
+  }, []);
+
   function startPlatformSession(platform: MeetingPlatform) {
     const title = `${PLATFORM_LABEL[platform]} live session`;
+    // Fire the popout immediately — same window as Ctrl+Shift+Space.
+    void openCompanionOverlay();
+    void startDesktopMeetingSession({
+      active: true,
+      screenSharing: false,
+      meetingId: `live-${platform}`,
+      title,
+      cueAiMode: "private",
+      showCompanion: true,
+    });
     setSession({ platform, title });
   }
 
   function endSession() {
     setSession(null);
-    if (isDesktopApp()) {
-      void getDesktop()?.setMeetingSession({
-        active: false,
-        screenSharing: false,
-        cueAiMode: "inactive",
-      });
-      void getDesktop()?.hideCompanion();
-    }
+    void startDesktopMeetingSession({
+      active: false,
+      screenSharing: false,
+      cueAiMode: "inactive",
+      hideCompanion: true,
+    });
+    void hideCompanionOverlay();
   }
 
   if (!hydrated) {
     return (
-      <div className="mx-auto max-w-5xl animate-fade-up py-8">
+      <div data-live className="animate-fade-up py-8">
         <div className="h-8 w-64 animate-pulse rounded-lg bg-[var(--surface-active)]" />
         <div className="mt-3 h-4 w-96 max-w-full animate-pulse rounded-lg bg-[var(--surface-active)]" />
       </div>
@@ -157,45 +193,37 @@ function LiveSessionSetup({
   onStart: (platform: MeetingPlatform) => void;
 }) {
   return (
-    <div className="mx-auto max-w-5xl space-y-8 animate-fade-up">
+    <div data-live className="space-y-8 animate-fade-up" style={{ maxWidth: "64rem" }}>
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-          Start a Live Session
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
+        <h1 className="ls-hero-title">Start a Live Session</h1>
+        <p className="ls-hero-sub">
           Choose your meeting platform to begin an AI-assisted live session.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {PLATFORMS.map((platform) => (
-          <Card key={platform.id} hover className="flex flex-col p-5">
-            <div
-              className={cn(
-                "mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl ring-1",
-                platform.accent
-              )}
-            >
-              {platform.icon}
-            </div>
-            <CardTitle className="text-base">{platform.name}</CardTitle>
-            <CardDescription className="mt-1.5 flex-1">
-              {platform.description}
-            </CardDescription>
+          <div
+            key={platform.id}
+            className="ls-panel ls-panel-hover flex flex-col p-5"
+          >
+            <div className="ls-platform-icon mb-4">{platform.icon}</div>
+            <h3 className="text-base font-medium tracking-tight">{platform.name}</h3>
+            <p className="mt-1.5 flex-1 text-sm text-muted">{platform.description}</p>
             <Button
               className="mt-5 w-full"
-              variant="gradient"
+              variant="primary"
               onClick={() => onStart(platform.id)}
             >
               Start Session
             </Button>
-          </Card>
+          </div>
         ))}
       </div>
 
       <p className="text-center text-xs text-subtle">
-        Starting a meeting does not enable CueAI. After you join, choose CueAI Private or Live
-        when you want assistance.
+        Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep CueAI
+        Desktop running for the pop-out window.
       </p>
     </div>
   );
@@ -217,61 +245,66 @@ function ActiveLiveSession({
   const [seconds, setSeconds] = useState(0);
   const [lines, setLines] = useState<typeof transcript>([]);
   const [sharing, setSharing] = useState(false);
-  const [cueAiMode, setCueAiMode] = useState<CueAiMode>("inactive");
-  const [cueAiProcessing, setCueAiProcessing] = useState<CueAiProcessing>("idle");
+  // Client-only mount after Start Session click — start in Private (opens overlay).
+  const [cueAiMode, setCueAiMode] = useState<CueAiMode>("private");
+  const [cueAiProcessing, setCueAiProcessing] = useState<CueAiProcessing>("initializing");
+  const [desktopReady, setDesktopReady] = useState(false);
+  const [bookmarkCount, setBookmarkCount] = useState(1);
+  const [bookmarkedIds, setBookmarkedIds] = useState<number[]>([2]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(() =>
+    aiAnswers.map((a) => ({ ...a }))
+  );
+  const [ask, setAsk] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askReply, setAskReply] = useState<string | null>(null);
+  const [playheadPct, setPlayheadPct] = useState(62);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cueAiModeRef = useRef<CueAiMode>("inactive");
+  const cueAiModeRef = useRef<CueAiMode>("private");
+
+  useEffect(() => {
+    setDesktopReady(isDesktopApp());
+  }, []);
 
   useEffect(() => {
     cueAiModeRef.current = cueAiMode;
   }, [cueAiMode]);
 
-  // Meeting session only — CueAI stays inactive until the user opts in.
+  // Single sync path — avoids show/hide races that caused the Live toggle glitch.
   useEffect(() => {
-    if (!isDesktopApp()) return;
-    const desktop = getDesktop();
-    void desktop?.setMeetingSession({
-      active: true,
-      screenSharing: false,
-      meetingId: `live-${platform}`,
-      title,
-      cueAiMode: "inactive",
-    });
-    // Do NOT showCompanion here.
-    return () => {
-      void desktop?.setMeetingSession({
-        active: false,
-        screenSharing: false,
-        cueAiMode: "inactive",
+    let cancelled = false;
+
+    async function syncDesktop() {
+      await startDesktopMeetingSession({
+        active: true,
+        screenSharing: sharing,
+        meetingId: `live-${platform}`,
+        title,
+        cueAiMode,
+        showCompanion: cueAiMode !== "inactive",
+        hideCompanion: cueAiMode === "inactive",
       });
-      void desktop?.hideCompanion();
-    };
-  }, [platform, title]);
+      if (cancelled) return;
 
-  useEffect(() => {
-    if (!isDesktopApp()) return;
-    void getDesktop()?.setMeetingSession({ screenSharing: sharing });
-  }, [sharing]);
+      if (cueAiMode === "inactive") {
+        setCueAiProcessing("idle");
+        return;
+      }
 
-  useEffect(() => {
-    if (!isDesktopApp()) return;
-    const desktop = getDesktop();
-    void desktop?.setMeetingSession({ cueAiMode });
-    if (cueAiMode === "inactive") {
-      void desktop?.hideCompanion();
-      setCueAiProcessing("idle");
-      return;
-    }
-
-    setCueAiProcessing("initializing");
-    void desktop?.showCompanion();
-    const t = window.setTimeout(() => {
-      if (cueAiModeRef.current === cueAiMode) {
+      await openCompanionOverlay();
+      if (cancelled) return;
+      setCueAiProcessing("initializing");
+      await new Promise((r) => setTimeout(r, 400));
+      if (!cancelled && cueAiModeRef.current === cueAiMode) {
         setCueAiProcessing("listening");
       }
-    }, 450);
-    return () => window.clearTimeout(t);
-  }, [cueAiMode]);
+    }
+
+    void syncDesktop();
+    return () => {
+      cancelled = true;
+      // Intentionally no hide here — React Strict Mode remount was killing the popout.
+    };
+  }, [platform, title, cueAiMode, sharing]);
 
   useEffect(() => {
     if (paused) return;
@@ -314,6 +347,7 @@ function ActiveLiveSession({
   useEffect(() => {
     if (cueAiMode === "inactive") {
       setLines([]);
+      setAskReply(null);
     }
   }, [cueAiMode]);
 
@@ -325,7 +359,78 @@ function ActiveLiveSession({
   }, [lines]);
 
   function toggleCueAi(mode: "private" | "live") {
-    setCueAiMode((current) => (current === mode ? "inactive" : mode));
+    setCueAiMode((current) => {
+      if (current === mode) return "inactive";
+      // Switching Private ↔ Live should keep the overlay up (no hide pulse).
+      return mode;
+    });
+  }
+
+  function bookmarkLatest() {
+    const target = lines[lines.length - 1];
+    if (!target) {
+      setBookmarkCount((n) => n + 1);
+      return;
+    }
+    setBookmarkedIds((ids) =>
+      ids.includes(target.id) ? ids.filter((id) => id !== target.id) : [...ids, target.id]
+    );
+    setBookmarkCount((n) => n + 1);
+  }
+
+  function togglePin(id: string) {
+    setSuggestions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s))
+    );
+  }
+
+  async function regenerateSuggestion(id: string) {
+    setSuggestions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, regenerating: true } : s))
+    );
+    await new Promise((r) => setTimeout(r, 450));
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              regenerating: false,
+              answer: `Refreshed: ${s.answer.replace(/^Refreshed:\s*/, "")}`,
+            }
+          : s
+      )
+    );
+  }
+
+  async function onAskSubmit(e: FormEvent) {
+    e.preventDefault();
+    const prompt = ask.trim();
+    if (!prompt || asking) return;
+    if (cueAiMode === "inactive") return;
+    setAsking(true);
+    setAsk("");
+    await new Promise((r) => setTimeout(r, 400));
+    const lower = prompt.toLowerCase();
+    const reply =
+      lower.includes("latency")
+        ? "Target p95 under 800ms for live suggestions; defer full RAG when confidence drops below 0.7."
+        : lower.includes("risk")
+          ? "Main risks: QA slip past Thursday and unestimated design polish compressing the buffer."
+          : `${DEFAULT_ASK_ANSWER} (re: “${prompt.slice(0, 60)}”)`;
+    setAskReply(reply);
+    setSuggestions((prev) => [
+      {
+        id: `ask_${Date.now()}`,
+        question: prompt,
+        answer: reply,
+        pinned: false,
+      },
+      ...prev,
+    ]);
+    if (cueAiMode === "private") {
+      void openCompanionOverlay();
+    }
+    setAsking(false);
   }
 
   const cueAiActive = cueAiMode !== "inactive";
@@ -334,23 +439,20 @@ function ActiveLiveSession({
   const showInitializing = cueAiActive && cueAiProcessing === "initializing";
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 animate-fade-up lg:h-[calc(100vh-7rem)]">
+    <div data-live className="flex flex-col gap-4 animate-fade-up lg:h-[calc(100vh-7rem)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="ls-hero-title" style={{ fontSize: "clamp(1.25rem, 2.5vw, 1.5rem)" }}>
               {title}
             </h1>
             <Badge variant="success">
-              <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-teal-400" />
+              <span className="ls-live-dot mr-1" />
               In meeting
             </Badge>
-            {cueAiMode === "private" && (
-              <Badge variant="info">CueAI Private</Badge>
-            )}
-            {cueAiMode === "live" && (
-              <Badge variant="purple">CueAI Live</Badge>
-            )}
+            {cueAiMode === "private" && <Badge variant="default">CueAI Private</Badge>}
+            {cueAiMode === "live" && <Badge variant="default">CueAI Live</Badge>}
+            {paused && <Badge variant="warning">Paused</Badge>}
           </div>
           <p className="mt-1 text-sm text-muted">
             {PLATFORM_LABEL[platform]}
@@ -359,22 +461,18 @@ function ActiveLiveSession({
               : cueAiMode === "private"
                 ? " · Private assistant"
                 : " · Live transcription"}
+            {bookmarkCount > 0 ? ` · ${bookmarkCount} bookmarks` : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-2 py-1.5">
-            <span className="px-1.5 text-xs font-medium text-muted">CueAI</span>
-            <div className="flex rounded-lg bg-[var(--background)] p-0.5">
+          <div className="ls-mode-group">
+            <span className="text-xs font-medium text-muted">CueAI</span>
+            <div className="ls-mode-toggle">
               <button
                 type="button"
                 aria-pressed={cueAiMode === "private"}
                 onClick={() => toggleCueAi("private")}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  cueAiMode === "private"
-                    ? "bg-teal-500/20 text-teal-300"
-                    : "text-muted hover:text-foreground"
-                )}
+                className="ls-mode-btn"
               >
                 Private
               </button>
@@ -382,21 +480,14 @@ function ActiveLiveSession({
                 type="button"
                 aria-pressed={cueAiMode === "live"}
                 onClick={() => toggleCueAi("live")}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  cueAiMode === "live"
-                    ? "bg-violet-500/20 text-violet-300"
-                    : "text-muted hover:text-foreground"
-                )}
+                className="ls-mode-btn"
               >
                 Live
               </button>
             </div>
           </div>
-          <span className="rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 font-mono text-sm tabular-nums">
-            {formatTime(seconds)}
-          </span>
-          {isDesktopApp() && (
+          <span className="ls-timer">{formatTime(seconds)}</span>
+          {desktopReady && (
             <Button
               variant={sharing ? "primary" : "outline"}
               size="sm"
@@ -419,9 +510,9 @@ function ActiveLiveSession({
         </div>
       </div>
 
-      <Card className="flex items-center gap-4 p-4">
+      <div className="ls-panel flex items-center gap-4 p-4">
         <div className="flex items-center gap-2 text-sm text-muted">
-          <Mic className={cn("h-4 w-4", !paused && "text-teal-400")} />
+          <Mic className={cn("h-4 w-4", !paused && "text-foreground")} />
           Mic
         </div>
         <div className="flex h-10 flex-1 items-end gap-[3px]">
@@ -429,8 +520,8 @@ function ActiveLiveSession({
             <span
               key={i}
               className={cn(
-                "flex-1 rounded-full bg-gradient-to-t from-teal-700 to-teal-400",
-                !paused && cueAiMode === "live" && "wave-bar",
+                "ls-wave-bar",
+                !paused && cueAiMode === "live" && "wave-bar is-active",
                 cueAiMode === "inactive" && "opacity-40"
               )}
               style={{
@@ -445,35 +536,42 @@ function ActiveLiveSession({
         </div>
         <div className="flex items-center gap-2 text-sm text-muted">
           <Volume2
-            className={cn("h-4 w-4", cueAiMode === "live" ? "text-teal-400" : "text-subtle")}
+            className={cn("h-4 w-4", cueAiMode === "live" ? "text-foreground" : "text-subtle")}
           />
           {cueAiMode === "live" ? "System audio" : "Meeting audio"}
         </div>
-      </Card>
+      </div>
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1.25fr_0.85fr]">
-        <Card className="flex min-h-[420px] flex-col overflow-hidden p-0 lg:min-h-0">
+        <div className="ls-panel flex min-h-[420px] flex-col overflow-hidden p-0 lg:min-h-0">
           <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-            <p className="text-sm font-semibold">Live transcript</p>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" aria-label="Bookmark">
+            <p className="text-sm font-medium tracking-tight">Live transcript</p>
+            <div className="flex items-center gap-1">
+              <span className="mr-1 text-[11px] text-subtle">{bookmarkCount}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Bookmark latest line"
+                onClick={bookmarkLatest}
+                disabled={cueAiMode !== "live" || lines.length === 0}
+              >
                 <Bookmark className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <div ref={scrollRef} className="cue-scroll flex-1 space-y-3 overflow-y-auto p-4">
             {cueAiMode === "inactive" && (
-              <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center">
-                <p className="text-sm font-medium text-foreground/90">CueAI is off</p>
+              <div className="ls-empty">
+                <p className="text-sm font-medium">CueAI is off</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Choose <span className="text-teal-300">Private</span> or{" "}
-                  <span className="text-violet-300">Live</span> above to start the assistant.
-                  Your meeting continues independently.
+                  Choose <span className="ls-highlight">Private</span> or{" "}
+                  <span className="ls-highlight">Live</span> above to start the assistant. Your
+                  meeting continues independently.
                 </p>
               </div>
             )}
             {cueAiMode === "private" && (
-              <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center">
+              <div className="ls-empty">
                 {showInitializing ? (
                   <>
                     <p className="text-sm font-medium">Starting CueAI Private…</p>
@@ -481,11 +579,12 @@ function ActiveLiveSession({
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-teal-300">Private mode active</p>
+                    <p className="text-sm font-medium">Private mode active</p>
                     <p className="max-w-sm text-xs text-muted">
                       The CueAI companion is available privately. Switch to Live for full
                       transcription and AI suggestions in this workspace.
                     </p>
+                    {askReply && <p className="ls-reply">{askReply}</p>}
                   </>
                 )}
               </div>
@@ -495,18 +594,39 @@ function ActiveLiveSession({
                 <div
                   key={line.id}
                   className={cn(
-                    "rounded-2xl border border-[var(--border)] px-4 py-3",
-                    line.role === "You" && "border-teal-500/25 bg-teal-500/5"
+                    "ls-line",
+                    line.role === "You" && "is-you",
+                    bookmarkedIds.includes(line.id) && "is-bookmarked"
                   )}
                 >
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{line.speaker}</span>
-                    <Badge variant={line.role === "You" ? "info" : "default"}>
-                      {line.role}
-                    </Badge>
+                    <Badge variant="default">{line.role}</Badge>
+                    {bookmarkedIds.includes(line.id) && (
+                      <Badge variant="warning">Bookmarked</Badge>
+                    )}
                     <span className="ml-auto font-mono text-[11px] text-subtle">
                       {line.time}
                     </span>
+                    <button
+                      type="button"
+                      aria-label="Toggle bookmark"
+                      className="rounded-md p-1 text-subtle hover:bg-[var(--surface-hover)] hover:text-foreground"
+                      onClick={() => {
+                        const was = bookmarkedIds.includes(line.id);
+                        setBookmarkedIds((ids) =>
+                          was ? ids.filter((id) => id !== line.id) : [...ids, line.id]
+                        );
+                        setBookmarkCount((n) => (was ? Math.max(0, n - 1) : n + 1));
+                      }}
+                    >
+                      <Bookmark
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          bookmarkedIds.includes(line.id) && "fill-amber-400 text-amber-400"
+                        )}
+                      />
+                    </button>
                   </div>
                   <p className="text-sm leading-relaxed text-foreground/90">{line.text}</p>
                   <p className="mt-1.5 text-[11px] text-subtle">
@@ -519,13 +639,13 @@ function ActiveLiveSession({
             )}
             {showLiveProcessing && (
               <div className="flex items-center gap-1.5 px-2 text-subtle">
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground" />
                 <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-primary"
+                  className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground"
                   style={{ animationDelay: "0.2s" }}
                 />
                 <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-primary"
+                  className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground"
                   style={{ animationDelay: "0.4s" }}
                 />
                 <span className="ml-2 text-xs">Listening…</span>
@@ -533,69 +653,96 @@ function ActiveLiveSession({
             )}
           </div>
           <div className="border-t border-[var(--border)] px-4 py-3">
-            <div className="relative h-2 rounded-full bg-[var(--surface-active)]">
+            <div className="ls-playhead">
               <div
                 className={cn(
-                  "absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-teal-600 to-violet-500",
-                  cueAiMode === "live" ? "w-[62%]" : "w-[12%] opacity-40"
+                  "ls-playhead-fill",
+                  cueAiMode === "live" ? "opacity-100" : "w-[12%] opacity-40"
                 )}
+                style={cueAiMode === "live" ? { width: `${playheadPct}%` } : undefined}
               />
               {cueAiMode === "live" && (
                 <>
                   <button
-                    className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-primary"
-                    style={{ left: "62%" }}
-                    aria-label="Playhead"
+                    type="button"
+                    className="ls-playhead-knob"
+                    style={{ left: `${playheadPct}%` }}
+                    aria-label="Scrub transcript playhead"
+                    onClick={() => {
+                      const next = playheadPct >= 85 ? 28 : playheadPct + 18;
+                      setPlayheadPct(next);
+                      scrollRef.current?.scrollTo({
+                        top: (scrollRef.current.scrollHeight * next) / 100,
+                        behavior: "smooth",
+                      });
+                    }}
                   />
-                  <span
-                    className="absolute -top-1 h-4 w-0.5 bg-amber-400"
+                  <button
+                    type="button"
+                    className="ls-bookmark-mark"
                     style={{ left: "28%" }}
-                    title="Bookmark"
+                    title="Jump to bookmark"
+                    aria-label="Jump to bookmark"
+                    onClick={() => {
+                      setPlayheadPct(28);
+                      const el = scrollRef.current;
+                      if (!el) return;
+                      el.scrollTo({ top: el.scrollHeight * 0.28, behavior: "smooth" });
+                    }}
                   />
                 </>
               )}
             </div>
           </div>
-        </Card>
+        </div>
 
         <div className="flex min-h-0 flex-col gap-4">
-          <Card glow className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="ls-panel flex-1 space-y-3 overflow-y-auto p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">AI suggestions</p>
+              <p className="text-sm font-medium tracking-tight">AI suggestions</p>
               {cueAiMode === "live" && cueAiProcessing === "listening" ? (
-                <Badge variant="purple">Streaming</Badge>
+                <Badge variant="default">Streaming</Badge>
               ) : cueAiMode === "private" ? (
-                <Badge variant="info">Private</Badge>
+                <Badge variant="default">Private</Badge>
               ) : (
                 <Badge>Off</Badge>
               )}
             </div>
             {cueAiMode !== "live" && (
-              <div className="flex min-h-[160px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border)] px-4 py-8 text-center">
+              <div className="flex min-h-[160px] flex-col items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] px-4 py-8 text-center">
                 <p className="text-sm text-muted">
                   {cueAiMode === "private"
-                    ? "Private mode uses the companion overlay. Switch to Live for in-workspace suggestions."
+                    ? "Private mode uses the companion overlay. Ask below or switch to Live for in-workspace suggestions."
                     : "Enable CueAI Live to stream AI suggestions for this meeting."}
                 </p>
+                {askReply && cueAiMode === "private" && (
+                  <p className="mt-3 text-left text-xs text-foreground/90">{askReply}</p>
+                )}
               </div>
             )}
             {cueAiMode === "live" &&
               cueAiProcessing === "listening" &&
-              aiAnswers.map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded-2xl border border-violet-500/25 bg-violet-500/10 p-4"
-                >
-                  <p className="text-xs font-medium text-violet-300">{a.question}</p>
+              suggestions.map((a) => (
+                <div key={a.id} className="ls-suggestion">
+                  <p className="ls-suggestion-q">{a.question}</p>
                   <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-                    {a.answer}
+                    {a.regenerating ? "Regenerating…" : a.answer}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Button size="sm" variant={a.pinned ? "primary" : "outline"}>
+                    <Button
+                      size="sm"
+                      variant={a.pinned ? "primary" : "outline"}
+                      onClick={() => togglePin(a.id)}
+                    >
                       <Pin className="h-3 w-3" />
                       {a.pinned ? "Pinned" : "Pin"}
                     </Button>
-                    <Button size="sm" variant="ghost">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={a.regenerating}
+                      onClick={() => void regenerateSuggestion(a.id)}
+                    >
                       <RefreshCw className="h-3 w-3" />
                       Regenerate
                     </Button>
@@ -605,25 +752,31 @@ function ActiveLiveSession({
             {cueAiMode === "live" && showInitializing && (
               <p className="text-xs text-muted">Preparing suggestions…</p>
             )}
-          </Card>
+          </div>
 
-          <Card className="p-3">
-            <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>
+          <div className="ls-panel p-3">
+            <form className="flex gap-2" onSubmit={(e) => void onAskSubmit(e)}>
               <input
-                className="h-11 flex-1 rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] px-3.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-[var(--primary-muted)] disabled:opacity-50"
+                value={ask}
+                onChange={(e) => setAsk(e.target.value)}
+                className="ls-ask-input"
                 placeholder={
                   cueAiActive ? "Ask CueAI anything…" : "Enable CueAI Private or Live to ask…"
                 }
-                disabled={!cueAiActive}
+                disabled={!cueAiActive || asking}
               />
-              <Button type="submit" variant="gradient" disabled={!cueAiActive}>
-                Ask
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!cueAiActive || asking || !ask.trim()}
+              >
+                {asking ? "…" : "Ask"}
               </Button>
             </form>
             <p className="mt-2 text-center text-[11px] text-subtle">
               Hotkey ⌘⇧Space · Privacy: audio only
             </p>
-          </Card>
+          </div>
         </div>
       </div>
     </div>

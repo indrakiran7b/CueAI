@@ -34,21 +34,21 @@ export type ButtonLinkProps = CommonProps & {
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-[var(--primary-foreground)] hover:bg-[var(--cue-teal-deep)] shadow-sm shadow-teal-500/20",
+    "bg-primary text-[var(--primary-foreground)] hover:opacity-90 shadow-sm rounded-full",
   secondary:
-    "glass text-foreground border border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
+    "glass text-foreground border border-[var(--border-strong)] hover:bg-[var(--surface-hover)] rounded-full",
   ghost: "bg-transparent text-muted hover:text-foreground hover:bg-[var(--surface-hover)]",
   outline:
-    "bg-transparent border border-[var(--border-strong)] text-foreground hover:bg-[var(--surface-hover)]",
-  danger: "bg-[var(--cue-danger)] text-white hover:bg-[#b91c1c]",
-  gradient: "btn-gradient text-white shadow-md shadow-teal-500/25",
+    "bg-transparent border border-[var(--border-strong)] text-foreground hover:bg-[var(--surface-hover)] rounded-full",
+  danger: "bg-[var(--cue-danger)] text-white hover:bg-[#b91c1c] rounded-full",
+  gradient: "btn-gradient text-[var(--primary-foreground)] hover:opacity-90 shadow-sm rounded-full",
 };
 
 const sizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-xs gap-1.5 rounded-[10px]",
-  md: "h-10 px-4 text-sm gap-2 rounded-xl",
-  lg: "h-12 px-6 text-[15px] gap-2.5 rounded-2xl",
-  icon: "h-10 w-10 rounded-xl",
+  sm: "h-8 px-3.5 text-xs gap-1.5 rounded-full",
+  md: "h-10 px-5 text-sm gap-2 rounded-full",
+  lg: "h-12 px-6 text-[15px] gap-2.5 rounded-full",
+  icon: "h-10 w-10 rounded-full",
 };
 
 function buttonClasses(
@@ -84,7 +84,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps | ButtonLinkProp
       <>
         {loading && (
           <span className="absolute inset-0 flex items-center justify-center">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />
           </span>
         )}
         <span className={cn("inline-flex items-center gap-inherit", loading && "invisible")}>
@@ -93,11 +93,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps | ButtonLinkProp
       </>
     );
 
-    if ("href" in props && props.href) {
-      const { href, ...rest } = props as ButtonLinkProps;
+    const href = "href" in props ? props.href : undefined;
+
+    if (typeof href === "string" && href.length > 0) {
+      const { href: linkHref, ...rest } = props as ButtonLinkProps;
       return (
         <Link
-          href={href}
+          href={linkHref}
           className={cn(classes, (disabled || loading) && "pointer-events-none opacity-50")}
           aria-disabled={disabled || loading || undefined}
           {...rest}
@@ -111,7 +113,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps | ButtonLinkProp
     return (
       <button
         ref={ref}
-        disabled={disabled || loading}
+        type={buttonProps.type ?? "button"}
+        disabled={Boolean(disabled || loading)}
         className={classes}
         {...buttonProps}
       >

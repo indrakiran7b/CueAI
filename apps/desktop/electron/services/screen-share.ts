@@ -132,8 +132,9 @@ export function setMeetingSession(next: Partial<MeetingSessionState>) {
   session = {
     ...session,
     ...next,
-    active: Boolean(next.active ?? session.active),
-    screenSharing: Boolean(next.screenSharing ?? session.screenSharing),
+    active: next.active !== undefined ? Boolean(next.active) : session.active,
+    screenSharing:
+      next.screenSharing !== undefined ? Boolean(next.screenSharing) : session.screenSharing,
     cueAiMode: next.cueAiMode ?? session.cueAiMode ?? "inactive",
   };
 
@@ -146,19 +147,36 @@ export function setMeetingSession(next: Partial<MeetingSessionState>) {
   const prevCueAiOn =
     prev.active && (prev.cueAiMode === "private" || prev.cueAiMode === "live");
 
-  // Companion / presenter only when user explicitly enables CueAI Private or Live.
+  // Turning CueAI on → full companion popout (same idea as Ctrl+Shift+Space).
+  // Presenter dock is only for active screen-share, not every Private/Live toggle.
   if (cueAiOn && !prevCueAiOn) {
+    if (session.screenSharing) {
+      enterPresentationForShare();
+    } else {
+      controller?.show();
+    }
+  }
+
+  if (cueAiOn && session.screenSharing && !prev.screenSharing) {
     enterPresentationForShare();
   }
 
-  if ((!cueAiOn && prevCueAiOn) || (!session.active && prev.active)) {
+  if (cueAiOn && !session.screenSharing && prev.screenSharing) {
     exitPresentationForShare();
+  }
+
+  if ((!cueAiOn && prevCueAiOn) || (!session.active && prev.active)) {
+    if (prev.screenSharing || getStoreValue("companionMode") === "presenter") {
+      exitPresentationForShare();
+    }
     controller?.hide();
   }
 
   const win = controller?.getWindow();
   win?.webContents.send("companion:session", getMeetingSession());
   win?.webContents.send("companion:capture-status", getCaptureProtectionStatus());
+
+  return getMeetingSession();
 }
 
 function enterPresentationForShare() {
@@ -169,7 +187,7 @@ function enterPresentationForShare() {
     setStoreValue("companionModeBeforeShare", current);
   }
   controller.setMode("presenter");
-  controller.setOpacity(getStoreValue("desktopSettings").presenterOpacity ?? 0.72);
+  controller.setOpacity(1);
   controller.dockPresenter();
   controller.show();
 }

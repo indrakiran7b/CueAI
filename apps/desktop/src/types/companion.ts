@@ -22,6 +22,7 @@ export type CompanionAPI = {
   pin: (pinned: boolean) => Promise<void>;
   setOpacity: (opacity: number) => Promise<void>;
   openDashboard: () => Promise<void>;
+  endSession: () => Promise<MeetingSession>;
   toggle: () => Promise<void>;
   activity: () => Promise<void>;
   getCaptureStatus: () => Promise<CaptureStatus>;

@@ -12,7 +12,7 @@
     "build": "npm run build -w @cueai/web",
     "build:web": "npm run build -w @cueai/web",
     "build:desktop": "npm run build -w @cueai/desktop",
-    "dist:desktop": "npm run dist -w @cueai/desktop",
+    "dist:desktop": "node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop",
     "start": "npm run start -w @cueai/web",
     "lint": "npm run lint -w @cueai/web"
   },

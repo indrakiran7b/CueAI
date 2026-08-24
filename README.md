@@ -54,8 +54,8 @@ docker compose --env-file docker/.env up --build
 | `Esc` | Hide companion |
 
 ### Architecture
-- **Main window** → Next.js web UI (no redesign)
-- **Companion window** → Vite React overlay (always-on-top)
+- **Main window** → Next.js `apps/web` (design source of truth, including redesigned landing) via `http://localhost:3000`
+- **Companion window** → Vite React overlay in `apps/desktop/src` (always-on-top) via `:5173`
 - **Preload** → secure `contextBridge` IPC (`window.cueDesktop` / `window.cueai`)
 - **Tray** · global shortcuts · JSON settings store · electron-builder
 - **Backend** → FastAPI clean architecture (`backend/app`)

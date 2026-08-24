@@ -3,19 +3,18 @@ import {
   Bookmark,
   Copy,
   ExternalLink,
+  Eye,
   EyeOff,
   GripVertical,
   Languages,
   ListTodo,
-  Mic,
   Minimize2,
   Pin,
   Presentation,
   RefreshCw,
   Search,
-  Shield,
   Sparkles,
-  Volume2,
+  Square,
   X,
 } from "lucide-react";
 import { cn } from "./lib/utils";
@@ -38,13 +37,11 @@ export default function App() {
   const {
     mode,
     pinned,
-    opacity,
     panel,
     session,
     capture,
     setMode,
     setPinned,
-    setOpacity,
     setPanel,
     setSession,
     setCapture,
@@ -57,7 +54,11 @@ export default function App() {
   );
   const [confidence, setConfidence] = useState(0.92);
   const [bookmarkCount, setBookmarkCount] = useState(2);
+  const [answerPinned, setAnswerPinned] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [translated, setTranslated] = useState<string | null>(null);
+  const [ending, setEnding] = useState(false);
+  const [activeLang, setActiveLang] = useState<string | null>(null);
 
   useEffect(() => {
     void window.cueai?.setMode(mode);
@@ -67,16 +68,17 @@ export default function App() {
     void window.cueai?.pin(pinned);
   }, [pinned]);
 
+  // Keep window-level opacity fully clear (no dimming).
   useEffect(() => {
-    void window.cueai?.setOpacity(opacity);
-  }, [opacity]);
+    void window.cueai?.setOpacity(1);
+  }, []);
 
   useEffect(() => {
     void window.cueai?.getCaptureStatus().then((s) => s && setCapture(s));
     void window.cueai?.getSession().then((s) => s && setSession(s));
     const offMode = window.cueai?.onMode((m) => setMode(m));
-    const offSession = window.cueai?.onSession((s) => setSession(s));
-    const offCapture = window.cueai?.onCaptureStatus((s) => setCapture(s));
+    const offSession = window.cueai?.onSession((s) => s && setSession(s));
+    const offCapture = window.cueai?.onCaptureStatus((s) => s && setCapture(s));
     return () => {
       offMode?.();
       offSession?.();
@@ -88,67 +90,106 @@ export default function App() {
     void window.cueai?.activity();
   }
 
-  async function onAsk(e: FormEvent) {
-    e.preventDefault();
+  async function runAsk(prompt: string) {
+    const q = prompt.trim();
+    if (!q || streaming) return;
     bumpActivity();
-    if (!ask.trim()) return;
-    const prompt = ask.trim();
-    setAsk("");
     setStreaming(true);
     setPanel("answer");
-    const result = await AIService.ask(prompt);
-    setAnswer(result.answer);
-    setConfidence(result.confidence);
-    setTranslated(null);
-    setStreaming(false);
+    setAnswerPinned(false);
+    setCopied(false);
+    try {
+      const result = await AIService.ask(q);
+      setAnswer(result.answer);
+      setConfidence(result.confidence);
+      setTranslated(null);
+      setActiveLang(null);
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  async function onAsk(e: FormEvent) {
+    e.preventDefault();
+    const prompt = ask.trim();
+    if (!prompt) return;
+    setAsk("");
+    await runAsk(prompt);
+  }
+
+  async function copyAnswer() {
+    bumpActivity();
+    try {
+      await navigator.clipboard.writeText(translated || answer);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  async function onEndSession() {
+    if (ending) return;
+    setEnding(true);
+    bumpActivity();
+    try {
+      await window.cueai?.endSession();
+    } finally {
+      setEnding(false);
+    }
+  }
+
+  const privacyOn = capture?.applied === true && capture?.supported !== false;
+
+  async function togglePrivacy() {
+    bumpActivity();
+    const status = await window.cueai?.setExcludeCapture(!privacyOn);
+    if (status) setCapture(status);
   }
 
   const presenting = mode === "presenter" || session.screenSharing;
 
   return (
     <div
-      className="flex h-full flex-col p-2"
+      className="flex h-full flex-col bg-transparent p-1.5"
       onMouseMove={bumpActivity}
       onFocus={bumpActivity}
     >
       <div
         className={cn(
-          "glass flex h-full flex-col overflow-hidden rounded-2xl transition-[box-shadow,opacity] duration-150",
-          "shadow-[0_0_0_1px_rgba(45,212,191,0.25),0_0_24px_rgba(20,184,166,0.18)]",
-          presenting && "shadow-[0_0_0_1px_rgba(45,212,191,0.15)]",
+          "glass flex h-full flex-col overflow-hidden rounded-xl",
           mode === "collapsed" && "justify-center"
         )}
       >
-        <header className="drag-region flex items-center gap-2 border-b border-white/10 px-3 py-2">
-          <GripVertical className="h-4 w-4 text-zinc-500" />
-          <Sparkles className="h-3.5 w-3.5 text-teal-400" />
-          <span className="text-xs font-semibold tracking-tight">CueAI</span>
+        <header className="drag-region flex items-center gap-1.5 border-b border-white/15 px-2.5 py-1.5">
+          <GripVertical className="h-3.5 w-3.5 text-zinc-400" />
+          <Sparkles className="h-3 w-3 text-teal-400" />
+          <span className="text-[11px] font-semibold tracking-tight">CueAI</span>
           {session.cueAiMode === "private" && (
-            <span
-              className={cn(
-                "rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-                capture?.applied
-                  ? "border-teal-500/30 bg-teal-500/15 text-teal-300"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-200"
-              )}
-              title={capture?.message || "Capture status"}
-            >
-              <span className="inline-flex items-center gap-1">
-                <EyeOff className="h-2.5 w-2.5" /> Private
-              </span>
+            <span className="rounded border border-white/20 bg-white/10 px-1 py-0.5 text-[9px] text-zinc-200">
+              Private
             </span>
           )}
           {session.cueAiMode === "live" && (
-            <span className="rounded-md border border-teal-500/20 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-300">
+            <span className="rounded border border-teal-500/30 bg-teal-500/15 px-1 py-0.5 text-[9px] text-teal-200">
               Live
             </span>
           )}
-          {(!session.cueAiMode || session.cueAiMode === "inactive") && capture?.applied === false && (
-            <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-500">
-              Local only
-            </span>
-          )}
-          <div className="no-drag ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            title={capture?.message || (privacyOn ? "Hidden from screen share" : "Visible in screen share")}
+            onClick={() => void togglePrivacy()}
+            className={cn(
+              "no-drag inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-semibold transition-colors",
+              privacyOn
+                ? "border border-teal-500/40 bg-teal-500/20 text-teal-200 hover:bg-teal-500/30"
+                : "border border-amber-500/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+            )}
+          >
+            {privacyOn ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+            Privacy {privacyOn ? "on" : "off"}
+          </button>
+          <div className="no-drag ml-auto flex items-center">
             <IconBtn
               label={pinned ? "Unpin" : "Pin always on top"}
               onClick={() => {
@@ -156,7 +197,7 @@ export default function App() {
                 setPinned(!pinned);
               }}
             >
-              <Pin className={cn("h-3.5 w-3.5", pinned && "text-teal-400")} />
+              <Pin className={cn("h-3 w-3", pinned && "text-teal-400")} />
             </IconBtn>
             <IconBtn
               label="Presenter mode"
@@ -165,7 +206,7 @@ export default function App() {
                 setMode(mode === "presenter" ? "full" : "presenter");
               }}
             >
-              <Presentation className={cn("h-3.5 w-3.5", presenting && "text-teal-400")} />
+              <Presentation className={cn("h-3 w-3", presenting && "text-teal-400")} />
             </IconBtn>
             {!presenting && (
               <IconBtn
@@ -175,62 +216,35 @@ export default function App() {
                   setMode(mode === "mini" ? "full" : "mini");
                 }}
               >
-                <Minimize2 className="h-3.5 w-3.5" />
+                <Minimize2 className="h-3 w-3" />
               </IconBtn>
             )}
             <IconBtn label="Hide" onClick={() => void window.cueai?.hide()}>
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3 w-3" />
             </IconBtn>
           </div>
         </header>
 
         {mode === "collapsed" ? (
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
-              <span className="relative flex h-2.5 w-2.5">
+          <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-200">
+              <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-60" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-teal-400" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-400" />
               </span>
-              Listening · private
+              Listening · Privacy {privacyOn ? "on" : "off"}
             </div>
             <button
-              className="no-drag rounded-lg px-2 py-1 text-[10px] text-zinc-400 hover:bg-white/5"
+              className="no-drag rounded px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-white/10"
               onClick={() => setMode("full")}
             >
               Expand
             </button>
           </div>
         ) : (
-          <div className="no-drag flex min-h-0 flex-1 flex-col gap-2.5 p-3">
+          <div className="no-drag flex min-h-0 flex-1 flex-col gap-1.5 p-2">
             {mode === "full" && (
-              <div className="flex items-center gap-3 text-[11px] text-zinc-400">
-                <span className="inline-flex items-center gap-1">
-                  <Mic className="h-3 w-3 text-teal-400" /> Mic
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Volume2 className="h-3 w-3 text-teal-400" /> System
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Shield className="h-3 w-3 text-teal-300" /> Ephemeral
-                </span>
-                <label className="ml-auto inline-flex items-center gap-1.5">
-                  <span className="text-zinc-500">Opacity</span>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={1}
-                    step={0.05}
-                    value={opacity}
-                    onChange={(e) => setOpacity(Number(e.target.value))}
-                    className="w-16 accent-teal-500"
-                    aria-label="Window opacity"
-                  />
-                </label>
-              </div>
-            )}
-
-            {mode === "full" && (
-              <div className="flex gap-1">
+              <div className="flex gap-0.5">
                 {(
                   [
                     ["answer", "Answer"],
@@ -247,10 +261,10 @@ export default function App() {
                       setPanel(id);
                     }}
                     className={cn(
-                      "rounded-lg px-2 py-1 text-[11px]",
+                      "rounded-md px-1.5 py-0.5 text-[10px]",
                       panel === id
-                        ? "bg-teal-500/20 text-teal-200"
-                        : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                        ? "bg-teal-500/25 text-teal-100"
+                        : "text-zinc-300 hover:bg-white/10 hover:text-white"
                     )}
                   >
                     {label}
@@ -260,42 +274,37 @@ export default function App() {
             )}
 
             {mode === "full" && panel === "transcript" && (
-              <div className="max-h-36 space-y-1.5 overflow-y-auto rounded-xl bg-black/25 p-2.5 text-xs">
+              <div className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-white/10 bg-black/35 p-2 text-[11px]">
                 {transcript.map((line) => (
                   <p key={line.text}>
-                    <span className="font-medium text-teal-400">{line.who}:</span>{" "}
-                    <span className="text-zinc-300">{line.text}</span>
+                    <span className="font-medium text-teal-300">{line.who}:</span>{" "}
+                    <span className="text-zinc-100">{line.text}</span>
                   </p>
                 ))}
               </div>
             )}
 
             {mode === "full" && panel === "actions" && (
-              <div className="space-y-1.5 rounded-xl bg-black/25 p-2.5 text-xs text-zinc-300">
-                <p className="inline-flex items-center gap-1.5 text-teal-300">
+              <div className="space-y-0.5 rounded-lg border border-white/10 bg-black/35 p-2 text-[11px] text-zinc-100">
+                <p className="inline-flex items-center gap-1 text-teal-300">
                   <ListTodo className="h-3 w-3" /> Suggested next steps
                 </p>
                 {suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
-                    className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/5"
-                    onClick={() => {
-                      setAsk(s);
-                      setPanel("answer");
-                    }}
+                    className="block w-full rounded-md px-1.5 py-1 text-left hover:bg-white/10"
+                    onClick={() => void runAsk(s)}
+                    disabled={streaming}
                   >
                     {s}
                   </button>
                 ))}
-                <p className="pt-1 text-[10px] text-zinc-500">
-                  Screen context · Resume tips · Timeline · Search (mock)
-                </p>
               </div>
             )}
 
             {mode === "full" && panel === "translate" && (
-              <div className="space-y-2 rounded-xl bg-black/25 p-2.5 text-xs">
+              <div className="space-y-1.5 rounded-lg border border-white/10 bg-black/35 p-2 text-[11px]">
                 <p className="inline-flex items-center gap-1 text-teal-300">
                   <Languages className="h-3 w-3" /> Live translation
                 </p>
@@ -304,8 +313,15 @@ export default function App() {
                     <button
                       key={lang}
                       type="button"
-                      className="rounded-lg border border-white/10 px-2 py-1 uppercase text-zinc-400 hover:border-teal-500/40 hover:text-teal-200"
+                      className={cn(
+                        "rounded-md border px-1.5 py-0.5 uppercase text-zinc-300 hover:border-teal-500/40 hover:text-teal-200",
+                        activeLang === lang
+                          ? "border-teal-500/50 text-teal-200"
+                          : "border-white/15"
+                      )}
                       onClick={() => {
+                        bumpActivity();
+                        setActiveLang(lang);
                         void TranslationService.translate(answer, lang).then((r) =>
                           setTranslated(r.text)
                         );
@@ -315,32 +331,32 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <p className="text-zinc-300">{translated || answer}</p>
+                <p className="text-zinc-100">{translated || answer}</p>
               </div>
             )}
 
             {(panel === "answer" || mode !== "full") && (
               <div
                 className={cn(
-                  "rounded-2xl border border-teal-500/25 bg-teal-500/10 p-3",
-                  presenting && "flex-1 border-teal-500/15 bg-teal-500/8"
+                  "answer-panel rounded-xl border border-teal-500/35 p-2",
+                  presenting && "flex-1"
                 )}
               >
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-teal-300">
+                <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-teal-300">
                   <Sparkles className="h-3 w-3" />
                   {presenting ? "Presenter answer" : "AI Answer"}
                   {!streaming && (
-                    <span className="ml-auto text-[10px] text-zinc-500">
+                    <span className="ml-auto text-[9px] text-zinc-400">
                       {Math.round(confidence * 100)}%
                     </span>
                   )}
                 </div>
                 {streaming ? (
-                  <div className="flex gap-1 py-2" aria-label="Generating answer">
+                  <div className="flex gap-1 py-1" aria-label="Generating answer">
                     {[0, 1, 2].map((i) => (
                       <span
                         key={i}
-                        className="typing-dot h-2 w-2 rounded-full bg-teal-400"
+                        className="typing-dot h-1.5 w-1.5 rounded-full bg-teal-400"
                         style={{ animationDelay: `${i * 0.2}s` }}
                       />
                     ))}
@@ -348,45 +364,51 @@ export default function App() {
                 ) : (
                   <p
                     className={cn(
-                      "leading-relaxed text-zinc-100",
-                      presenting ? "text-sm" : mode === "mini" ? "text-xs" : "text-sm"
+                      "leading-snug text-zinc-50",
+                      mode === "mini" ? "text-[11px]" : "text-xs"
                     )}
                   >
                     {mode === "mini" ? "QA can finish by Wed EOD." : answer}
                   </p>
                 )}
                 {!streaming && mode !== "mini" && (
-                  <div className="mt-2 flex flex-wrap gap-1">
+                  <div className="mt-1.5 flex flex-wrap gap-0.5">
                     <Chip
                       onClick={() => {
                         bumpActivity();
-                        setBookmarkCount((n) => n + 1);
+                        setAnswerPinned((p) => !p);
                       }}
                     >
-                      <Pin className="h-3 w-3" /> Pin
+                      <Pin className={cn("h-2.5 w-2.5", answerPinned && "text-teal-400")} />
+                      {answerPinned ? "Pinned" : "Pin"}
                     </Chip>
-                    <Chip onClick={() => void navigator.clipboard.writeText(answer)}>
-                      <Copy className="h-3 w-3" />
+                    <Chip onClick={() => void copyAnswer()}>
+                      <Copy className="h-2.5 w-2.5" />
+                      {copied ? "Copied" : "Copy"}
                     </Chip>
                     <Chip
                       onClick={() => {
-                        setStreaming(true);
-                        void AIService.ask("regenerate").then((r) => {
-                          setAnswer(r.answer);
-                          setConfidence(r.confidence);
-                          setStreaming(false);
-                        });
+                        void runAsk("regenerate");
                       }}
                     >
-                      <RefreshCw className="h-3 w-3" />
+                      <RefreshCw className="h-2.5 w-2.5" />
                     </Chip>
                     {!presenting && (
                       <>
-                        <Chip onClick={() => setBookmarkCount((n) => n + 1)}>
-                          <Bookmark className="h-3 w-3" /> {bookmarkCount}
+                        <Chip
+                          onClick={() => {
+                            bumpActivity();
+                            setBookmarkCount((n) => n + 1);
+                          }}
+                        >
+                          <Bookmark className="h-2.5 w-2.5" /> {bookmarkCount}
                         </Chip>
-                        <Chip onClick={() => setAsk("Explain this simply")}>
-                          <Search className="h-3 w-3" /> Explain
+                        <Chip
+                          onClick={() => {
+                            void runAsk("Explain this simply");
+                          }}
+                        >
+                          <Search className="h-2.5 w-2.5" /> Explain
                         </Chip>
                       </>
                     )}
@@ -396,40 +418,67 @@ export default function App() {
             )}
 
             {!presenting && mode !== "mini" && (
-              <form className="flex gap-2" onSubmit={(e) => void onAsk(e)}>
+              <form className="flex gap-1.5" onSubmit={(e) => void onAsk(e)}>
                 <input
                   value={ask}
                   onChange={(e) => setAsk(e.target.value)}
                   placeholder="Ask CueAI…"
-                  className="h-9 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-teal-500/50"
+                  className="h-7 flex-1 rounded-lg border border-white/15 bg-black/40 px-2 text-[11px] text-white outline-none placeholder:text-zinc-400 focus:border-teal-500/50"
                 />
                 <button
                   type="submit"
-                  className="btn-gradient h-9 rounded-xl px-3 text-xs font-medium text-white"
+                  disabled={streaming || !ask.trim()}
+                  className="btn-gradient h-7 rounded-lg px-2.5 text-[11px] font-medium text-white disabled:opacity-50"
                 >
-                  Ask
+                  {streaming ? "…" : "Ask"}
                 </button>
               </form>
             )}
 
             {mode === "full" && panel === "answer" && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(["Summarize", "Actions", "Risks"] as const).map((q) => (
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-1">
+                  {(["Summarize", "Actions", "Risks"] as const).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      disabled={streaming}
+                      className="rounded-md border border-white/15 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:border-white/30 hover:text-white disabled:opacity-50"
+                      onClick={() => void runAsk(q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
                   <button
-                    key={q}
                     type="button"
-                    className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-zinc-400 hover:border-white/20 hover:text-white"
-                    onClick={() => setAsk(q)}
+                    className="ml-auto inline-flex items-center gap-0.5 text-[9px] text-zinc-400 hover:text-zinc-200"
+                    onClick={() => void window.cueai?.openDashboard()}
                   >
-                    {q}
+                    Dashboard <ExternalLink className="h-2.5 w-2.5" />
                   </button>
-                ))}
+                </div>
                 <button
                   type="button"
-                  className="ml-auto inline-flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300"
-                  onClick={() => void window.cueai?.openDashboard()}
+                  disabled={ending}
+                  onClick={() => void onEndSession()}
+                  className="inline-flex h-7 w-full items-center justify-center gap-1 rounded-lg border border-red-500/40 bg-red-500/20 px-2 text-[11px] font-semibold text-red-100 hover:bg-red-500/30 disabled:opacity-60"
                 >
-                  Dashboard <ExternalLink className="h-3 w-3" />
+                  <Square className="h-3 w-3 fill-current" />
+                  {ending ? "Ending…" : "End Session"}
+                </button>
+              </div>
+            )}
+
+            {!(mode === "full" && panel === "answer") && (
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  disabled={ending}
+                  onClick={() => void onEndSession()}
+                  className="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-lg border border-red-500/40 bg-red-500/20 px-2 text-[11px] font-semibold text-red-100 hover:bg-red-500/30 disabled:opacity-60"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  {ending ? "Ending…" : "End Session"}
                 </button>
               </div>
             )}
@@ -437,17 +486,11 @@ export default function App() {
             {mode === "mini" && (
               <button
                 type="button"
-                className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                className="text-[9px] text-zinc-400 hover:text-zinc-200"
                 onClick={() => setMode("collapsed")}
               >
                 Collapse · Esc hides
               </button>
-            )}
-
-            {presenting && (
-              <p className="text-center text-[10px] text-zinc-500">
-                Docked · reduced UI · capture exclusion when OS allows
-              </p>
             )}
           </div>
         )}
@@ -470,7 +513,7 @@ function IconBtn({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-white"
+      className="rounded p-1 text-zinc-300 hover:bg-white/10 hover:text-white"
     >
       {children}
     </button>
@@ -488,7 +531,7 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-zinc-300 hover:border-white/20"
+      className="inline-flex items-center gap-0.5 rounded-md border border-white/15 bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-200 hover:border-white/30"
     >
       {children}
     </button>

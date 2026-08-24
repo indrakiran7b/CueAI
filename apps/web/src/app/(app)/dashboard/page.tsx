@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { motion, type Variants } from "framer-motion";
 import {
   ArrowUpRight,
-  Clock,
   FileText,
   Library,
   Monitor,
-  Pin,
   Sparkles,
   Video,
 } from "lucide-react";
@@ -19,9 +18,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/misc";
 import {
   activity,
@@ -30,143 +26,211 @@ import {
   usageSeries,
 } from "@/lib/mock-data";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useTheme } from "@/components/providers/theme-provider";
+import { openCompanionOverlay, toggleCompanionOverlay } from "@/lib/desktop";
 import { greetingFor } from "@/lib/auth";
+import "./dashboard.css";
+
+const fade: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: 0.04 * i,
+      duration: 0.35,
+      ease: [0.22, 1, 0.36, 1] as const,
+    },
+  }),
+};
+
+const resources = [
+  { label: "AI tokens", value: 68, hint: "340k / 500k" },
+  { label: "Storage", value: 42, hint: "8.4 GB / 20 GB" },
+  { label: "Desktop Companion", value: 91, hint: "Connected" },
+];
+
+const quickActions = [
+  { href: "/resume", icon: FileText, label: "Tailor a resume" },
+  { href: "/knowledge", icon: Library, label: "Upload to Knowledge" },
+  { href: "/screen-context", icon: Monitor, label: "Enable Screen AI" },
+  { href: "/translation", icon: Sparkles, label: "Start translation" },
+];
 
 export default function DashboardPage() {
   const { session, ready } = useAuth();
+  const { theme } = useTheme();
   const name = session?.name || "there";
   const workspace = session?.workspace || "Your Workspace";
+  const isLight = theme === "light";
+  const chartTick = isLight ? "#999999" : "#666666";
+  const chartStroke = isLight ? "#090909" : "#ffffff";
+  const tooltipStyle = {
+    background: isLight ? "#ffffff" : "#1c1c1c",
+    border: isLight ? "1px solid rgba(0, 0, 0, 0.08)" : "1px solid #262626",
+    borderRadius: 12,
+    fontSize: 12,
+    color: isLight ? "#090909" : "#ffffff",
+  };
+
+  async function handleCompanion() {
+    await toggleCompanionOverlay();
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-fade-up">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
+    <div data-dashboard>
+      {/* Hero strip */}
+      <motion.header
+        className="db-hero"
+        custom={0}
+        variants={fade}
+        initial="hidden"
+        animate="show"
+      >
+        <div className="db-hero-copy">
+          <h1 className="db-hero-title">
             {ready ? greetingFor(name) : "Welcome"}
           </h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="db-hero-sub">
             {session
               ? `${workspace} · signed in as ${session.email}`
               : "Your AI copilot is ready. Sign up to personalize this workspace."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/meetings/live">
-            <Button variant="gradient">
-              <Sparkles className="h-4 w-4" />
-              Start live session
-            </Button>
+        <div className="db-hero-actions">
+          <Link
+            href="/meetings/live"
+            className="db-btn-primary"
+            onClick={() => {
+              void openCompanionOverlay();
+            }}
+          >
+            <Video className="h-4 w-4" />
+            Start meeting
           </Link>
-          <Link href="/companion">
-            <Button variant="outline">
-              <Monitor className="h-4 w-4" />
-              Open Companion
-            </Button>
-          </Link>
+          <button type="button" className="db-btn-ghost" onClick={() => void handleCompanion()}>
+            <Monitor className="h-4 w-4" />
+            Companion
+          </button>
         </div>
-      </div>
+      </motion.header>
 
-      {/* Stats */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((s) => (
-          <Card key={s.label} hover className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-subtle">
-              {s.label}
+      {/* Metrics row */}
+      <div className="db-metrics">
+        {stats.map((s, i) => (
+          <motion.div
+            key={s.label}
+            className="db-metric"
+            custom={i + 1}
+            variants={fade}
+            initial="hidden"
+            animate="show"
+          >
+            <p className="db-metric-label">{s.label}</p>
+            <p className="db-metric-value">{s.value}</p>
+            <p className="db-metric-delta">
+              <ArrowUpRight className="mr-0.5 inline h-3 w-3" />
+              {s.delta}
             </p>
-            <div className="mt-2 flex items-end justify-between">
-              <p className="font-display text-3xl font-semibold tracking-tight">
-                {s.value}
-              </p>
-              <span className="inline-flex items-center gap-0.5 text-xs font-medium text-teal-400">
-                <ArrowUpRight className="h-3 w-3" />
-                {s.delta}
-              </span>
-            </div>
-          </Card>
+          </motion.div>
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        {/* Chart */}
-        <Card className="p-5">
-          <CardHeader>
+      {/* Main: chart + resources */}
+      <div className="db-main">
+        <motion.section
+          className="db-panel"
+          custom={5}
+          variants={fade}
+          initial="hidden"
+          animate="show"
+        >
+          <div className="db-panel-head">
             <div>
-              <CardTitle>Weekly AI usage</CardTitle>
-              <CardDescription>Meetings and token volume</CardDescription>
+              <h2 className="db-section-title">Weekly AI usage</h2>
+              <p className="db-section-sub">Meetings and token volume</p>
             </div>
-            <Badge variant="info">This week</Badge>
-          </CardHeader>
-          <div className="h-56">
+            <span className="db-chip">This week</span>
+          </div>
+          <div className="db-chart">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={usageSeries}>
                 <defs>
                   <linearGradient id="usageFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#0099ff" stopOpacity={0.32} />
+                    <stop offset="100%" stopColor="#0099ff" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
                   dataKey="day"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "#71717a", fontSize: 12 }}
+                  tick={{ fill: chartTick, fontSize: 12 }}
                 />
                 <YAxis hide />
-                <Tooltip
-                  contentStyle={{
-                    background: "#18181b",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                  }}
-                />
+                <Tooltip contentStyle={tooltipStyle} />
                 <Area
                   type="monotone"
                   dataKey="tokens"
-                  stroke="#2dd4bf"
+                  stroke={chartStroke}
                   fill="url(#usageFill)"
                   strokeWidth={2}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </Card>
+        </motion.section>
 
-        {/* Usage meters */}
-        <Card className="space-y-5 p-5">
-          <CardTitle>Resource usage</CardTitle>
-          {[
-            { label: "AI tokens", value: 68, hint: "340k / 500k" },
-            { label: "Storage", value: 42, hint: "8.4 GB / 20 GB" },
-            { label: "Desktop Companion", value: 91, hint: "Connected" },
-          ].map((u) => (
-            <div key={u.label}>
-              <div className="mb-1.5 flex justify-between text-sm">
-                <span className="text-muted">{u.label}</span>
-                <span className="text-subtle">{u.hint}</span>
-              </div>
-              <Progress value={u.value} />
-            </div>
-          ))}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--primary-muted)] p-3 text-sm text-teal-300">
-            Pro plan renews Aug 28 · Manage in Settings → Billing
+        <motion.section
+          className="db-panel db-meters"
+          custom={6}
+          variants={fade}
+          initial="hidden"
+          animate="show"
+        >
+          <div>
+            <h2 className="db-section-title">Resource usage</h2>
+            <p className="db-section-sub">Plan capacity this cycle</p>
           </div>
-        </Card>
+          <div className="space-y-5">
+            {resources.map((u) => (
+              <div key={u.label}>
+                <div className="db-meter-row">
+                  <span className="db-meter-label">{u.label}</span>
+                  <span className="db-meter-hint">{u.hint}</span>
+                </div>
+                <Progress value={u.value} />
+              </div>
+            ))}
+          </div>
+          <p className="db-plan-note">
+            Pro plan renews Aug 28 ·{" "}
+            <Link href="/settings" className="db-link">
+              Manage billing
+            </Link>
+          </p>
+        </motion.section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr_1fr]">
-        {/* Recent meetings */}
-        <Card className="p-5">
-          <CardHeader>
+      {/* Lower: meetings · actions · activity */}
+      <div className="db-lower">
+        <motion.section
+          className="db-panel"
+          custom={7}
+          variants={fade}
+          initial="hidden"
+          animate="show"
+        >
+          <div className="db-panel-head">
             <div>
-              <CardTitle>Recent meetings</CardTitle>
-              <CardDescription>Jump back into context</CardDescription>
+              <h2 className="db-section-title">Recent meetings</h2>
+              <p className="db-section-sub">Jump back into context</p>
             </div>
-            <Link href="/meetings" className="text-sm text-primary hover:underline">
+            <Link href="/meetings" className="db-link">
               View all
             </Link>
-          </CardHeader>
-          <div className="space-y-2">
+          </div>
+          <div>
             {recentMeetings.map((m) => (
               <Link
                 key={m.id}
@@ -175,74 +239,74 @@ export default function DashboardPage() {
                     ? "/meetings/live"
                     : `/meetings/${m.id}/summary`
                 }
-                className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-[var(--border)] hover:bg-[var(--surface-hover)]"
+                className="db-meeting"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-primary">
-                  <Video className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium">{m.title}</p>
-                    {m.status === "live" && <Badge variant="success">Live</Badge>}
-                  </div>
-                  <p className="text-xs text-subtle">
-                    {m.time} · {m.duration} · {m.attendees} people
+                <div>
+                  <p className="db-meeting-title">{m.title}</p>
+                  <p className="db-meeting-meta">
+                    {m.time} · {m.attendees} people
                   </p>
                 </div>
-                <Clock className="h-4 w-4 text-subtle" />
+                <div className="db-meeting-side">
+                  {m.status === "live" ? (
+                    <span className="db-live">Live</span>
+                  ) : (
+                    m.duration
+                  )}
+                </div>
               </Link>
             ))}
           </div>
-        </Card>
+        </motion.section>
 
-        {/* Quick actions */}
-        <Card className="p-5">
-          <CardTitle className="mb-4">Quick actions</CardTitle>
-          <div className="grid gap-2">
-            {[
-              { href: "/resume", icon: FileText, label: "Tailor a resume" },
-              { href: "/knowledge", icon: Library, label: "Upload to Knowledge" },
-              { href: "/screen-context", icon: Monitor, label: "Enable Screen AI" },
-              { href: "/translation", icon: Sparkles, label: "Start translation" },
-            ].map((a) => (
-              <Link
-                key={a.href}
-                href={a.href}
-                className="flex items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-3 text-sm transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
-              >
-                <a.icon className="h-4 w-4 text-primary" />
-                {a.label}
+        <motion.section
+          className="db-panel"
+          custom={8}
+          variants={fade}
+          initial="hidden"
+          animate="show"
+        >
+          <div className="db-panel-head">
+            <h2 className="db-section-title">Quick actions</h2>
+          </div>
+          <div className="db-actions">
+            {quickActions.map((a) => (
+              <Link key={a.href} href={a.href} className="db-action">
+                <span>{a.label}</span>
+                <a.icon className="db-action-icon h-4 w-4" />
               </Link>
             ))}
           </div>
-        </Card>
+        </motion.section>
 
-        {/* Activity + pins */}
-        <Card className="p-5">
-          <CardHeader>
-            <CardTitle>Recent activity</CardTitle>
-            <Pin className="h-4 w-4 text-subtle" />
-          </CardHeader>
-          <div className="space-y-3">
+        <motion.section
+          className="db-panel"
+          custom={9}
+          variants={fade}
+          initial="hidden"
+          animate="show"
+        >
+          <div className="db-panel-head">
+            <h2 className="db-section-title">Activity</h2>
+          </div>
+          <div className="db-activity">
             {activity.map((a) => (
-              <div key={a.id} className="flex gap-3">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+              <div key={a.id} className="db-activity-item">
+                <span className="db-activity-dot" />
                 <div>
-                  <p className="text-sm text-foreground/90">{a.text}</p>
-                  <p className="text-[11px] text-subtle">{a.time}</p>
+                  <p className="db-activity-text">{a.text}</p>
+                  <p className="db-activity-time">{a.time}</p>
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-5 rounded-xl border border-[var(--border)] p-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-subtle">
-              Pinned answer
-            </p>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted">
+          <div className="db-pin">
+            <p className="db-pin-label">Pinned answer</p>
+            <p className="db-pin-body">
               Target p95 &lt; 800ms for suggestion cards during live sessions.
             </p>
           </div>
-        </Card>
+        </motion.section>
       </div>
     </div>
   );

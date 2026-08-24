@@ -1,450 +1,618 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { Inter } from "next/font/google";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowRight,
-  Check,
-  ChevronDown,
-  Mic,
-  Sparkles,
-  Shield,
-  Zap,
-  Languages,
-  Monitor,
-  FileText,
-  Library,
-} from "lucide-react";
-import { Logo } from "@/components/ui/logo";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { faqs, pricing, testimonials } from "@/lib/mock-data";
-import { useState } from "react";
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useSpring,
+} from "framer-motion";
+import { ArrowRight, ChevronDown, Check } from "lucide-react";
+import { faqs, pricing } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { useLandingParallax } from "@/components/landing/use-landing-parallax";
+import "./landing.css";
 
-const features = [
+/* Inter with tight display tracking ≈ Framer GT Walsheim substitute */
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-landing-sans",
+  display: "swap",
+});
+
+const display = Inter({
+  subsets: ["latin"],
+  variable: "--font-landing-display",
+  display: "swap",
+  weight: ["500", "600", "700"],
+});
+
+const agentFeatures = [
   {
-    icon: Mic,
-    title: "Live AI Assistant",
-    desc: "Real-time answers grounded in your conversation and knowledge base.",
+    title: "Listen with an agent",
+    body: "A professional meeting agent, native to your desktop. It works directly in the room to capture and refine live, with every answer visible, editable, and under your control.",
+    cta: "Start with CueAI",
+    href: "/signup",
   },
   {
-    icon: Sparkles,
-    title: "Instant Summaries",
-    desc: "Decisions, action items, and follow-up drafts the moment the call ends.",
+    title: "Write with an agent",
+    body: "Manage more. Publish faster. CueAI turns the call into decisions, owners, and follow-ups — connected to your knowledge so content and context stay in sync.",
+    cta: "Start with CueAI",
+    href: "/signup",
   },
   {
-    icon: Monitor,
-    title: "Desktop Companion",
-    desc: "A floating glass panel that stays with you across every meeting app.",
-  },
-  {
-    icon: Languages,
-    title: "Live Translation",
-    desc: "English, Hindi, and Telugu — bilingual transcripts and AI replies.",
-  },
-  {
-    icon: FileText,
-    title: "Resume Tailor",
-    desc: "Match roles with ATS scores, keyword gaps, and side-by-side rewrites.",
-  },
-  {
-    icon: Library,
-    title: "Knowledge Base",
-    desc: "Semantic search across docs with citations in every AI answer.",
+    title: "Ship with an agent",
+    body: "From live answers to bilingual transcripts and resume rewrites, CueAI turns wild meeting chaos into work you can act on before anyone leaves the call.",
+    cta: "Start with CueAI",
+    href: "/signup",
   },
 ];
 
-const logos = ["Northstar", "Lumen", "Helix", "Orbit", "Vertex", "Pulse"];
+const spotlights = [
+  {
+    className: "lp-spotlight-magenta",
+    kicker: "Live",
+    title: "Designing calmer meetings",
+    meta: "Inspiration",
+  },
+  {
+    className: "lp-spotlight-violet",
+    kicker: "Live",
+    title: "Organic answers in modern UI",
+    meta: "Product",
+  },
+  {
+    className: "lp-spotlight-orange",
+    kicker: "Live",
+    title: "Earthy privacy, sharp clarity",
+    meta: "Guide",
+  },
+  {
+    className: "lp-spotlight-coral",
+    kicker: "Live",
+    title: "From talk track to pixels",
+    meta: "Design",
+  },
+];
+
+const platform = [
+  { title: "Performance", body: "Sub-800ms suggestions. Core Web–ready companion.", stat: "<800ms" },
+  { title: "CMS of meetings", body: "Search every decision, owner, and citation.", stat: "Semantic" },
+  { title: "SEO for recall", body: "Find what was said weeks later, instantly.", stat: "Indexed" },
+  { title: "Collaboration", body: "Pin, share, and assign without leaving the room.", stat: "Realtime" },
+  { title: "Localization", body: "English, Hindi, Telugu — bilingual by default.", stat: "3 langs" },
+  { title: "Hosting & privacy", body: "Privacy mode hides Cue from screen share.", stat: "99.99%" },
+];
+
+const customers = ["Northstar", "Lumen", "Helix", "Orbit", "Vertex", "Pulse", "Miro", "Zapier"];
+
+function Logo({ size = "md" }: { size?: "sm" | "md" }) {
+  return (
+    <Link href="/" className="inline-flex items-center gap-2" aria-label="CueAI home">
+      <span
+        className={cn(
+          "inline-flex items-center justify-center rounded-[10px] bg-white font-semibold text-black",
+          size === "sm" ? "h-7 w-7 text-xs" : "h-8 w-8 text-sm"
+        )}
+      >
+        C
+      </span>
+      <span className={cn("lp-display text-white", size === "sm" ? "text-lg" : "text-xl")}>
+        CueAI
+      </span>
+    </Link>
+  );
+}
+
+function Pill({
+  href,
+  children,
+  variant = "primary",
+  className,
+}: {
+  href: string;
+  children: ReactNode;
+  variant?: "primary" | "ghost";
+  className?: string;
+}) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const sx = useSpring(x, { stiffness: 280, damping: 20 });
+  const sy = useSpring(y, { stiffness: 280, damping: 20 });
+
+  return (
+    <motion.a
+      ref={ref}
+      href={href}
+      className={cn(variant === "primary" ? "lp-btn-primary" : "lp-btn-ghost", className)}
+      style={{ x: sx, y: sy }}
+      onMouseMove={(e) => {
+        const el = ref.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        x.set((e.clientX - r.left - r.width / 2) * 0.2);
+        y.set((e.clientY - r.top - r.height / 2) * 0.2);
+      }}
+      onMouseLeave={() => {
+        x.set(0);
+        y.set(0);
+      }}
+      whileTap={{ scale: 0.98 }}
+    >
+      {children}
+    </motion.a>
+  );
+}
+
+function LiveMock() {
+  const lines = [
+    { who: "Priya", text: "What's our latency budget for live answers?" },
+    { who: "You", text: "Sub-800ms. Summaries can stay async." },
+    { who: "CueAI", text: "Target p95 under 800ms. Stream from the transcript buffer." },
+  ];
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setI((v) => (v + 1) % lines.length), 2400);
+    return () => window.clearInterval(id);
+  }, [lines.length]);
+
+  return (
+    <div className="lp-mock">
+      <div className="flex items-center gap-2 border-b border-[var(--lp-hairline)] px-4 py-3">
+        <span className="lp-dot" />
+        <span className="lp-dot" />
+        <span className="lp-dot" />
+        <span className="ml-2 text-xs text-[var(--lp-ink-muted)]">CueAI · Live Session</span>
+        <span className="ml-auto rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white">
+          Live
+        </span>
+      </div>
+      <div className="grid md:grid-cols-2">
+        <div className="space-y-3 border-b border-[var(--lp-hairline)] p-5 md:border-b-0 md:border-r">
+          <div className="flex h-8 items-end gap-1">
+            {Array.from({ length: 16 }).map((_, n) => (
+              <motion.span
+                key={n}
+                className="w-1 rounded-full bg-white/80"
+                animate={{ height: [6, 8 + ((n * 9) % 18), 6] }}
+                transition={{ duration: 1.1, repeat: Infinity, delay: n * 0.04 }}
+              />
+            ))}
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="rounded-2xl border border-[var(--lp-hairline)] bg-[var(--lp-surface-2)] px-3 py-3"
+            >
+              <p className="text-[11px] font-medium text-[var(--lp-accent)]">{lines[i].who}</p>
+              <p className="mt-1 text-sm text-white/90">{lines[i].text}</p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        <div className="space-y-3 p-5">
+          <p className="text-xs uppercase tracking-[0.14em] text-[var(--lp-ink-muted)]">
+            Suggested reply
+          </p>
+          <div className="rounded-2xl border border-[var(--lp-hairline)] bg-[var(--lp-surface-2)] p-4 text-sm leading-relaxed text-white/90">
+            Keep p95 under 800ms. Stream tokens from the live transcript; defer deep retrieval when
+            confidence dips.
+          </div>
+          <div className="flex gap-2">
+            <button type="button" className="lp-btn-primary !px-3 !py-1.5 text-xs">
+              Pin
+            </button>
+            <button type="button" className="lp-btn-ghost !px-3 !py-1.5 text-xs">
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useLandingParallax(rootRef);
+
+  const marqueeItems = [
+    "Live transcription",
+    "Desktop companion",
+    "Privacy mode",
+    "Action items",
+    "Knowledge search",
+    "Bilingual AI",
+    "Meeting summaries",
+    "Screen context",
+    "Resume tailor",
+    "Enterprise controls",
+  ];
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-background text-foreground">
-      {/* Nav */}
-      <header className="relative z-40 border-b border-[var(--border)]/60">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Logo size="md" />
-          <nav className="hidden items-center gap-8 text-sm text-muted md:flex">
-            <a href="#features" className="transition hover:text-foreground">
-              Product
-            </a>
-            <a href="#pricing" className="transition hover:text-foreground">
-              Pricing
-            </a>
-            <a href="#faq" className="transition hover:text-foreground">
-              FAQ
-            </a>
-            <Link href="/dashboard" className="transition hover:text-foreground">
-              Open App
-            </Link>
+    <div
+      ref={rootRef}
+      data-landing
+      className={cn(inter.variable, display.variable, "min-h-screen overflow-x-hidden")}
+    >
+      {/* Nav — Framer: sticky, hairline, centered links */}
+      <header className="lp-nav">
+        <div className="mx-auto flex h-[60px] max-w-[1200px] items-center justify-between px-5">
+          <Logo />
+          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 text-[13px] text-[var(--lp-ink-muted)] md:flex">
+            {[
+              ["Product", "#agents"],
+              ["Platform", "#platform"],
+              ["Pricing", "#pricing"],
+              ["Stories", "#stories"],
+            ].map(([label, href]) => (
+              <a key={label} href={href} className="transition hover:text-white">
+                {label}
+              </a>
+            ))}
           </nav>
           <div className="flex items-center gap-2">
-            <Button href="/login" variant="ghost" size="sm">
+            <Link
+              href="/login"
+              className="hidden px-3 py-2 text-[13px] text-[var(--lp-ink-muted)] transition hover:text-white sm:inline"
+            >
               Log in
-            </Button>
-            <Button href="/signup" variant="gradient" size="sm">
-              Start Free
-            </Button>
+            </Link>
+            <Pill href="/signup" className="!px-3.5 !py-2 text-[13px]">
+              Sign up
+            </Pill>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative isolate overflow-hidden">
-        <div className="aurora">
-          <div className="aurora-mid" />
-        </div>
-        <div className="grid-fade absolute inset-0" />
-
-        <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-20 sm:px-6 sm:pt-28">
+      {/* Hero — Framer: huge centered display + twin pills */}
+      <section className="relative px-5 pb-16 pt-20 sm:pt-28">
+        <div className="lp-par-copy mx-auto max-w-[920px] text-center">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="mx-auto max-w-3xl text-center"
+            transition={{ duration: 0.5 }}
+            className="mb-7 inline-flex"
           >
-            <Badge variant="info" className="mb-6 px-3 py-1">
-              <Sparkles className="h-3 w-3" />
-              AI Meeting Copilot for modern teams
-            </Badge>
-            <h1 className="font-display text-4xl font-semibold tracking-tight sm:text-5xl md:text-6xl md:leading-[1.08]">
-              Your AI Copilot for{" "}
-              <span className="text-gradient">Every Meeting.</span>
-            </h1>
-            <p className="mx-auto mt-5 max-w-xl text-base text-muted sm:text-lg">
-              Live transcription, real-time answers, and enterprise-grade summaries —
-              so you stay present while CueAI captures everything that matters.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Button href="/signup" variant="gradient" size="lg">
-                Start Free
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Button href="/login" variant="outline" size="lg">
-                Book Demo
-              </Button>
-            </div>
-            <p className="mt-4 text-xs text-subtle">
-              No credit card · SOC2-ready · Works with Zoom, Meet & Teams
-            </p>
+            <span className="lp-chip">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--lp-accent)]" />
+              CueAI 2.0 · Everything we shipped
+            </span>
           </motion.div>
-
-          {/* Product mock */}
-          <motion.div
-            initial={{ opacity: 0, y: 28 }}
+          <motion.h1
+            className="lp-display mx-auto text-[clamp(2.75rem,8.5vw,5.75rem)] text-white"
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-            className="relative mx-auto mt-16 max-w-5xl"
+            transition={{ duration: 0.65, delay: 0.05 }}
           >
-            <div className="glow-border float-y rounded-[24px]">
-              <div className="glass-strong overflow-hidden rounded-[24px] shadow-[var(--shadow-lg)]">
-                <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-500/80" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500/80" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-teal-500/80" />
-                  <span className="ml-3 text-xs text-subtle">CueAI · Live Session</span>
-                  <Badge variant="success" className="ml-auto">
-                    Recording
-                  </Badge>
-                </div>
-                <div className="grid gap-0 md:grid-cols-[1.2fr_0.8fr]">
-                  <div className="space-y-3 border-b border-[var(--border)] p-5 md:border-b-0 md:border-r">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 items-end gap-0.5">
-                        {Array.from({ length: 16 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className="wave-bar w-1 rounded-full bg-gradient-to-t from-teal-600 to-teal-400"
-                            style={{
-                              height: `${10 + ((i * 7) % 18)}px`,
-                              animationDelay: `${i * 0.08}s`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted">00:18:42 · 4 speakers</span>
-                    </div>
-                    {[
-                      {
-                        who: "Priya",
-                        text: "What's our latency budget for real-time answers?",
-                      },
-                      {
-                        who: "You",
-                        text: "Sub-800ms for suggestions. Summaries can be async.",
-                      },
-                      {
-                        who: "Marcus",
-                        text: "We should keep screen context opt-in for enterprise.",
-                      },
-                    ].map((line) => (
-                      <div
-                        key={line.text}
-                        className="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 px-3 py-2.5"
-                      >
-                        <p className="text-[11px] font-medium text-primary">{line.who}</p>
-                        <p className="mt-0.5 text-sm text-foreground/90">{line.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-3 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-subtle">
-                      AI Answers
-                    </p>
-                    <div className="rounded-2xl border border-violet-500/25 bg-violet-500/10 p-4">
-                      <p className="text-xs font-medium text-violet-300">Suggested reply</p>
-                      <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-                        Target p95 under 800ms. Stream tokens from the local transcript
-                        buffer; defer deep RAG when confidence drops below 0.7.
-                      </p>
-                      <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="primary">
-                          Pin
-                        </Button>
-                        <Button size="sm" variant="ghost">
-                          Copy
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-[var(--border)] p-4">
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <Shield className="h-3.5 w-3.5 text-teal-400" />
-                        Privacy on · Audio only
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Floating chips */}
-            <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 5, repeat: Infinity }}
-              className="absolute -left-2 top-10 hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 shadow-lg sm:block lg:-left-8"
-            >
-              <div className="flex items-center gap-2 text-xs">
-                <Zap className="h-3.5 w-3.5 text-amber-400" />
-                Answer in 640ms
-              </div>
-            </motion.div>
-            <motion.div
-              animate={{ y: [0, 10, 0] }}
-              transition={{ duration: 6, repeat: Infinity }}
-              className="absolute -right-2 bottom-16 hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2 shadow-lg sm:block lg:-right-6"
-            >
-              <div className="flex items-center gap-2 text-xs">
-                <Languages className="h-3.5 w-3.5 text-violet-400" />
-                EN · HI · TE
-              </div>
-            </motion.div>
+            CueAI is the meeting agent for every step from live to launch
+          </motion.h1>
+          <motion.p
+            className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-[var(--lp-ink-muted)] sm:text-lg"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.12 }}
+          >
+            Go from conversation to decisions with an agent that listens, answers, and writes —
+            editable, private, and ready before the call ends.
+          </motion.p>
+          <motion.div
+            className="mt-9 flex flex-wrap items-center justify-center gap-3"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.18 }}
+          >
+            <Pill href="/signup">
+              Get started for free
+              <ArrowRight className="h-4 w-4" />
+            </Pill>
+            <Pill href="/login" variant="ghost">
+              Download app
+            </Pill>
           </motion.div>
-        </div>
-      </section>
-
-      {/* Logos */}
-      <section className="border-y border-[var(--border)] py-10">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <p className="mb-6 text-center text-xs font-medium uppercase tracking-[0.16em] text-subtle">
-            Trusted by product teams at
+          <p className="mt-6 text-xs text-[var(--lp-ink-dim)]">
+            Trusted in live rooms ·{" "}
+            <Link href="#stories" className="lp-link">
+              Meet our customers
+            </Link>
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
-            {logos.map((name) => (
-              <span
-                key={name}
-                className="font-display text-lg font-semibold tracking-tight text-foreground/25"
-              >
-                {name}
-              </span>
-            ))}
-          </div>
+        </div>
+
+        <motion.div
+          className="lp-par-stage mx-auto mt-16 max-w-[1100px]"
+          initial={{ opacity: 0, y: 36 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.75, delay: 0.22 }}
+        >
+          <LiveMock />
+        </motion.div>
+      </section>
+
+      {/* Infinite marquee */}
+      <section className="lp-marquee py-4" aria-label="Capabilities">
+        <div className="lp-marquee-track">
+          {[0, 1].map((copy) => (
+            <div key={copy} className="lp-marquee-group" aria-hidden={copy === 1 || undefined}>
+              {Array.from({ length: 2 }).flatMap((_, round) =>
+                marqueeItems.map((t) => (
+                  <span key={`${copy}-${round}-${t}`} className="lp-marquee-item">
+                    {t}
+                    <span className="lp-marquee-sep">✦</span>
+                  </span>
+                ))
+              )}
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-4 py-16 sm:grid-cols-4 sm:px-6">
-        {[
-          ["2.4M+", "Meeting minutes"],
-          ["98%", "Transcript accuracy"],
-          ["<800ms", "Answer latency"],
-          ["40%", "Less follow-up time"],
-        ].map(([value, label]) => (
-          <div key={label} className="text-center">
-            <p className="font-display text-3xl font-semibold tracking-tight text-gradient sm:text-4xl">
-              {value}
-            </p>
-            <p className="mt-1 text-sm text-muted">{label}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* Features */}
-      <section id="features" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-            Everything you need in the room — and after.
+      {/* Agents section — Framer editorial blocks */}
+      <section id="agents" className="mx-auto max-w-[1200px] px-5 py-24">
+        <div className="max-w-3xl">
+          <h2 className="lp-display text-[clamp(2.2rem,5vw,4.4rem)] text-white">
+            Agents that work alongside you, not instead of you
           </h2>
-          <p className="mt-3 text-muted">
-            One platform for live assistance, knowledge, and enterprise control.
-          </p>
+          <Pill href="/signup" className="mt-8">
+            Start with agents
+          </Pill>
         </div>
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f, i) => (
+
+        <div className="mt-20 space-y-24">
+          {agentFeatures.map((f, idx) => (
             <motion.div
               key={f.title}
-              initial={{ opacity: 0, y: 12 }}
+              className="grid items-start gap-10 lg:grid-cols-2"
+              initial={{ opacity: 0, y: 28 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.05 }}
-              className="group rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-6 transition duration-300 hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)]"
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.55 }}
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-muted)] text-primary transition group-hover:scale-105">
-                <f.icon className="h-5 w-5" />
+              <div className={idx % 2 === 1 ? "lg:order-2" : undefined}>
+                <h3 className="lp-display text-[clamp(1.8rem,3.5vw,3rem)] text-white">{f.title}</h3>
+                <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--lp-ink-muted)]">
+                  {f.body}
+                </p>
+                <a href={f.href} className="lp-link mt-5 inline-flex items-center gap-1 text-sm">
+                  {f.cta} <ArrowRight className="h-3.5 w-3.5" />
+                </a>
               </div>
-              <h3 className="font-semibold tracking-tight">{f.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{f.desc}</p>
+              <div className={cn("lp-card p-2", idx % 2 === 1 ? "lg:order-1" : undefined)}>
+                <div
+                  className={cn(
+                    "lp-spotlight min-h-[260px]",
+                    spotlights[idx % spotlights.length].className
+                  )}
+                >
+                  <span className="text-xs font-medium uppercase tracking-wider text-white/80">
+                    {spotlights[idx % spotlights.length].kicker}
+                  </span>
+                  <p className="lp-display mt-auto pt-24 text-3xl text-white sm:text-4xl">
+                    {spotlights[idx % spotlights.length].title}
+                  </p>
+                  <p className="mt-2 text-sm text-white/75">
+                    {spotlights[idx % spotlights.length].meta}
+                  </p>
+                </div>
+              </div>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="border-y border-[var(--border)] bg-[var(--background-elevated)]/50 py-16">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <h2 className="text-center font-display text-3xl font-semibold tracking-tight">
-            Built for teams who can&apos;t miss a beat.
+      {/* Gradient atmosphere grid — Framer signature */}
+      <section className="mx-auto max-w-[1200px] px-5 pb-8">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {spotlights.map((s) => (
+            <motion.div
+              key={s.title}
+              whileHover={{ y: -6, scale: 1.01 }}
+              transition={{ type: "spring", stiffness: 320, damping: 22 }}
+              className={cn("lp-spotlight flex flex-col justify-between", s.className)}
+            >
+              <span className="text-xs font-medium uppercase tracking-wider text-white/80">
+                {s.kicker} · {s.meta}
+              </span>
+              <p className="lp-display mt-16 text-2xl leading-tight text-white">{s.title}</p>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* Platform */}
+      <section id="platform" className="mx-auto max-w-[1200px] px-5 py-24">
+        <h2 className="lp-display max-w-3xl text-[clamp(2.2rem,5vw,4rem)] text-white">
+          Not just vibes, a full platform
+        </h2>
+        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {platform.map((p) => (
+            <motion.div
+              key={p.title}
+              whileHover={{ y: -4 }}
+              className="lp-card p-6"
+            >
+              <p className="text-xs uppercase tracking-[0.14em] text-[var(--lp-ink-dim)]">
+                {p.stat}
+              </p>
+              <h3 className="mt-3 text-lg font-medium text-white">{p.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--lp-ink-muted)]">{p.body}</p>
+              <a href="/signup" className="lp-link mt-4 inline-block text-sm">
+                Learn more
+              </a>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* Stories / logos */}
+      <section id="stories" className="mx-auto max-w-[1200px] px-5 py-20">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="lp-display max-w-2xl text-[clamp(2rem,4vw,3.5rem)] text-white">
+            Trusted by teams shipping big meetings
           </h2>
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {testimonials.map((t) => (
-              <blockquote
-                key={t.name}
-                className="rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-6"
-              >
-                <p className="text-sm leading-relaxed text-foreground/90">&ldquo;{t.quote}&rdquo;</p>
-                <footer className="mt-5">
-                  <p className="text-sm font-medium">{t.name}</p>
-                  <p className="text-xs text-subtle">{t.role}</p>
-                </footer>
-              </blockquote>
-            ))}
-          </div>
+          <a href="/signup" className="lp-link text-sm">
+            Read stories
+          </a>
+        </div>
+        <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {customers.map((name) => (
+            <div
+              key={name}
+              className="lp-card flex h-24 items-center justify-center text-sm font-medium tracking-tight text-[var(--lp-ink-muted)]"
+            >
+              {name}
+            </div>
+          ))}
         </div>
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-            Pricing that scales with clarity.
-          </h2>
-          <p className="mt-3 text-muted">Start free. Upgrade when your team is ready.</p>
-        </div>
-        <div className="mt-12 grid gap-4 lg:grid-cols-3">
+      <section id="pricing" className="mx-auto max-w-[1200px] px-5 py-24">
+        <h2 className="lp-display text-center text-[clamp(2.2rem,5vw,4rem)] text-white">
+          Pricing that stays out of the way
+        </h2>
+        <p className="mx-auto mt-4 max-w-lg text-center text-[var(--lp-ink-muted)]">
+          Start free. Upgrade when CueAI is indispensable.
+        </p>
+        <div className="mt-14 grid gap-3 lg:grid-cols-3">
           {pricing.map((plan) => (
             <div
               key={plan.name}
               className={cn(
-                "relative flex flex-col rounded-2xl border p-6",
-                plan.highlighted
-                  ? "glow-border border-transparent bg-[var(--surface-solid)]"
-                  : "border-[var(--border)] bg-[var(--surface-solid)]"
+                "lp-card relative flex flex-col p-6",
+                plan.highlighted && "ring-1 ring-white/25"
               )}
             >
               {plan.highlighted && (
-                <Badge variant="purple" className="absolute -top-2.5 left-6">
+                <span className="absolute -top-2.5 left-5 rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-black">
                   Most popular
-                </Badge>
-              )}
-              <h3 className="font-display text-lg font-semibold">{plan.name}</h3>
-              <p className="mt-1 text-sm text-muted">{plan.desc}</p>
-              <div className="mt-5 flex items-baseline gap-1">
-                <span className="font-display text-4xl font-semibold tracking-tight">
-                  {plan.price}
                 </span>
-                <span className="text-sm text-subtle">{plan.period}</span>
+              )}
+              <h3 className="text-lg font-medium text-white">{plan.name}</h3>
+              <p className="mt-1 text-sm text-[var(--lp-ink-muted)]">{plan.desc}</p>
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="lp-display text-4xl text-white">{plan.price}</span>
+                <span className="text-sm text-[var(--lp-ink-muted)]">{plan.period}</span>
               </div>
               <ul className="mt-6 flex-1 space-y-2.5">
                 {plan.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-2 text-sm text-muted">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
+                  <li key={feat} className="flex gap-2 text-sm text-[var(--lp-ink-muted)]">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-white" />
                     {feat}
                   </li>
                 ))}
               </ul>
-              <Button
+              <Pill
                 href={plan.cta === "Book Demo" ? "/login" : "/signup"}
-                variant={plan.highlighted ? "gradient" : "outline"}
+                variant={plan.highlighted ? "primary" : "ghost"}
                 className="mt-8 w-full"
               >
                 {plan.cta}
-              </Button>
+              </Pill>
             </div>
           ))}
         </div>
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="mx-auto max-w-3xl px-4 pb-20 sm:px-6">
-        <h2 className="text-center font-display text-3xl font-semibold tracking-tight">
-          Frequently asked questions
+      <section id="faq" className="mx-auto max-w-[720px] px-5 py-20">
+        <h2 className="lp-display text-center text-[clamp(2rem,4vw,3.25rem)] text-white">
+          Frequently asked
         </h2>
         <div className="mt-10 space-y-2">
           {faqs.map((item, i) => {
             const open = openFaq === i;
             return (
-              <div
-                key={item.q}
-                className="rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)]"
-              >
+              <div key={item.q} className="lp-card overflow-hidden">
                 <button
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-medium"
+                  type="button"
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-medium text-white"
                   onClick={() => setOpenFaq(open ? null : i)}
                   aria-expanded={open}
                 >
                   {item.q}
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-subtle transition",
-                      open && "rotate-180"
-                    )}
-                  />
+                  <motion.span animate={{ rotate: open ? 180 : 0 }}>
+                    <ChevronDown className="h-4 w-4 text-[var(--lp-ink-muted)]" />
+                  </motion.span>
                 </button>
-                {open && (
-                  <p className="border-t border-[var(--border)] px-5 py-4 text-sm leading-relaxed text-muted">
-                    {item.a}
-                  </p>
-                )}
+                <AnimatePresence initial={false}>
+                  {open && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden border-t border-[var(--lp-hairline)]"
+                    >
+                      <p className="px-5 py-4 text-sm leading-relaxed text-[var(--lp-ink-muted)]">
+                        {item.a}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-[var(--border)]">
-        <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-12 sm:px-6 md:flex-row md:justify-between">
+      {/* Closing — Framer style */}
+      <section className="mx-auto max-w-[920px] px-5 py-28 text-center">
+        <p className="text-sm text-[var(--lp-ink-muted)]">
+          CueAI is the AI meeting agent for creating standout rooms
+        </p>
+        <h2 className="lp-display mt-5 text-[clamp(2.4rem,6vw,4.75rem)] text-white">
+          Your next meeting starts here
+        </h2>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-sm text-[var(--lp-ink-dim)]">
+          {["Start live session", "Build knowledge base", "Launch companion", "Ship summaries"].map(
+            (t) => (
+              <span
+                key={t}
+                className="rounded-full border border-[var(--lp-hairline)] px-3 py-1.5 text-[var(--lp-ink-muted)]"
+              >
+                {t}
+              </span>
+            )
+          )}
+        </div>
+        <div className="mt-10 flex justify-center gap-3">
+          <Pill href="/signup">
+            Get started for free
+            <ArrowRight className="h-4 w-4" />
+          </Pill>
+          <Pill href="/login" variant="ghost">
+            Start without AI
+          </Pill>
+        </div>
+      </section>
+
+      <footer className="border-t border-[var(--lp-hairline-soft)]">
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-10 px-5 py-14 md:flex-row md:justify-between">
           <div>
             <Logo size="sm" />
-            <p className="mt-3 max-w-xs text-sm text-muted">
-              The AI meeting copilot for teams who move fast and stay accountable.
+            <p className="mt-3 max-w-xs text-sm text-[var(--lp-ink-muted)]">
+              The AI meeting agent for teams who ship.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             {[
-              ["Product", ["Features", "Pricing", "Desktop App", "Security"]],
-              ["Company", ["About", "Careers", "Blog", "Contact"]],
-              ["Legal", ["Privacy", "Terms", "DPA", "Status"]],
+              ["Product", ["Agents", "Platform", "Desktop", "Pricing"]],
+              ["Company", ["Stories", "Careers", "Blog", "Contact"]],
+              ["Legal", ["Privacy", "Terms", "Security", "Status"]],
             ].map(([title, links]) => (
               <div key={title as string}>
-                <p className="text-xs font-semibold uppercase tracking-wider text-subtle">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--lp-ink-dim)]">
                   {title as string}
                 </p>
                 <ul className="mt-3 space-y-2">
                   {(links as string[]).map((l) => (
                     <li key={l}>
-                      <a href="#features" className="text-sm text-muted hover:text-foreground">
+                      <a href="#agents" className="text-sm text-[var(--lp-ink-muted)] hover:text-white">
                         {l}
                       </a>
                     </li>
@@ -454,8 +622,8 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-        <div className="border-t border-[var(--border)] py-5 text-center text-xs text-subtle">
-          © {new Date().getFullYear()} CueAI Inc. All rights reserved.
+        <div className="pb-8 text-center text-xs text-[var(--lp-ink-dim)]">
+          © {new Date().getFullYear()} CueAI Inc.
         </div>
       </footer>
     </div>

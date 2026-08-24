@@ -70,6 +70,7 @@ const cueai = {
   pin: (pinned: boolean) => ipcRenderer.invoke(IpcChannels.COMPANION_PIN, pinned),
   setOpacity: (opacity: number) => ipcRenderer.invoke(IpcChannels.COMPANION_SET_OPACITY, opacity),
   openDashboard: () => ipcRenderer.invoke(IpcChannels.COMPANION_OPEN_DASHBOARD),
+  endSession: () => ipcRenderer.invoke(IpcChannels.COMPANION_END_SESSION),
   toggle: () => ipcRenderer.invoke(IpcChannels.COMPANION_TOGGLE),
   activity: () => ipcRenderer.invoke(IpcChannels.COMPANION_ACTIVITY),
   getCaptureStatus: () =>
