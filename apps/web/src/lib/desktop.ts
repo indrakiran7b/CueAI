@@ -80,16 +80,43 @@ export function getDesktop() {
   return typeof window !== "undefined" ? window.cueDesktop : undefined;
 }
 
+let bridgeToken: string | null = null;
+
+async function getBridgeToken(): Promise<string | null> {
+  if (bridgeToken) return bridgeToken;
+  try {
+    const res = await fetch(`${DESKTOP_BRIDGE_URL}/health`, {
+      method: "GET",
+      mode: "cors",
+      credentials: "omit",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { token?: unknown };
+    bridgeToken = typeof body.token === "string" && body.token ? body.token : null;
+    return bridgeToken;
+  } catch {
+    bridgeToken = null;
+    return null;
+  }
+}
+
 async function bridgeFetch(path: string, init?: RequestInit): Promise<boolean> {
   try {
+    const token = path === "/health" ? null : await getBridgeToken();
+    if (path !== "/health" && !token) return false;
     const res = await fetch(`${DESKTOP_BRIDGE_URL}${path}`, {
       ...init,
       mode: "cors",
+      credentials: "omit",
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers || {}),
       },
     });
+    if (res.status === 401 || res.status === 403) {
+      bridgeToken = null;
+    }
     return res.ok;
   } catch {
     return false;
@@ -103,7 +130,7 @@ async function sleep(ms: number) {
 /** True when the Electron desktop app is reachable (in-process or via local bridge). */
 export async function isDesktopAvailable() {
   if (isDesktopApp()) return true;
-  return bridgeFetch("/health", { method: "GET" });
+  return Boolean(await getBridgeToken());
 }
 
 /**
