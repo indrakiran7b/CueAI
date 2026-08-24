@@ -139,7 +139,7 @@ export default function App() {
     }
   }
 
-  const privacyOn = capture?.requested !== false;
+  const privacyOn = capture?.applied === true && capture?.supported !== false;
 
   async function togglePrivacy() {
     bumpActivity();
