@@ -12,6 +12,8 @@ const defaults: CueStoreSchema = {
   companionModeBeforeShare: null,
   companionOpacity: 1,
   companionPinned: true,
+  companionExpanded: false,
+  companionNormalBounds: null,
   launchAtStartup: false,
   recentMeetings: [],
   pinnedAnswers: [],
@@ -20,12 +22,12 @@ const defaults: CueStoreSchema = {
     showNotifications: true,
     globalShortcuts: true,
     excludeFromCapture: true,
-    listenMic: true,
+    listenMic: false,
     listenSystemAudio: false,
     autoPresentOnMeeting: true,
     autoHide: false,
     autoHideMs: 90000,
-    autoCollapse: true,
+    autoCollapse: false,
     autoCollapseMs: 45000,
     presenterOpacity: 0.72,
   },
@@ -46,6 +48,8 @@ function readStore(): CueStoreSchema {
         ...defaults.desktopSettings,
         ...(parsed.desktopSettings || {}),
       },
+      companionExpanded: parsed.companionExpanded ?? defaults.companionExpanded,
+      companionNormalBounds: parsed.companionNormalBounds ?? defaults.companionNormalBounds,
     };
   } catch {
     return { ...defaults };

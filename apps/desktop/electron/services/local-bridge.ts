@@ -1,5 +1,10 @@
 import http from "node:http";
-import { showCompanion, hideCompanion, toggleCompanion } from "../windows/companion-window";
+import {
+  showCompanion,
+  hideCompanion,
+  toggleCompanion,
+  getCompanionBridgeStatus,
+} from "../services/overlay-window-manager";
 import { setMeetingSession, getMeetingSession } from "./screen-share";
 
 /** Loopback-only control port so the web UI (browser or Electron) can open the overlay. */
@@ -58,20 +63,25 @@ export function startLocalBridge() {
       }
 
       if (url.pathname === "/companion/show" && method === "POST") {
-        showCompanion();
-        sendJson(res, 200, { ok: true, action: "show" });
+        await showCompanion();
+        sendJson(res, 200, { ok: true, action: "show", ...getCompanionBridgeStatus() });
         return;
       }
 
       if (url.pathname === "/companion/hide" && method === "POST") {
-        hideCompanion();
-        sendJson(res, 200, { ok: true, action: "hide" });
+        await hideCompanion();
+        sendJson(res, 200, { ok: true, action: "hide", ...getCompanionBridgeStatus() });
         return;
       }
 
       if (url.pathname === "/companion/toggle" && method === "POST") {
-        toggleCompanion();
-        sendJson(res, 200, { ok: true, action: "toggle" });
+        await toggleCompanion();
+        sendJson(res, 200, { ok: true, action: "toggle", ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/companion/status" && method === "GET") {
+        sendJson(res, 200, { ok: true, ...getCompanionBridgeStatus() });
         return;
       }
 
@@ -94,10 +104,10 @@ export function startLocalBridge() {
         });
         // Explicit re-show when already active (e.g. Start Session / Live click).
         if (payload.showCompanion === true) {
-          showCompanion();
+          await showCompanion();
         }
         if (payload.hideCompanion === true) {
-          hideCompanion();
+          await hideCompanion();
         }
         sendJson(res, 200, { ok: true, session: getMeetingSession() });
         return;

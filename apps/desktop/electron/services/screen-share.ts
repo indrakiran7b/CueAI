@@ -5,6 +5,11 @@
  */
 
 import { BrowserWindow, screen } from "electron";
+import {
+  COMPANION_PRESENTER_HEIGHT,
+  COMPANION_PRESENTER_WIDTH,
+  clampBoundsToWorkArea,
+} from "./companion-bounds";
 import { getStoreValue, setStoreValue } from "./store";
 import type { CompanionMode } from "../ipc/channels";
 
@@ -205,8 +210,8 @@ export function dockPresenterToEdge(win: BrowserWindow) {
   const bounds = win.getBounds();
   const display = screen.getDisplayMatching(bounds);
   const wa = display.workArea;
-  const width = 360;
-  const height = 220;
+  const width = COMPANION_PRESENTER_WIDTH;
+  const height = COMPANION_PRESENTER_HEIGHT;
   const midX = bounds.x + bounds.width / 2;
   const dockRight = midX >= wa.x + wa.width / 2;
   const x = dockRight ? wa.x + wa.width - width - 16 : wa.x + 16;
@@ -214,7 +219,7 @@ export function dockPresenterToEdge(win: BrowserWindow) {
     Math.max(wa.y + 48, bounds.y),
     wa.y + wa.height - height - 16
   );
-  win.setBounds({ x, y, width, height }, true);
+  win.setBounds(clampBoundsToWorkArea({ x, y, width, height }), true);
 }
 
 /** Keep saved bounds on a visible display (multi-monitor safe). */

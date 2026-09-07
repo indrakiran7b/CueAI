@@ -14,9 +14,7 @@
     "build:desktop": "npm run build -w @cueai/desktop",
     "dist:desktop": "node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop",
     "start": "npm run start -w @cueai/web",
-    "lint": "npm run lint -w @cueai/web",
-    "ngrok": "node scripts/ngrok-web.cjs",
-    "client-preview": "node scripts/client-preview.cjs"
+    "lint": "npm run lint -w @cueai/web"
   },
   "dependencies": {
     "electron-builder": "^26.15.3"
@@ -24,8 +22,5 @@
   "allowScripts": {
     "electron@37.10.3": true,
     "esbuild@0.28.1": true
-  },
-  "devDependencies": {
-    "@ngrok/ngrok": "^1.7.0"
   }
 }

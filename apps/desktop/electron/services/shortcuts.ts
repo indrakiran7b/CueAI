@@ -1,6 +1,6 @@
 import { globalShortcut, BrowserWindow } from "electron";
 import { getStoreValue } from "../services/store";
-import { showCompanion, toggleCompanion } from "../windows/companion-window";
+import { toggleCompanion } from "../windows/companion-window";
 
 export function registerGlobalShortcuts(getMainWindow: () => BrowserWindow | null) {
   if (!getStoreValue("desktopSettings").globalShortcuts) return;
@@ -39,9 +39,9 @@ export function registerGlobalShortcuts(getMainWindow: () => BrowserWindow | nul
   // Esc is handled on the companion window (before-input-event) so it does not
   // steal Escape from the main CueAI UI / web forms.
 
-  // Also expose Ctrl+Shift+C for companion (legacy)
+  // Ctrl+Shift+C — toggle companion (legacy alias)
   globalShortcut.register("CommandOrControl+Shift+C", () => {
-    showCompanion();
+    toggleCompanion();
   });
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Bookmark,
   Camera,
@@ -12,6 +12,7 @@ import {
   Mic,
   MicOff,
   Minimize2,
+  Maximize2,
   Pin,
   Presentation,
   RefreshCw,
@@ -26,13 +27,14 @@ import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService, TranslationService } from "./services";
 import {
+  configureLiveTranscription,
   stopAllListen,
   subscribeListenLevels,
   syncListenSources,
-  transcribeAudioBlob,
   type ListenActiveState,
 } from "./services/audio-listen";
 import type { ScreenshotResult } from "./types/companion";
+import { ResizeHandles } from "./components/ResizeHandles";
 
 const suggestions = [
   "Summarize risks for the board",
@@ -63,7 +65,7 @@ export default function App() {
   const [ask, setAsk] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [answer, setAnswer] = useState(
-    "Turn on Mic or System, speak, then turn it off — transcript updates in Chat."
+    "Turn on Mic or System and speak — transcript and a reply appear within ~2 seconds."
   );
   const [confidence, setConfidence] = useState(0.92);
   const [bookmarkCount, setBookmarkCount] = useState(2);
@@ -73,21 +75,23 @@ export default function App() {
   const [ending, setEnding] = useState(false);
   const [activeLang, setActiveLang] = useState<string | null>(null);
   const [listenLive, setListenLive] = useState<ListenActiveState>({
-    mic: false,
-    systemAudio: false,
+    mic: "idle",
+    system: "idle",
     micLevel: 0,
     systemLevel: 0,
     error: null,
   });
   const [listenBusy, setListenBusy] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
+  const [listenMsg, setListenMsg] = useState<string | null>(null);
+  const [webApiBase, setWebApiBase] = useState("http://127.0.0.1:3000");
+  const [expanded, setExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const aiBusyRef = useRef(false);
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
   const [shotBusy, setShotBusy] = useState(false);
   const [shotPreview, setShotPreview] = useState<string | null>(null);
   const [shotMsg, setShotMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    void window.cueai?.setMode(mode);
-  }, [mode]);
 
   useEffect(() => {
     void window.cueai?.pin(pinned);
@@ -101,15 +105,18 @@ export default function App() {
     void window.cueai?.getCaptureStatus().then((s) => s && setCapture(s));
     void window.cueai?.getSession().then((s) => s && setSession(s));
     void window.cueai?.getListenSources().then((s) => s && setListen(s));
+    void window.cueai?.getWindowState?.().then((s) => s && setExpanded(s.expanded));
     const offMode = window.cueai?.onMode((m) => setMode(m));
     const offSession = window.cueai?.onSession((s) => s && setSession(s));
     const offCapture = window.cueai?.onCaptureStatus((s) => s && setCapture(s));
-    const offListen = window.cueai?.onListenSources((s) => s && setListen(s));
+    const offListen = window.cueai?.onListenSources((s) => setListen(s));
+    const offWindow = window.cueai?.onWindowState?.((s) => setExpanded(s.expanded));
     return () => {
       offMode?.();
       offSession?.();
       offCapture?.();
       offListen?.();
+      offWindow?.();
     };
   }, [setCapture, setListen, setMode, setSession]);
 
@@ -117,40 +124,61 @@ export default function App() {
     return subscribeListenLevels(setListenLive);
   }, []);
 
-  async function ingestBlob(blob: Blob | null, who: string) {
-    if (!blob) return;
-    setTranscribing(true);
-    try {
-      const line = await transcribeAudioBlob(blob, who);
-      if (line?.text) {
+  useEffect(() => {
+    void window.cueai?.getWebOrigin?.().then((origin) => {
+      if (origin) setWebApiBase(origin.replace(/\/$/, ""));
+    });
+  }, []);
+
+  useEffect(() => {
+    configureLiveTranscription({
+      apiBase: webApiBase,
+      onResult: (line) => {
         appendTranscript(line);
-        setPanel("transcript");
-        setAnswer(`Heard (${line.who}): ${line.text}`);
-        setConfidence(0.88);
-      }
-    } catch (err) {
-      setShotMsg(err instanceof Error ? err.message : "Transcription failed");
-    } finally {
-      setTranscribing(false);
-    }
-  }
+        setPanel("answer");
+        setListenMsg(null);
+        if (aiBusyRef.current) return;
+        aiBusyRef.current = true;
+        void (async () => {
+          setStreaming(true);
+          try {
+            const ctx = [
+              ...transcriptRef.current.map((t) => `${t.who}: ${t.text}`),
+              `${line.who}: ${line.text}`,
+            ];
+            const result = await AIService.ask(`Brief response to: ${line.text}`, {
+              transcript: ctx,
+            });
+            setAnswer(result.answer);
+            setConfidence(result.confidence);
+          } catch {
+            setListenMsg("Unable to generate an answer. Try again.");
+          } finally {
+            setStreaming(false);
+            aiBusyRef.current = false;
+          }
+        })();
+      },
+      onError: (msg) => setListenMsg(msg),
+    });
+    return () => configureLiveTranscription(null);
+  }, [appendTranscript, webApiBase]);
 
   useEffect(() => {
     let cancelled = false;
     setListenBusy(true);
     void (async () => {
       try {
-        const { micBlob, systemBlob } = await syncListenSources({
+        await syncListenSources({
           mic: listen.mic,
           systemAudio: listen.systemAudio,
           getDesktopSourceId: async () =>
             (await window.cueai?.getDesktopAudioSourceId()) ?? null,
         });
-        if (cancelled) return;
-        if (micBlob) await ingestBlob(micBlob, "You");
-        if (systemBlob) await ingestBlob(systemBlob, "System");
-      } catch {
-        /* error mirrored via subscribeListenLevels */
+      } catch (err) {
+        if (!cancelled) {
+          setListenMsg(err instanceof Error ? err.message : "Listen failed");
+        }
       } finally {
         if (!cancelled) setListenBusy(false);
       }
@@ -158,7 +186,6 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listen.mic, listen.systemAudio]);
 
   useEffect(() => {
@@ -180,7 +207,9 @@ export default function App() {
     setAnswerPinned(false);
     setCopied(false);
     try {
-      const result = await AIService.ask(q);
+      const result = await AIService.ask(q, {
+        transcript: transcript.map((t) => `${t.who}: ${t.text}`),
+      });
       setAnswer(result.answer);
       setConfidence(result.confidence);
       setTranslated(null);
@@ -214,9 +243,7 @@ export default function App() {
     setEnding(true);
     bumpActivity();
     try {
-      const { micBlob, systemBlob } = await stopAllListen();
-      if (micBlob) await ingestBlob(micBlob, "You");
-      if (systemBlob) await ingestBlob(systemBlob, "System");
+      await stopAllListen();
       await window.cueai?.endSession();
     } finally {
       setEnding(false);
@@ -224,6 +251,48 @@ export default function App() {
   }
 
   const privacyOn = capture?.requested !== false;
+
+  async function toggleExpand() {
+    bumpActivity();
+    if (expanded) {
+      const ok = await window.cueai?.restore();
+      if (ok !== false) setExpanded(false);
+    } else {
+      const ok = await window.cueai?.expand();
+      if (ok !== false) setExpanded(true);
+    }
+  }
+
+  async function resetWindowSize() {
+    bumpActivity();
+    setMenuOpen(false);
+    const ok = await window.cueai?.resetSize();
+    if (ok !== false) setExpanded(false);
+  }
+
+  function setPresenterMode(next: boolean) {
+    bumpActivity();
+    const m = next ? "presenter" : "full";
+    setMode(m);
+    void window.cueai?.setMode(m);
+  }
+
+  function micLabel() {
+    if (listenBusy || listenLive.mic === "requesting_permission" || listenLive.mic === "connecting")
+      return "Starting…";
+    if (listenLive.mic === "processing") return "Thinking";
+    if (listenLive.mic === "error") return "Mic err";
+    if (listen.mic && listenLive.mic === "listening") return "Listening";
+    return "Mic";
+  }
+
+  function systemLabel() {
+    if (listenBusy || listenLive.system === "connecting") return "Starting…";
+    if (listenLive.system === "processing") return "Thinking";
+    if (listenLive.system === "error") return "Sys err";
+    if (listen.systemAudio && listenLive.system === "listening") return "Listening";
+    return "System";
+  }
 
   async function togglePrivacy() {
     bumpActivity();
@@ -268,21 +337,17 @@ export default function App() {
   const listeningAny = listen.mic || listen.systemAudio;
 
   return (
-    <div
-      className="flex h-full flex-col bg-transparent p-1.5"
-      onMouseMove={bumpActivity}
-      onFocus={bumpActivity}
-    >
-      <div
-        className={cn(
-          "glass flex h-full flex-col overflow-hidden rounded-xl",
-          mode === "collapsed" && "justify-center"
-        )}
-      >
-        <header className="drag-region flex items-center gap-1.5 border-b border-white/15 px-2.5 py-1.5">
-          <GripVertical className="h-3.5 w-3.5 text-zinc-400" />
-          <Sparkles className="h-3 w-3 text-teal-400" />
-          <span className="text-[11px] font-semibold tracking-tight">CueAI</span>
+    <div className="overlay-root" onMouseMove={bumpActivity} onFocus={bumpActivity}>
+      <div className="glass overlay-shell">
+        <ResizeHandles />
+        <header className="no-drag flex shrink-0 items-center gap-1 border-b border-white/15 px-2 py-1.5">
+          <div
+            className="header-drag min-w-0 flex-1"
+            onDoubleClick={() => void toggleExpand()}
+          >
+            <GripVertical className="inline h-3.5 w-3.5 shrink-0 text-zinc-400" />
+            <Sparkles className="ml-1 inline h-3 w-3 shrink-0 text-teal-400" />
+            <span className="ml-1 text-[11px] font-semibold tracking-tight">CueAI</span>
           {session.cueAiMode === "private" && (
             <span className="rounded border border-white/20 bg-white/10 px-1 py-0.5 text-[9px] text-zinc-200">
               Private
@@ -293,6 +358,7 @@ export default function App() {
               Live
             </span>
           )}
+          </div>
           <button
             type="button"
             title={capture?.message || (privacyOn ? "Hidden from screen share" : "Visible in screen share")}
@@ -310,48 +376,36 @@ export default function App() {
           <button
             type="button"
             disabled={listenBusy}
-            title={
-              listen.mic
-                ? listenLive.mic
-                  ? `Mic on · ${Math.round(listenLive.micLevel * 100)}%`
-                  : "Mic on"
-                : "Mic off"
-            }
+            title={listen.mic ? "Microphone on" : "Microphone off"}
             onClick={() => void toggleListen("mic")}
             className={cn(
-              "no-drag inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-semibold transition-colors disabled:opacity-60",
+              "no-drag header-btn inline-flex items-center justify-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-semibold transition-colors disabled:opacity-60",
               listen.mic
                 ? "border border-teal-500/40 bg-teal-500/20 text-teal-200 hover:bg-teal-500/30"
                 : "border border-white/20 bg-white/5 text-zinc-300 hover:bg-white/10"
             )}
           >
-            {listen.mic ? <Mic className="h-2 w-2" /> : <MicOff className="h-2 w-2" />}
-            Mic
+            {listen.mic ? <Mic className="h-2 w-2 shrink-0" /> : <MicOff className="h-2 w-2 shrink-0" />}
+            <span className="min-w-[3.5rem] text-center">{micLabel()}</span>
           </button>
           <button
             type="button"
             disabled={listenBusy}
-            title={
-              listen.systemAudio
-                ? listenLive.systemAudio
-                  ? `System on · ${Math.round(listenLive.systemLevel * 100)}%`
-                  : "System on"
-                : "System off"
-            }
+            title={listen.systemAudio ? "System audio on" : "System audio off"}
             onClick={() => void toggleListen("systemAudio")}
             className={cn(
-              "no-drag inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-semibold transition-colors disabled:opacity-60",
+              "no-drag header-btn inline-flex items-center justify-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-semibold transition-colors disabled:opacity-60",
               listen.systemAudio
                 ? "border border-sky-500/40 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30"
                 : "border border-white/20 bg-white/5 text-zinc-300 hover:bg-white/10"
             )}
           >
             {listen.systemAudio ? (
-              <Volume2 className="h-2 w-2" />
+              <Volume2 className="h-2 w-2 shrink-0" />
             ) : (
-              <VolumeX className="h-2 w-2" />
+              <VolumeX className="h-2 w-2 shrink-0" />
             )}
-            System
+            <span className="min-w-[3.5rem] text-center">{systemLabel()}</span>
           </button>
           <button
             type="button"
@@ -368,7 +422,13 @@ export default function App() {
             <Camera className="h-2 w-2" />
             {shotBusy ? "…" : "Shot"}
           </button>
-          <div className="no-drag ml-auto flex items-center">
+          <div className="no-drag relative ml-auto flex shrink-0 items-center">
+            <IconBtn
+              label={expanded ? "Restore compact size" : "Expand overlay"}
+              onClick={() => void toggleExpand()}
+            >
+              {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            </IconBtn>
             <IconBtn
               label={pinned ? "Unpin" : "Pin always on top"}
               onClick={() => {
@@ -380,65 +440,56 @@ export default function App() {
             </IconBtn>
             <IconBtn
               label="Presenter mode"
-              onClick={() => {
-                bumpActivity();
-                setMode(mode === "presenter" ? "full" : "presenter");
-              }}
+              onClick={() => setPresenterMode(mode !== "presenter")}
             >
               <Presentation className={cn("h-3 w-3", presenting && "text-teal-400")} />
             </IconBtn>
-            {!presenting && (
-              <IconBtn
-                label="Mini"
-                onClick={() => {
-                  bumpActivity();
-                  setMode(mode === "mini" ? "full" : "mini");
-                }}
-              >
-                <Minimize2 className="h-3 w-3" />
+            <div className="relative">
+              <IconBtn label="More options" onClick={() => setMenuOpen((o) => !o)}>
+                <span className="text-[10px] font-bold leading-none">⋯</span>
               </IconBtn>
-            )}
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-30 mt-1 min-w-[9rem] rounded-lg border border-white/15 bg-[#0e1416]/95 py-1 shadow-lg">
+                  <button
+                    type="button"
+                    className="block w-full px-2 py-1 text-left text-[10px] text-zinc-200 hover:bg-white/10"
+                    onClick={() => void resetWindowSize()}
+                  >
+                    Reset window size
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-2 py-1 text-left text-[10px] text-zinc-200 hover:bg-white/10"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void window.cueai?.hide();
+                    }}
+                  >
+                    Hide overlay
+                  </button>
+                </div>
+              )}
+            </div>
             <IconBtn label="Hide" onClick={() => void window.cueai?.hide()}>
               <X className="h-3 w-3" />
             </IconBtn>
           </div>
         </header>
 
-        {mode === "collapsed" ? (
-          <div className="flex items-center justify-between px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-zinc-200">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-400" />
-              </span>
-              Listening ·{" "}
-              {listeningAny
-                ? [
-                    listen.mic ? "Mic" : null,
-                    listen.systemAudio ? "System" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" + ")
-                : "paused"}{" "}
-              · Privacy {privacyOn ? "on" : "off"}
-            </div>
-            <button
-              className="no-drag rounded px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-white/10"
-              onClick={() => setMode("full")}
-            >
-              Expand
-            </button>
-          </div>
-        ) : (
-          <div className="no-drag flex min-h-0 flex-1 flex-col gap-1.5 p-2">
+        <div className="overlay-body no-drag gap-1.5 p-2">
             {listenLive.error && (
               <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
                 {listenLive.error}
               </p>
             )}
-            {transcribing && (
-              <p className="rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[10px] text-teal-100">
-                Transcribing listen buffer into chat…
+            {listenMsg && (
+              <p className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] text-red-100">
+                {listenMsg}
+              </p>
+            )}
+            {listeningAny && (
+              <p className="shrink-0 rounded-md border border-teal-500/20 bg-teal-500/5 px-2 py-1 text-[10px] text-teal-100/90">
+                Live transcription active — speak naturally; updates every ~2s.
               </p>
             )}
             {shotMsg && (
@@ -466,7 +517,7 @@ export default function App() {
               </div>
             )}
             {mode === "full" && (
-              <div className="flex gap-0.5">
+              <div className="flex shrink-0 gap-0.5">
                 {(
                   [
                     ["answer", "Answer"],
@@ -496,10 +547,10 @@ export default function App() {
             )}
 
             {mode === "full" && panel === "transcript" && (
-              <div className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-white/10 bg-black/35 p-2 text-[11px]">
+              <div className="overlay-scroll space-y-1 rounded-lg border border-white/10 bg-black/35 p-2 text-[11px]">
                 {transcript.length === 0 ? (
                   <p className="text-zinc-400">
-                    Speak with Mic or System on, then turn it off to update this chat.
+                    Turn Mic or System on and speak — lines appear here every ~2 seconds.
                   </p>
                 ) : (
                   transcript.map((line) => (
@@ -566,7 +617,7 @@ export default function App() {
             {(panel === "answer" || mode !== "full") && (
               <div
                 className={cn(
-                  "answer-panel rounded-xl border border-teal-500/35 p-2",
+                  "answer-panel overlay-scroll rounded-xl border border-teal-500/35 p-2",
                   presenting && "flex-1"
                 )}
               >
@@ -711,17 +762,7 @@ export default function App() {
               </div>
             )}
 
-            {mode === "mini" && (
-              <button
-                type="button"
-                className="text-[9px] text-zinc-400 hover:text-zinc-200"
-                onClick={() => setMode("collapsed")}
-              >
-                Collapse · Esc hides
-              </button>
-            )}
-
-            <div className="no-drag mt-auto flex items-center gap-2 border-t border-white/10 pt-1.5">
+            <div className="no-drag mt-auto flex shrink-0 items-center gap-2 border-t border-white/10 pt-1.5">
               <span className="shrink-0 text-[9px] font-medium text-zinc-400">Opacity</span>
               <input
                 type="range"
@@ -740,8 +781,7 @@ export default function App() {
                 {Math.round(opacity * 100)}%
               </span>
             </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

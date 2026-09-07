@@ -57,12 +57,18 @@ export async function capturePrimaryScreenshot(opts?: {
       const parent =
         opts?.parent && !opts.parent.isDestroyed()
           ? opts.parent
-          : BrowserWindow.getFocusedWindow() || undefined;
-      const result = await dialog.showSaveDialog(parent ?? undefined, {
-        title: "Save CueAI screenshot",
-        defaultPath: `cueai-screenshot-${stamp}.png`,
-        filters: [{ name: "PNG Image", extensions: ["png"] }],
-      });
+          : BrowserWindow.getFocusedWindow() ?? undefined;
+      const result = parent
+        ? await dialog.showSaveDialog(parent, {
+            title: "Save CueAI screenshot",
+            defaultPath: `cueai-screenshot-${stamp}.png`,
+            filters: [{ name: "PNG Image", extensions: ["png"] }],
+          })
+        : await dialog.showSaveDialog({
+            title: "Save CueAI screenshot",
+            defaultPath: `cueai-screenshot-${stamp}.png`,
+            filters: [{ name: "PNG Image", extensions: ["png"] }],
+          });
       if (!result.canceled && result.filePath) {
         await fs.writeFile(result.filePath, png);
         savedPath = result.filePath;

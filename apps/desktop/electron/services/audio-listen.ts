@@ -19,21 +19,28 @@ export function registerMediaPermissionHandler() {
   });
 
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    const p = permission as string;
     return (
-      permission === "media" ||
-      permission === "mediaKeySystem" ||
-      permission === "display-capture" ||
-      (permission as string) === "audioCapture" ||
-      (permission as string) === "microphone"
+      p === "media" ||
+      p === "mediaKeySystem" ||
+      p === "display-capture" ||
+      p === "audioCapture" ||
+      p === "microphone"
     );
   });
 }
 
 /** Primary screen/desktop source id for system-audio loopback capture. */
 export async function getDesktopAudioSourceId(): Promise<string | null> {
-  const sources = await desktopCapturer.getSources({
+  const screens = await desktopCapturer.getSources({
     types: ["screen"],
     thumbnailSize: { width: 1, height: 1 },
   });
-  return sources[0]?.id ?? null;
+  if (screens[0]?.id) return screens[0].id;
+
+  const windows = await desktopCapturer.getSources({
+    types: ["window"],
+    thumbnailSize: { width: 1, height: 1 },
+  });
+  return windows[0]?.id ?? null;
 }

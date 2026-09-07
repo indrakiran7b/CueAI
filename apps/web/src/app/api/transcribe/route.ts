@@ -7,12 +7,26 @@ const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_STT_MODEL = process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo";
 const MAX_BYTES = 25 * 1024 * 1024;
 
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+function json(data: unknown, status = 200) {
+  return NextResponse.json(data, { status, headers: CORS_HEADERS });
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
+    return json(
       { error: "GROQ_API_KEY is not configured on the server." },
-      { status: 503 }
+      503
     );
   }
 
@@ -22,13 +36,13 @@ export async function POST(request: Request) {
     const label = String(form.get("label") || "You").slice(0, 40);
 
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Audio file is required." }, { status: 400 });
+      return json({ error: "Audio file is required." }, 400);
     }
     if (file.size <= 0) {
-      return NextResponse.json({ error: "Audio file is empty." }, { status: 400 });
+      return json({ error: "Audio file is empty." }, 400);
     }
     if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "Audio exceeds 25 MB limit." }, { status: 400 });
+      return json({ error: "Audio exceeds 25 MB limit." }, 400);
     }
 
     const upstream = new FormData();
@@ -46,16 +60,16 @@ export async function POST(request: Request) {
     if (!groqRes.ok) {
       const detail = await groqRes.text();
       console.error("groq_transcribe_failed", groqRes.status, detail.slice(0, 400));
-      return NextResponse.json(
+      return json(
         { error: "Transcription failed. Check GROQ_API_KEY / STT model." },
-        { status: 502 }
+        502
       );
     }
 
     const payload = (await groqRes.json()) as { text?: string };
     const text = String(payload.text || "").trim();
     if (!text) {
-      return NextResponse.json({
+      return json({
         ok: true,
         text: "",
         who: label,
@@ -90,7 +104,7 @@ export async function POST(request: Request) {
       // ignore usage errors
     }
 
-    return NextResponse.json({
+    return json({
       ok: true,
       text,
       who: label,
@@ -98,9 +112,9 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("transcribe_error", err);
-    return NextResponse.json(
+    return json(
       { error: err instanceof Error ? err.message : "Unexpected transcription error" },
-      { status: 500 }
+      500
     );
   }
 }

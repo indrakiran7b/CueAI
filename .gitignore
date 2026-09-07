@@ -44,6 +44,10 @@ yarn-debug.log*
 # local admin / workspace store
 **/.data/
 
+# ngrok local agent secrets (authtoken)
+ngrok.yml.local
+**/ngrok.yml.local
+
 # vercel
 .vercel
 

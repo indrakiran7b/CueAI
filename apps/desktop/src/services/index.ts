@@ -1,6 +1,5 @@
 /**
  * Replaceable service abstractions for CueAI Desktop.
- * Swap mock implementations for real API clients without touching UI.
  */
 
 export type MeetingSummary = {
@@ -37,7 +36,15 @@ export type TranslationResult = {
   text: string;
 };
 
-const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
+export type AskContext = {
+  transcript?: string[];
+};
+
+const delay = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+
+function recentContext(context?: AskContext) {
+  return (context?.transcript || []).slice(-4).join(" ");
+}
 
 export const AuthService = {
   async getSession(): Promise<AuthSession | null> {
@@ -67,67 +74,68 @@ export const MeetingService = {
 };
 
 export const AIService = {
-  async ask(prompt: string) {
-    await delay(500);
+  async ask(prompt: string, context?: AskContext) {
+    await delay(120);
     const q = prompt.toLowerCase().trim();
+    const heard = recentContext(context);
+
+    if (heard && (q.startsWith("respond") || q.startsWith("brief response"))) {
+      return {
+        answer: `Got it. Based on what I heard — "${heard.slice(-180)}" — I can help summarize, list actions, or answer follow-ups.`,
+        confidence: 0.92,
+      };
+    }
 
     if (q === "regenerate" || q.includes("regenerate")) {
       return {
-        answer:
-          "Updated take: QA buffer holds if regression closes Wed EOD. Flag design polish as the only residual risk before Thursday freeze.",
+        answer: heard
+          ? `Updated take on "${heard.slice(-120)}": key point captured; suggest confirming next steps with the team.`
+          : "Updated take: QA buffer holds if regression closes Wed EOD.",
         confidence: 0.9,
       };
     }
     if (q === "summarize" || q.includes("summarize")) {
       return {
-        answer:
-          "Summary: Ship before the board meeting if QA finishes by Thursday. Deck freeze remains Friday 5pm; 14 SP left in QA with Wednesday EOD as the realistic finish.",
+        answer: heard
+          ? `Summary: ${heard.slice(-220)}`
+          : "Summary: Ship before the board meeting if QA finishes by Thursday.",
         confidence: 0.94,
       };
     }
     if (q === "actions" || q.includes("action") || q.includes("draft action")) {
       return {
-        answer:
-          "Actions: 1) Finish QA regression by Wed EOD (Jordan). 2) Share draft board deck Thu AM (Sarah). 3) Confirm SSO questions with Security before Phase 3 (Marcus).",
+        answer: heard
+          ? `Suggested actions from transcript: review "${heard.slice(-100)}", assign owner, set deadline.`
+          : "Actions: 1) Finish QA regression by Wed EOD. 2) Share draft board deck Thu AM.",
         confidence: 0.93,
       };
     }
     if (q === "risks" || q.includes("risk")) {
       return {
-        answer:
-          "Risks: QA slip past Thursday collapses the buffer. Unestimated design polish may compress testing. Board deck freeze Friday 5pm leaves little recovery time.",
+        answer: heard
+          ? `Risk check on "${heard.slice(-100)}": timeline slip if follow-up is delayed.`
+          : "Risks: QA slip past Thursday collapses the buffer.",
         confidence: 0.91,
       };
     }
     if (q.includes("explain")) {
       return {
-        answer:
-          "In plain terms: the team can ship on time if testing wraps Wednesday. Thursday is spare time. Friday is when the board slides get locked.",
+        answer: heard
+          ? `In plain terms: ${heard.slice(-180)}`
+          : "In plain terms: the team can ship on time if testing wraps Wednesday.",
         confidence: 0.95,
-      };
-    }
-    if (q.includes("qa")) {
-      return {
-        answer:
-          "QA has 14 SP remaining. Velocity supports a Wednesday EOD finish with Thursday as buffer.",
-        confidence: 0.92,
-      };
-    }
-    if (q.includes("translate")) {
-      return {
-        answer:
-          "Translation ready — open the Translate tab and pick a language to rewrite the latest answer.",
-        confidence: 0.88,
       };
     }
 
     return {
-      answer: `Based on the live transcript regarding “${prompt.slice(0, 80)}”: the team is aligned on shipping before the board meeting if QA clears by Thursday.`,
+      answer: heard
+        ? `Regarding “${prompt.slice(0, 80)}” — from the live transcript: ${heard.slice(-200)}`
+        : `Based on “${prompt.slice(0, 80)}”: enable Mic, speak for ~2 seconds, and I will respond here.`,
       confidence: 0.9,
     };
   },
   async summarize() {
-    await delay(600);
+    await delay(300);
     return {
       summary: "Team aligned on board deck freeze Friday 5pm. QA is the critical path.",
       actionItems: ["Finish regression by Wed", "Share draft deck Thu AM"],
@@ -174,7 +182,7 @@ export const KnowledgeBaseService = {
 
 export const TranslationService = {
   async translate(text: string, targetLang: string): Promise<TranslationResult> {
-    await delay(400);
+    await delay(200);
     return {
       sourceLang: "en",
       targetLang,
@@ -198,9 +206,6 @@ export const DesktopService = {
 
 export const NotificationService = {
   async push(title: string, body: string) {
-    if (typeof window !== "undefined" && window.cueai) {
-      // Companion surface — main app uses cueDesktop.notify
-    }
     if (typeof window !== "undefined" && "cueDesktop" in window) {
       const desktop = (window as Window & { cueDesktop?: { notify: (t: string, b: string) => Promise<boolean> } })
         .cueDesktop;

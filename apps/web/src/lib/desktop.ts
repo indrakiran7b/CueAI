@@ -78,6 +78,9 @@ export const DESKTOP_PROTOCOL_COMPANION = "cueai://companion";
 export type CompanionOpenResult = {
   /** native = Electron overlay; web = in-page fallback; launching = protocol fired */
   mode: "native" | "web" | "launching";
+  /** Set when Desktop responded but the overlay window did not become visible. */
+  issue?: "not_visible" | "load_error";
+  loadError?: string | null;
 };
 
 export function isDesktopApp() {
@@ -102,6 +105,44 @@ async function bridgeFetch(path: string, init?: RequestInit): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+type CompanionBridgeStatus = {
+  ok?: boolean;
+  visible?: boolean;
+  loadError?: string | null;
+};
+
+async function bridgeFetchJson<T extends Record<string, unknown>>(
+  path: string,
+  init?: RequestInit
+): Promise<T | null> {
+  try {
+    const res = await fetch(`${DESKTOP_BRIDGE_URL}${path}`, {
+      ...init,
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForCompanionVisible(timeoutMs = 4000): Promise<CompanionBridgeStatus | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = await bridgeFetchJson<CompanionBridgeStatus>("/companion/status", {
+      method: "GET",
+    });
+    if (status?.visible) return status;
+    await sleep(150);
+  }
+  return bridgeFetchJson<CompanionBridgeStatus>("/companion/status", { method: "GET" });
 }
 
 async function sleep(ms: number) {
@@ -148,11 +189,26 @@ export async function openCompanionOverlay(): Promise<CompanionOpenResult> {
   const desktop = getDesktop();
   if (desktop) {
     await desktop.showCompanion();
-    return { mode: "native" };
+    for (let i = 0; i < 8; i++) {
+      const status = await desktop.getStatus();
+      if (status.companionVisible) return { mode: "native" };
+      await sleep(150);
+    }
+    return { mode: "native", issue: "not_visible" };
   }
 
   if (await bridgeFetch("/companion/show", { method: "POST", body: "{}" })) {
-    return { mode: "native" };
+    const status = await waitForCompanionVisible(5000);
+    if (status?.visible) {
+      return status.loadError
+        ? { mode: "native", issue: "load_error", loadError: status.loadError }
+        : { mode: "native" };
+    }
+    return {
+      mode: "native",
+      issue: status?.loadError ? "load_error" : "not_visible",
+      loadError: status?.loadError ?? null,
+    };
   }
 
   // Desktop installed but not running — try deep link, then re-check bridge briefly.
@@ -160,7 +216,8 @@ export async function openCompanionOverlay(): Promise<CompanionOpenResult> {
     for (let i = 0; i < 6; i++) {
       await sleep(400);
       if (await bridgeFetch("/companion/show", { method: "POST", body: "{}" })) {
-        return { mode: "native" };
+        const status = await waitForCompanionVisible();
+        if (status?.visible) return { mode: "native" };
       }
     }
     return { mode: "launching" };

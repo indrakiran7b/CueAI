@@ -22,8 +22,16 @@ export const IpcChannels = {
   COMPANION_GET_LISTEN_SOURCES: "companion:get-listen-sources",
   COMPANION_SET_LISTEN_SOURCES: "companion:set-listen-sources",
   COMPANION_GET_DESKTOP_AUDIO_SOURCE: "companion:get-desktop-audio-source",
+  COMPANION_GET_WEB_ORIGIN: "companion:get-web-origin",
   COMPANION_CAPTURE_SCREENSHOT: "companion:capture-screenshot",
   COMPANION_END_SESSION: "companion:end-session",
+  COMPANION_EXPAND: "companion:expand",
+  COMPANION_RESTORE: "companion:restore",
+  COMPANION_RESET_SIZE: "companion:reset-size",
+  COMPANION_GET_WINDOW_STATE: "companion:get-window-state",
+  COMPANION_TRANSCRIBE: "companion:transcribe",
+  COMPANION_BEGIN_RESIZE: "companion:begin-resize",
+  COMPANION_END_RESIZE: "companion:end-resize",
 
   // Meeting / screen-share session
   MEETING_SET_SESSION: "meeting:set-session",
@@ -70,6 +78,8 @@ export type CueStoreSchema = {
   companionModeBeforeShare: CompanionMode | null;
   companionOpacity: number;
   companionPinned: boolean;
+  companionExpanded: boolean;
+  companionNormalBounds: { x: number; y: number; width: number; height: number } | null;
   launchAtStartup: boolean;
   recentMeetings: string[];
   pinnedAnswers: string[];

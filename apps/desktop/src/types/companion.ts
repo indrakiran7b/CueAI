@@ -27,6 +27,12 @@ export type ScreenshotResult = {
   error?: string;
 };
 
+export type CompanionWindowState = {
+  bounds: { x: number; y: number; width: number; height: number };
+  expanded: boolean;
+  mode: CompanionMode;
+};
+
 export type CompanionAPI = {
   minimize: () => Promise<void>;
   hide: () => Promise<void>;
@@ -42,10 +48,23 @@ export type CompanionAPI = {
   getListenSources: () => Promise<ListenSources>;
   setListenSources: (sources: Partial<ListenSources>) => Promise<ListenSources>;
   getDesktopAudioSourceId: () => Promise<string | null>;
+  getWebOrigin: () => Promise<string>;
   captureScreenshot: (opts?: { save?: boolean }) => Promise<ScreenshotResult>;
+  expand: () => Promise<boolean>;
+  restore: () => Promise<boolean>;
+  resetSize: () => Promise<boolean>;
+  beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") => Promise<boolean>;
+  endResize: () => Promise<boolean>;
+  getWindowState: () => Promise<CompanionWindowState | null>;
+  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string }) => Promise<{
+    text?: string;
+    who?: string;
+    error?: string;
+  }>;
   getSession: () => Promise<MeetingSession>;
   onMode: (cb: (mode: CompanionMode) => void) => () => void;
   onSession: (cb: (session: MeetingSession) => void) => () => void;
   onCaptureStatus: (cb: (status: CaptureStatus) => void) => () => void;
   onListenSources: (cb: (sources: ListenSources) => void) => () => void;
+  onWindowState: (cb: (state: CompanionWindowState) => void) => () => void;
 };

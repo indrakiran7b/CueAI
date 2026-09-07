@@ -88,7 +88,7 @@ if (!gotLock) {
       mainWindow?.webContents.send("window:maximized-changed", false);
     });
 
-    createCompanionWindow();
+    // Overlay is created lazily on first show (OverlayWindowManager.ensureOverlayWindow).
 
     createTray(getMainWindow);
     registerGlobalShortcuts(getMainWindow);

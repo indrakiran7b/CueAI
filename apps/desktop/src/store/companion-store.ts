@@ -40,7 +40,7 @@ export const useCompanionStore = create<CompanionUiState>((set) => ({
   panel: "answer",
   session: { active: false, screenSharing: false, cueAiMode: "inactive" },
   capture: null,
-  listen: { mic: true, systemAudio: false },
+  listen: { mic: false, systemAudio: false },
   transcript: [],
   setMode: (mode) => set({ mode }),
   setPinned: (pinned) => set({ pinned }),

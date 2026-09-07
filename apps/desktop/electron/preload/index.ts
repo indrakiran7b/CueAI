@@ -95,11 +95,31 @@ const cueai = {
     ipcRenderer.invoke(IpcChannels.COMPANION_SET_LISTEN_SOURCES, sources) as Promise<ListenSources>,
   getDesktopAudioSourceId: () =>
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_DESKTOP_AUDIO_SOURCE) as Promise<string | null>,
+  getWebOrigin: () =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_GET_WEB_ORIGIN) as Promise<string>,
   captureScreenshot: (opts?: { save?: boolean }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_CAPTURE_SCREENSHOT, opts) as Promise<{
       ok: boolean;
       dataUrl?: string;
       savedPath?: string | null;
+      error?: string;
+    }>,
+  beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_BEGIN_RESIZE, dir) as Promise<boolean>,
+  endResize: () => ipcRenderer.invoke(IpcChannels.COMPANION_END_RESIZE) as Promise<boolean>,
+  expand: () => ipcRenderer.invoke(IpcChannels.COMPANION_EXPAND) as Promise<boolean>,
+  restore: () => ipcRenderer.invoke(IpcChannels.COMPANION_RESTORE) as Promise<boolean>,
+  resetSize: () => ipcRenderer.invoke(IpcChannels.COMPANION_RESET_SIZE) as Promise<boolean>,
+  getWindowState: () =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_GET_WINDOW_STATE) as Promise<{
+      bounds: { x: number; y: number; width: number; height: number };
+      expanded: boolean;
+      mode: CompanionMode;
+    } | null>,
+  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string }) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_TRANSCRIBE, payload) as Promise<{
+      text?: string;
+      who?: string;
       error?: string;
     }>,
   getSession: () =>
@@ -123,6 +143,18 @@ const cueai = {
     const listener = (_: Electron.IpcRendererEvent, s: ListenSources) => cb(s);
     ipcRenderer.on("companion:listen-sources", listener);
     return () => ipcRenderer.removeListener("companion:listen-sources", listener);
+  },
+  onWindowState: (
+    cb: (state: {
+      bounds: { x: number; y: number; width: number; height: number };
+      expanded: boolean;
+      mode: CompanionMode;
+    }) => void
+  ) => {
+    const listener = (_: Electron.IpcRendererEvent, s: typeof cb extends (v: infer V) => void ? V : never) =>
+      cb(s);
+    ipcRenderer.on("companion:window-state", listener);
+    return () => ipcRenderer.removeListener("companion:window-state", listener);
   },
 };
 

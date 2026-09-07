@@ -16,7 +16,7 @@ Terminal 1 — web (required for desktop main window):
 npm run dev:web
 ```
 
-Terminal 2 — Electron (loads http://localhost:3000 + companion on :5173):
+Terminal 2 — Electron (loads http://localhost:3000 + companion on :15174):
 
 ```bash
 npm run dev:desktop
@@ -33,17 +33,6 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 See `backend/README.md` for backend phases and architecture.
-
-### Client preview (ngrok)
-
-Share the Next.js UI over HTTPS without changing the local port:
-
-```bash
-npm run dev:web          # http://localhost:3000
-npm run ngrok            # or: npm run client-preview
-```
-
-Set `NGROK_AUTHTOKEN` in `.env.local` (gitignored). Details: `docs/ngrok-client-preview.md`.
 
 Docker (API + Postgres/pgvector + Redis + MinIO + Celery):
 
@@ -66,7 +55,7 @@ docker compose --env-file docker/.env up --build
 
 ### Architecture
 - **Main window** → Next.js `apps/web` (design source of truth, including redesigned landing) via `http://localhost:3000`
-- **Companion window** → Vite React overlay in `apps/desktop/src` (always-on-top) via `:5173`
+- **Companion window** → Vite React overlay in `apps/desktop/src` (always-on-top) via `:15174`
 - **Preload** → secure `contextBridge` IPC (`window.cueDesktop` / `window.cueai`)
 - **Tray** · global shortcuts · JSON settings store · electron-builder
 - **Backend** → FastAPI clean architecture (`backend/app`)

@@ -17,6 +17,12 @@ import {
   showCompanion,
   toggleCompanion,
   companionUserActivity,
+  expandCompanion,
+  restoreCompanion,
+  resetCompanionSize,
+  getCompanionWindowState,
+  beginOverlayResize,
+  endOverlayResize,
 } from "../windows/companion-window";
 import {
   applyCaptureExclusion,
@@ -38,7 +44,11 @@ function getMainWindow() {
   );
 }
 
+let ipcRegistered = false;
+
 export function registerIpcHandlers() {
+  if (ipcRegistered) return;
+  ipcRegistered = true;
   ipcMain.handle(IpcChannels.WINDOW_MINIMIZE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
@@ -81,6 +91,30 @@ export function registerIpcHandlers() {
   });
   ipcMain.handle(IpcChannels.COMPANION_SET_OPACITY, (_e, opacity: number) => {
     setCompanionOpacity(Number(opacity));
+  });
+  ipcMain.handle(IpcChannels.COMPANION_EXPAND, () => expandCompanion());
+  ipcMain.handle(IpcChannels.COMPANION_RESTORE, () => restoreCompanion());
+  ipcMain.handle(IpcChannels.COMPANION_RESET_SIZE, () => resetCompanionSize());
+  ipcMain.handle(IpcChannels.COMPANION_GET_WINDOW_STATE, () => getCompanionWindowState());
+  ipcMain.handle(
+    IpcChannels.COMPANION_BEGIN_RESIZE,
+    (_e, dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") => beginOverlayResize(dir)
+  );
+  ipcMain.handle(IpcChannels.COMPANION_END_RESIZE, () => {
+    endOverlayResize();
+    return true;
+  });
+  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string }) => {
+    const origin = getWebOrigin().replace(/\/$/, "");
+    const body = new FormData();
+    const ext = payload.mime.includes("ogg") ? "ogg" : payload.mime.includes("mp4") ? "m4a" : "webm";
+    const blob = new Blob([Buffer.from(payload.data)], { type: payload.mime || "audio/webm" });
+    body.append("audio", blob, `listen.${ext}`);
+    body.append("label", payload.label || "You");
+    const res = await fetch(`${origin}/api/transcribe`, { method: "POST", body });
+    const data = (await res.json()) as { text?: string; who?: string; error?: string };
+    if (!res.ok) throw new Error(data.error || "Transcription failed");
+    return data;
   });
   ipcMain.handle(IpcChannels.COMPANION_OPEN_DASHBOARD, async () => {
     const main = getMainWindow();
@@ -134,7 +168,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.COMPANION_GET_LISTEN_SOURCES, () => {
     const settings = getStoreValue("desktopSettings");
     return {
-      mic: settings.listenMic !== false,
+      mic: Boolean(settings.listenMic),
       systemAudio: Boolean(settings.listenSystemAudio),
     };
   });
@@ -146,7 +180,7 @@ export function registerIpcHandlers() {
       const next = {
         ...settings,
         listenMic:
-          typeof payload?.mic === "boolean" ? payload.mic : settings.listenMic !== false,
+          typeof payload?.mic === "boolean" ? payload.mic : Boolean(settings.listenMic),
         listenSystemAudio:
           typeof payload?.systemAudio === "boolean"
             ? payload.systemAudio
@@ -169,6 +203,8 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.COMPANION_GET_DESKTOP_AUDIO_SOURCE, () =>
     getDesktopAudioSourceId()
   );
+
+  ipcMain.handle(IpcChannels.COMPANION_GET_WEB_ORIGIN, () => getWebOrigin());
 
   ipcMain.handle(
     IpcChannels.COMPANION_CAPTURE_SCREENSHOT,

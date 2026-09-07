@@ -18,12 +18,20 @@ import {
   Camera,
 } from "lucide-react";
 import {
+  DESKTOP_BRIDGE_URL,
   DESKTOP_PROTOCOL_COMPANION,
   isDesktopAvailable,
   openCompanionOverlay,
   tryLaunchDesktopApp,
   type CompanionOpenResult,
 } from "@/lib/desktop";
+
+type BridgeStatus = {
+  ok?: boolean;
+  visible?: boolean;
+  loadError?: string | null;
+  bounds?: { width: number; height: number } | null;
+};
 
 const features = [
   {
@@ -72,15 +80,35 @@ export default function CompanionPage() {
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState(false);
   const [desktopReady, setDesktopReady] = useState<boolean | null>(null);
+  const [overlayVisible, setOverlayVisible] = useState<boolean | null>(null);
   const [lastResult, setLastResult] = useState<CompanionOpenResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void isDesktopAvailable().then((ok) => {
-      if (!cancelled) setDesktopReady(ok);
-    });
+
+    async function refreshStatus() {
+      const ok = await isDesktopAvailable();
+      if (cancelled) return;
+      setDesktopReady(ok);
+      if (!ok) {
+        setOverlayVisible(null);
+        return;
+      }
+      try {
+        const res = await fetch(`${DESKTOP_BRIDGE_URL}/companion/status`, { method: "GET" });
+        if (!res.ok) return;
+        const status = (await res.json()) as BridgeStatus;
+        if (!cancelled) setOverlayVisible(Boolean(status.visible));
+      } catch {
+        /* bridge unreachable */
+      }
+    }
+
+    void refreshStatus();
+    const timer = window.setInterval(() => void refreshStatus(), 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -100,6 +128,7 @@ export default function CompanionPage() {
     setLastResult(result);
     if (result.mode === "native") {
       setDesktopReady(true);
+      setOverlayVisible(result.issue ? false : true);
     }
     setOpening(false);
   }
@@ -136,12 +165,16 @@ export default function CompanionPage() {
           <div>
             <CardTitle>
               {desktopReady
-                ? "Desktop is running"
+                ? overlayVisible
+                  ? "Desktop Companion running · overlay visible"
+                  : "Desktop Companion running"
                 : "Install / open CueAI Desktop"}
             </CardTitle>
             <CardDescription>
               {desktopReady
-                ? "Open the native system-wide overlay (same window as Ctrl+Shift+Space)."
+                ? overlayVisible
+                  ? "Native overlay is on screen. Use Ctrl+Shift+Space to hide or show it."
+                  : "Open the native system-wide overlay (same window as Ctrl+Shift+Space)."
                 : "Start Desktop so the Companion can float above meetings and stay hidden from capture."}
             </CardDescription>
           </div>
@@ -196,10 +229,39 @@ export default function CompanionPage() {
           </p>
         )}
 
-        {lastResult?.mode === "native" && (
+        {lastResult?.mode === "native" && !lastResult.issue && (
           <p className="text-xs text-muted">
             Native companion opened. It will keep running after this tab closes.
+            Use <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+Space</kbd>{" "}
+            or <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+C</kbd> to
+            toggle it anytime.
           </p>
+        )}
+
+        {lastResult?.mode === "native" && lastResult.issue === "load_error" && (
+          <p className="rounded-xl border border-[var(--border)] bg-[var(--primary-muted)] px-3 py-2 text-xs text-muted">
+            Desktop opened the overlay window but the companion UI failed to load
+            {lastResult.loadError ? `: ${lastResult.loadError}` : ""}. Keep{" "}
+            <code className="text-foreground">npm run dev:desktop</code> running in a terminal,
+            then click Open overlay again.
+          </p>
+        )}
+
+        {lastResult?.mode === "native" && lastResult.issue === "not_visible" && (
+          <p className="rounded-xl border border-[var(--border)] bg-[var(--primary-muted)] px-3 py-2 text-xs text-muted">
+            Desktop received the open request but the overlay did not appear on screen. Try{" "}
+            <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+Space</kbd>,
+            check the system tray for CueAI, or restart{" "}
+            <code className="text-foreground">npm run dev:desktop</code>.
+          </p>
+        )}
+
+        {lastResult?.mode === "native" && lastResult.issue && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => void tryOpenOverlay()}>
+              Retry open overlay
+            </Button>
+          </div>
         )}
 
         <div className="flex flex-wrap gap-2">
