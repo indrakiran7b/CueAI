@@ -1,0 +1,366 @@
+/* Floating bubble when overlay is minimized */
+.cue-bubble {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  animation: fadeIn 0.4s ease both;
+  cursor: grab;
+}
+
+.cue-bubble:active {
+  cursor: grabbing;
+}
+
+.cue-bubble-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 153, 255, 0.5);
+  animation: pulseGlow 2s ease infinite;
+  pointer-events: none;
+}
+
+.cue-bubble-core {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.cue-bubble-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #090909;
+  border: 1px solid var(--border-strong);
+  color: var(--teal-bright);
+  display: grid;
+  place-items: center;
+}
+
+/* Floating transparent window — distinct from Cluely's blue desktop card */
+.cue-float-window {
+  position: absolute;
+  z-index: 50;
+  width: min(352px, calc(100% - 18px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  touch-action: none;
+  animation: slideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cue-float-window.cue-excluded {
+  filter: drop-shadow(0 0 0 transparent);
+}
+
+.cue-float-window.cue-excluded .cue-glass {
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.42),
+    0 0 0 1.5px rgba(0, 153, 255, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.cue-float-window.cue-captured .cue-glass {
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.42),
+    0 0 0 1.5px rgba(248, 113, 113, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Compact control island above the glass panel */
+.cue-island {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 999px;
+  background: rgba(12, 12, 12, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.cue-island:active {
+  cursor: grabbing;
+}
+
+.cue-island-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 16px var(--teal-glow);
+}
+
+.cue-island-meta strong {
+  display: block;
+  font-size: 12px;
+  font-family: var(--font-display);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.cue-island-meta span {
+  display: block;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.cue-privacy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cue-privacy-chip.on {
+  color: var(--teal-bright);
+  background: var(--teal-soft);
+  border-color: rgba(0, 153, 255, 0.45);
+}
+
+.cue-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+/* High-transparency glass panel */
+.cue-glass {
+  position: relative;
+  padding: 12px;
+  border-radius: 22px;
+  background: linear-gradient(
+    165deg,
+    rgba(18, 36, 40, 0.55) 0%,
+    rgba(10, 22, 26, 0.48) 55%,
+    rgba(8, 18, 22, 0.58) 100%
+  );
+  backdrop-filter: blur(32px) saturate(1.4);
+  -webkit-backdrop-filter: blur(32px) saturate(1.4);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cue-glass-shine {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    125deg,
+    rgba(0, 153, 255, 0.14) 0%,
+    transparent 32%,
+    transparent 68%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+}
+
+.cue-glass-edge {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.cue-capture-banner {
+  position: relative;
+  margin: -4px -4px 10px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+  background: rgba(0, 153, 255, 0.12);
+  color: var(--teal-bright);
+  border: 1px solid rgba(0, 153, 255, 0.22);
+}
+
+.cue-capture-banner.warn {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.cue-live-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 36px;
+  overflow: hidden;
+}
+
+.cue-live-speaker {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--teal-bright);
+  letter-spacing: 0.02em;
+}
+
+.cue-live-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: fadeIn 0.4s ease;
+}
+
+.cue-listening {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.cue-say-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+.cue-answer {
+  position: relative;
+  min-height: 78px;
+  max-height: 118px;
+  overflow: auto;
+  padding: 2px 2px 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.cue-answer p {
+  margin: 0 0 6px;
+}
+
+.cue-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--teal-bright);
+  animation: typeCaret 0.9s step-end infinite;
+}
+
+/* Horizontal chip rail — not Cluely's dotted text row */
+.cue-modes {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cue-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 8px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+.cue-mode.active {
+  color: #090909;
+  background: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.cue-input-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cue-smart,
+.cue-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--teal-bright);
+  background: rgba(0, 153, 255, 0.12);
+  white-space: nowrap;
+  border: 1px solid rgba(0, 153, 255, 0.22);
+}
+
+.cue-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  padding: 5px 2px;
+}
+
+.cue-input::placeholder {
+  color: var(--text-dim);
+}
+
+.cue-send {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #090909;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28);
+}

@@ -19,7 +19,7 @@ export function RequireAdmin({
 
   // Force live role from server before deciding access (avoids stale localStorage User).
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   const role = session?.role;

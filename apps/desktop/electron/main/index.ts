@@ -25,6 +25,10 @@ import {
   registerCueaiProtocolClient,
 } from "../services/protocol";
 
+// Package name is "@cueai/desktop", which would put userData in "%APPDATA%/@cueai/desktop".
+// Set it before anything resolves userData paths (store, embedded web data dir).
+app.setName("CueAI");
+
 let mainWindow: BrowserWindow | null = null;
 
 function getMainWindow() {

@@ -21,7 +21,7 @@ import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { openCompanionOverlay, toggleCompanionOverlay } from "@/lib/desktop";
+import { toggleCompanionOverlay } from "@/lib/desktop";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -95,7 +95,6 @@ export function Topbar() {
   }
 
   function handleStartMeeting() {
-    void openCompanionOverlay();
     router.push("/meetings/live");
   }
 
@@ -174,15 +173,8 @@ export function Topbar() {
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
         <Button
           size="sm"
-          variant="outline"
-          onClick={() => void handleCompanion()}
-        >
-          Companion
-        </Button>
-        <Button
-          size="sm"
           variant="primary"
-          className="hidden sm:inline-flex"
+          className="inline-flex"
           onClick={handleStartMeeting}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -358,9 +350,6 @@ export function Topbar() {
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-[var(--surface-hover)]"
                       onClick={() => {
                         setCommandOpen(false);
-                        if (item.href === "/meetings/live") {
-                          void openCompanionOverlay();
-                        }
                         router.push(item.href);
                       }}
                     >

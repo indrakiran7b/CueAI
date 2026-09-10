@@ -379,6 +379,7 @@ export async function transcribeAudioBlob(
 
   if (typeof window !== "undefined" && window.cueai?.transcribe) {
     const data = await window.cueai.transcribe({ data: buffer, mime, label: who });
+    if (data.error) throw new Error(data.error);
     if (!data.text?.trim()) return null;
     return { who: data.who || who, text: data.text.trim() };
   }

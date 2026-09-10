@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import mammoth from "mammoth";
-import { extractText, getDocumentProxy } from "unpdf";
+import { extractDocumentText } from "@/lib/server/extract-document";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -49,39 +48,11 @@ function asStringArray(value: unknown): string[] {
     .slice(0, 20);
 }
 
-async function extractResumeText(
-  buffer: Buffer,
-  filename: string,
-  mime: string
-): Promise<string> {
-  const lower = filename.toLowerCase();
-  const isTxt =
-    lower.endsWith(".txt") || mime.startsWith("text/") || mime === "application/json";
-  const isPdf = lower.endsWith(".pdf") || mime === "application/pdf";
-  const isDocx =
-    lower.endsWith(".docx") ||
-    mime ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-  if (isTxt) {
-    return buffer.toString("utf8");
-  }
-  if (isDocx) {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value || "";
-  }
-  if (isPdf) {
-    const pdf = await getDocumentProxy(new Uint8Array(buffer));
-    const { text } = await extractText(pdf, { mergePages: true });
-    return Array.isArray(text) ? text.join("\n") : String(text || "");
-  }
-  throw new Error("Unsupported file type. Upload PDF, DOCX, or TXT.");
-}
-
-function buildPrompt(resumeText: string, jobDescription: string) {
+function buildPrompt(resumeText: string, jobDescription: string, profileContext: string) {
   const hasJd = Boolean(jobDescription.trim());
   return `You are an expert resume coach and ATS analyst for CueAI Resume Tailor.
-
+${profileContext ? `\nWhat we know about this candidate from their CueAI setup:\n${profileContext}\nUse this to bias keywords, tone, and suggested skills toward their target roles.\n` : ""}
 Analyze the candidate resume${hasJd ? " against the optional job description" : ""}.
 Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
@@ -132,10 +103,12 @@ function parseModelJson(content: string): Record<string, unknown> {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  const apiKey = process.env.GROQ_API_KEY?.trim() || "";
+  const { resolveGeminiCredentials } = await import("@/lib/server/gemini");
+  const gemini = await resolveGeminiCredentials();
+  if (!apiKey && !gemini) {
     return NextResponse.json(
-      { error: "GROQ_API_KEY is not configured on the server." },
+      { error: "No AI key is configured. Add GROQ_API_KEY (primary) and/or GEMINI_API_KEY." },
       { status: 503 }
     );
   }
@@ -156,7 +129,14 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const resumeText = (await extractResumeText(buffer, file.name, file.type || "")).trim();
+    const resumeText = (await extractDocumentText(buffer, file.name, file.type || "")).trim();
+    try {
+      const { saveLiveBriefing } = await import("@/lib/server/meetings");
+      await saveLiveBriefing({ resumeName: file.name, resumeText: resumeText.slice(0, 20000) });
+    } catch {
+      // ignore
+    }
+
     if (resumeText.length < 80) {
       return NextResponse.json(
         {
@@ -167,55 +147,83 @@ export async function POST(request: Request) {
       );
     }
 
+    let profileContext = "";
+    try {
+      const { getSessionFromRequest } = await import("@/lib/server/api-auth");
+      const { getProfileContext } = await import("@/lib/server/user-profile");
+      profileContext = await getProfileContext((await getSessionFromRequest())?.userId);
+    } catch {
+      // Personalization is best-effort; never block analysis.
+    }
+
     let content: string | undefined;
     let lastError = "";
-    for (const model of GROQ_MODEL_FALLBACKS) {
-      const groqRes = await fetch(GROQ_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.3,
-          max_completion_tokens: 2500,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content:
-                "You return only compact JSON for resume analysis. Never include markdown or commentary.",
-            },
-            { role: "user", content: buildPrompt(resumeText, jobDescription) },
-          ],
-        }),
-      });
+    let usedProvider = "groq";
+    let usedModel = GROQ_MODEL;
 
-      if (!groqRes.ok) {
-        lastError = await groqRes.text();
-        console.error("groq_resume_analyze_failed", model, groqRes.status, lastError.slice(0, 400));
-        // Auth/billing failures are not recoverable by switching models.
-        if (groqRes.status === 401 || groqRes.status === 403) {
-          return NextResponse.json(
-            { error: "AI analysis failed. Check GROQ_API_KEY / model availability." },
-            { status: 502 }
-          );
+    if (apiKey) {
+      for (const model of GROQ_MODEL_FALLBACKS) {
+        const groqRes = await fetch(GROQ_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.3,
+            max_completion_tokens: 2500,
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You return only compact JSON for resume analysis. Never include markdown or commentary.",
+              },
+              {
+                role: "user",
+                content: buildPrompt(resumeText, jobDescription, profileContext),
+              },
+            ],
+          }),
+        });
+
+        if (!groqRes.ok) {
+          lastError = await groqRes.text();
+          console.error("groq_resume_analyze_failed", model, groqRes.status, lastError.slice(0, 400));
+          if (groqRes.status === 401 || groqRes.status === 403) break;
+          continue;
         }
-        continue;
-      }
 
-      const payload = (await groqRes.json()) as {
-        choices?: { message?: { content?: string | null } }[];
-      };
-      content = payload.choices?.[0]?.message?.content?.trim() || undefined;
-      if (content) break;
+        const payload = (await groqRes.json()) as {
+          choices?: { message?: { content?: string | null } }[];
+        };
+        content = payload.choices?.[0]?.message?.content?.trim() || undefined;
+        if (content) {
+          usedModel = model;
+          break;
+        }
+      }
+    }
+
+    if (!content && gemini) {
+      const { generateGeminiText } = await import("@/lib/server/gemini");
+      const fallback = await generateGeminiText({
+        credentials: gemini,
+        system: "You return only compact JSON for resume analysis. Never include markdown or commentary.",
+        prompt: buildPrompt(resumeText, jobDescription, profileContext),
+        temperature: 0.3,
+        maxOutputTokens: 2500,
+      });
+      content = fallback.text;
+      usedProvider = "gemini";
+      usedModel = fallback.model;
     }
 
     if (!content) {
-      console.error("groq_resume_analyze_exhausted", lastError.slice(0, 400));
+      console.error("resume_analyze_exhausted", lastError.slice(0, 400));
       return NextResponse.json(
-        { error: "AI analysis failed. Check GROQ_API_KEY / model availability." },
+        { error: "AI analysis failed. Groq did not return a result and Gemini is unavailable." },
         { status: 502 }
       );
     }
@@ -269,8 +277,8 @@ export async function POST(request: Request) {
         quantity: Math.max(1, analysis.rewrites.length),
         inputTokens: Math.round(estTokens * 0.7),
         outputTokens: Math.round(estTokens * 0.3),
-        provider: "groq",
-        model: GROQ_MODEL,
+        provider: usedProvider,
+        model: usedModel,
         idempotencyKey: `resume_rewrite:${requestId}`,
         metadata: { feature: "resume_analyze", requestId },
       });
@@ -279,8 +287,8 @@ export async function POST(request: Request) {
         quantity: estTokens,
         inputTokens: Math.round(estTokens * 0.7),
         outputTokens: Math.round(estTokens * 0.3),
-        provider: "groq",
-        model: GROQ_MODEL,
+        provider: usedProvider,
+        model: usedModel,
         idempotencyKey: `tokens:resume:${requestId}`,
         metadata: { feature: "resume_analyze", requestId },
       });

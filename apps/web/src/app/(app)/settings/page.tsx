@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
+import { PersonalizationCard } from "@/components/settings/personalization-card";
 import { deleteAccountLocal, updateSessionProfile, workspaceFromName } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -68,14 +69,14 @@ export default function SettingsPage() {
     if (next && !workspace.trim()) {
       updateSessionProfile({ workspace: workspaceFromName(next.name) });
     }
-    refresh();
+    void refresh();
     setSaveMsg("Profile saved.");
   }
 
   function saveWorkspace() {
     const nextName = workspace.trim() || workspaceFromName(name || "My");
     updateSessionProfile({ workspace: nextName });
-    refresh();
+    void refresh();
     setWorkspace(nextName);
     setSaveMsg("Workspace updated.");
   }
@@ -143,6 +144,8 @@ export default function SettingsPage() {
             )}
           </Card>
         )}
+
+        {section === "profile" && <PersonalizationCard />}
 
         {section === "models" && (
           <Card className="space-y-4 p-6">

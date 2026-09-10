@@ -47,20 +47,58 @@ function waitForServer(url: string, timeoutMs = 45000): Promise<void> {
   });
 }
 
+/**
+ * Packaged builds ship no .env.local, so API keys (GEMINI_API_KEY, GROQ_API_KEY)
+ * are read from a plain KEY=VALUE file next to the workspace store. That keeps
+ * secrets in the user's app data instead of baked into the executable, and lets
+ * testers swap keys without a rebuild.
+ */
+function readDataDirEnv(dataDir: string): NodeJS.ProcessEnv {
+  const file = path.join(dataDir, ".env");
+  const loaded: NodeJS.ProcessEnv = {};
+  let raw = "";
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return loaded;
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && value) loaded[key] = value;
+  }
+
+  const names = Object.keys(loaded);
+  if (names.length > 0) console.log(`[web] loaded ${names.length} var(s) from ${file}`);
+  return loaded;
+}
+
 function buildChildEnv(root: string): NodeJS.ProcessEnv {
   const modulesDir = path.join(root, "standalone_modules");
   const legacyModules = path.join(root, "node_modules");
   const nodePathParts = [modulesDir, legacyModules].filter((p) => fs.existsSync(p));
 
+  // Resources live in a temp extraction dir for portable builds, so keep the
+  // workspace store (accounts, onboarding answers) under userData instead.
+  const dataDir = path.join(app.getPath("userData"), "workspace-data");
+  fs.mkdirSync(dataDir, { recursive: true });
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    // Data-dir keys win over the launching shell so testers control them.
+    ...readDataDirEnv(dataDir),
     ELECTRON_RUN_AS_NODE: "1",
     NODE_ENV: "production",
     PORT: String(EMBEDDED_WEB_PORT),
     HOSTNAME: "127.0.0.1",
     AUTH_SECRET: process.env.AUTH_SECRET || "cueai-desktop-test-secret-change-me",
     AUTH_URL: `http://127.0.0.1:${EMBEDDED_WEB_PORT}`,
-    NEXT_PUBLIC_SKIP_AUTH: "true",
+    CUEAI_DATA_DIR: dataDir,
   };
 
   if (nodePathParts.length > 0) {

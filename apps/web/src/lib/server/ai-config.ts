@@ -5,6 +5,7 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   groq: "https://api.groq.com/openai/v1",
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta",
   custom: "",
 };
 

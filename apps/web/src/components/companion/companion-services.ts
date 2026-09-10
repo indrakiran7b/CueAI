@@ -1,12 +1,90 @@
 /**
- * Mock AI / translation helpers for the web Companion overlay.
- * Mirrors apps/desktop/src/services so the UI behaves the same offline.
+ * AI / translation helpers for the web Companion overlay.
+ * Calls the Gemini-backed live answer API, with the same offline sample
+ * answers as apps/desktop/src/services so the UI behaves identically
+ * when the server has no Gemini key.
  */
+
+import type { LiveTranscriptLine } from "@/lib/live-answer";
 
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
+export type CompanionAnswer = {
+  answer: string;
+  confidence: number;
+  /** Set when the answer came from the offline sample instead of Gemini. */
+  notice?: string;
+  model?: string;
+};
+
+async function loadSessionContext() {
+  try {
+    const res = await fetch("/api/live/briefing", { cache: "no-store" });
+    const data = (await res.json().catch(() => ({}))) as {
+      briefing?: {
+        company?: string;
+        jobDescription?: string;
+        resumeName?: string;
+        resumeText?: string;
+        description?: string;
+      } | null;
+    };
+    const b = data.briefing;
+    if (!b?.resumeText && !b?.jobDescription && !b?.company) return "";
+    return [
+      b.company ? `Interview at: ${b.company}` : "",
+      b.jobDescription ? `Job description:\n${b.jobDescription}` : "",
+      b.resumeName ? `Resume on file: ${b.resumeName}` : "",
+      b.resumeText ? `CANDIDATE RESUME:\n${b.resumeText}` : "",
+      b.description ? `Context:\n${b.description}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
+async function askGemini(
+  prompt: string,
+  transcript: LiveTranscriptLine[],
+): Promise<CompanionAnswer> {
+  const sessionContext = await loadSessionContext();
+  const res = await fetch("/api/live/answer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, transcript, sessionContext }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    answer?: string;
+    confidence?: number;
+    model?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.answer) {
+    throw new Error(data.error || "Gemini could not answer that.");
+  }
+  return {
+    answer: data.answer,
+    confidence: typeof data.confidence === "number" ? data.confidence : 0.7,
+    model: data.model,
+  };
+}
+
 export const CompanionAI = {
-  async ask(prompt: string) {
+  async ask(prompt: string, transcript: LiveTranscriptLine[] = []): Promise<CompanionAnswer> {
+    try {
+      return await askGemini(prompt, transcript);
+    } catch (err) {
+      const offline = await CompanionAI.askOffline(prompt);
+      return {
+        ...offline,
+        notice: err instanceof Error ? err.message : "Showing an offline sample answer.",
+      };
+    }
+  },
+
+  async askOffline(prompt: string): Promise<CompanionAnswer> {
     await delay(500);
     const q = prompt.toLowerCase().trim();
 

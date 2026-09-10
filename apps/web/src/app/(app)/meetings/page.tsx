@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Video, Filter } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { recentMeetings } from "@/lib/mock-data";
 import { openCompanionOverlay } from "@/lib/desktop";
+import {
+  formatDuration,
+  formatMeetingWhen,
+  type StoredMeeting,
+} from "@/lib/meetings-client";
 import { cn } from "@/lib/utils";
 
 type StatusFilter = "all" | "live" | "summary";
@@ -17,21 +21,42 @@ export default function MeetingsPage() {
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [meetings, setMeetings] = useState<StoredMeeting[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/meetings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data: { meetings?: StoredMeeting[] }) => {
+        if (active) setMeetings(data.meetings || []);
+      })
+      .catch(() => {
+        if (active) setMeetings([]);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return recentMeetings.filter((m) => {
+    return meetings.filter((m) => {
       const matchesQuery =
         !q ||
         m.title.toLowerCase().includes(q) ||
-        m.tags.some((t) => t.toLowerCase().includes(q));
+        m.tags.some((t) => t.toLowerCase().includes(q)) ||
+        (m.company || "").toLowerCase().includes(q);
       const matchesStatus =
         statusFilter === "all" ||
         (statusFilter === "live" && m.status === "live") ||
         (statusFilter === "summary" && m.status !== "live");
       return matchesQuery && matchesStatus;
     });
-  }, [query, statusFilter]);
+  }, [meetings, query, statusFilter]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 animate-fade-up">
@@ -44,12 +69,7 @@ export default function MeetingsPage() {
             Live sessions, recordings, and AI summaries in one place.
           </p>
         </div>
-        <Link
-          href="/meetings/live"
-          onClick={() => {
-            void openCompanionOverlay();
-          }}
-        >
+        <Link href="/meetings/live">
           <Button variant="gradient">
             <Video className="h-4 w-4" />
             New live session
@@ -92,7 +112,7 @@ export default function MeetingsPage() {
                 "rounded-full border px-3 py-1 text-xs font-medium transition",
                 statusFilter === id
                   ? "border-teal-500/40 bg-teal-500/15 text-teal-300"
-                  : "border-[var(--border)] text-muted hover:border-[var(--border-strong)] hover:text-foreground"
+                  : "border-[var(--border)] text-muted hover:border-[var(--border-strong)] hover:text-foreground",
               )}
             >
               {label}
@@ -105,9 +125,10 @@ export default function MeetingsPage() {
         {filtered.map((m) => (
           <Link
             key={m.id}
-            href={
-              m.status === "live" ? "/meetings/live" : `/meetings/${m.id}/summary`
-            }
+            href={m.status === "live" ? "/meetings/live" : `/meetings/${m.id}/summary`}
+            onClick={() => {
+              if (m.status === "live") void openCompanionOverlay();
+            }}
           >
             <Card hover className="h-full p-5">
               <div className="flex items-start justify-between gap-3">
@@ -122,7 +143,8 @@ export default function MeetingsPage() {
               </div>
               <h3 className="mt-4 font-semibold tracking-tight">{m.title}</h3>
               <p className="mt-1 text-sm text-muted">
-                {m.time} · {m.duration} · {m.attendees} attendees
+                {formatMeetingWhen(m.startedAt)} · {formatDuration(m.durationSec)}
+                {m.resumeName ? ` · ${m.resumeName}` : ""}
               </p>
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {m.tags.map((t) => (
@@ -136,9 +158,11 @@ export default function MeetingsPage() {
         ))}
       </div>
 
-      {filtered.length === 0 && (
+      {loaded && filtered.length === 0 && (
         <p className="py-8 text-center text-sm text-muted">
-          No meetings match your search{statusFilter !== "all" ? " or filters" : ""}.
+          {meetings.length === 0
+            ? "No sessions yet. Start a live session to save it here."
+            : `No meetings match your search${statusFilter !== "all" ? " or filters" : ""}.`}
         </p>
       )}
     </div>

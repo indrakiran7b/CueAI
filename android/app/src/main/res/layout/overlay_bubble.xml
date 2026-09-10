@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/bubble_root"
+    android:layout_width="58dp"
+    android:layout_height="58dp">
+
+    <TextView
+        android:id="@+id/bubble_core"
+        android:layout_width="58dp"
+        android:layout_height="58dp"
+        android:background="@drawable/overlay_bubble_bg"
+        android:gravity="center"
+        android:text="C"
+        android:textColor="@color/cue_ink"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <View
+        android:id="@+id/bubble_privacy_badge"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/overlay_live_dot"
+        android:backgroundTint="@color/cue_teal_bright" />
+</FrameLayout>

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { normalizeRole } from "@/lib/roles";
-import { appendAudit, readStore, updateStore } from "@/lib/server/db";
+import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
+import { generateBypassSignupEmail, resolveBypassUser } from "@/lib/server/bypass-auth";
+import { appendAudit, publicUser, readStore, updateStore } from "@/lib/server/db";
 import {
   hashPassword,
   SESSION_COOKIE,
@@ -21,6 +23,31 @@ export async function POST(req: Request) {
   const password = body?.password || "";
   const name = body?.name?.trim() || "";
   const workspaceName = body?.workspace?.trim() || `${name.split(" ")[0] || "My"}'s Workspace`;
+
+  if (CREDENTIALS_BYPASS) {
+    // Test builds: accept an empty form. Onboarding stays unanswered so the
+    // caller lands on the questionnaire.
+    const { user, workspace, workspaceId } = await resolveBypassUser({
+      email: email || generateBypassSignupEmail(),
+      name,
+      completeOnboarding: false,
+    });
+    const bypassRole = normalizeRole(user.role);
+    const token = signSession({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: bypassRole,
+      workspaceId,
+      workspace,
+    });
+    const res = NextResponse.json({
+      user: { ...publicUser(user), role: bypassRole, workspace, workspaceId },
+      membership: { workspaceId, role: bypassRole },
+    });
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+    return res;
+  }
 
   if (!email || !password || !name) {
     return NextResponse.json({ error: "Name, email, and password are required." }, { status: 400 });
@@ -139,6 +166,9 @@ export async function POST(req: Request) {
       role: normalizeRole(role),
       workspace: workspaceLabel,
       workspaceId,
+      onboardingCompleted: Boolean(
+        fresh.users.find((u) => u.id === userId)?.onboarding?.completedAt,
+      ),
     },
     membership: {
       workspaceId,

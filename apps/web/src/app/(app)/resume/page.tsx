@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gauge, Progress, Tabs } from "@/components/ui/misc";
 import { cn } from "@/lib/utils";
+import { extractAndRememberResume, rememberResume } from "@/lib/resume-store";
 
 type ResumeRewrite = {
   section: string;
@@ -163,7 +164,9 @@ export default function ResumePage() {
       setFile(null);
       return;
     }
+    rememberResume(next.name);
     setFile(next);
+    void extractAndRememberResume(next).catch(() => undefined);
   }
 
   function onBrowseChange(e: ChangeEvent<HTMLInputElement>) {

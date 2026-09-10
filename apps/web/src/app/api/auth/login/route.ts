@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { appendAudit, publicUser, readStore, updateStore } from "@/lib/server/db";
 import { normalizeRole } from "@/lib/roles";
+import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
+import { resolveBypassUser } from "@/lib/server/bypass-auth";
 import {
   SESSION_COOKIE,
   sessionCookieOptions,
@@ -14,6 +16,31 @@ export async function POST(req: Request) {
     | null;
   const email = body?.email?.trim().toLowerCase() || "";
   const password = body?.password || "";
+
+  if (CREDENTIALS_BYPASS) {
+    // Test builds: sign in as the typed email (or the default tester) and skip
+    // onboarding, since the questionnaire belongs to the signup path.
+    const { user, workspace, workspaceId } = await resolveBypassUser({
+      email,
+      completeOnboarding: true,
+    });
+    const role = normalizeRole(user.role);
+    const token = signSession({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role,
+      workspaceId,
+      workspace,
+    });
+    const res = NextResponse.json({
+      user: { ...publicUser(user), role, workspace, workspaceId },
+      membership: { workspaceId, role },
+    });
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+    return res;
+  }
+
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
   }

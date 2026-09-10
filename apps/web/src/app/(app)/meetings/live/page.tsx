@@ -1,23 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Bookmark,
-  Hash,
   Mic,
-  MonitorPlay,
   Pause,
   Pin,
   Play,
   RefreshCw,
   Square,
-  Users,
-  Video,
   Volume2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { aiAnswers, transcript } from "@/lib/mock-data";
+import { CompanionAI } from "@/components/companion/companion-services";
 import { cn } from "@/lib/utils";
 import {
   getDesktop,
@@ -26,135 +23,108 @@ import {
   openCompanionOverlay,
   startDesktopMeetingSession,
 } from "@/lib/desktop";
+import { CreateSessionWizard } from "@/components/meetings/create-session-wizard";
+import {
+  clearLiveSessionConfig,
+  saveLiveSessionConfig,
+  sessionTitle,
+  type LiveSessionConfig,
+} from "@/lib/live-session-config";
 import Link from "next/link";
 import "./live-session.css";
 
-type MeetingPlatform = "meet" | "teams" | "zoom" | "slack" | "webex";
-
-type PlatformOption = {
-  id: MeetingPlatform;
-  name: string;
-  description: string;
-  icon: ReactNode;
-};
-
 type Suggestion = (typeof aiAnswers)[number] & { regenerating?: boolean };
 
-const PLATFORMS: PlatformOption[] = [
-  {
-    id: "meet",
-    name: "Google Meet",
-    description: "Join or create a Google Meet session",
-    icon: <Video className="h-5 w-5" />,
-  },
-  {
-    id: "teams",
-    name: "Microsoft Teams",
-    description: "Join or create a Microsoft Teams session",
-    icon: <Users className="h-5 w-5" />,
-  },
-  {
-    id: "zoom",
-    name: "Zoom",
-    description: "Join or create a Zoom session",
-    icon: <Video className="h-5 w-5" />,
-  },
-  {
-    id: "slack",
-    name: "Slack Huddles",
-    description: "Join or create a Slack Huddle",
-    icon: <Hash className="h-5 w-5" />,
-  },
-  {
-    id: "webex",
-    name: "Webex",
-    description: "Join or create a Webex session",
-    icon: <MonitorPlay className="h-5 w-5" />,
-  },
-];
-
-const PLATFORM_LABEL: Record<MeetingPlatform, string> = {
-  meet: "Google Meet",
-  teams: "Microsoft Teams",
-  zoom: "Zoom",
-  slack: "Slack Huddles",
-  webex: "Webex",
-};
-
-const DEFAULT_ASK_ANSWER =
-  "Based on the live transcript, the team is aligned on shipping before the board meeting if QA clears by Thursday.";
-
 export default function LiveMeetingPage() {
-  const [session, setSession] = useState<{
-    platform: MeetingPlatform;
-    title: string;
-  } | null>(null);
+  const [session, setSession] = useState<LiveSessionConfig | null>(null);
+  const [meetingId, setMeetingId] = useState<string | null>(null);
+  const meetingIdRef = useRef<string | null>(null);
+  meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
 
-  // Refresh / direct navigation lands on setup and never auto-starts.
-  // In-memory `session` keeps an active view if the user re-clicks Live Session
-  // without leaving the page.
   useEffect(() => {
-    let cancelled = false;
-    async function hydrate() {
-      try {
-        if (isDesktopApp()) {
-          const desktop = getDesktop();
-          const current = await Promise.race([
-            desktop?.getMeetingSession() ?? Promise.resolve(undefined),
-            new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1500)),
-          ]);
-          if (current?.active) {
-            await desktop?.setMeetingSession({
-              active: false,
-              screenSharing: false,
-              cueAiMode: "inactive",
-            });
-            await desktop?.hideCompanion();
-          }
-        }
-      } catch {
-        // Ignore desktop IPC failures — still show the setup UI.
-      }
-      if (!cancelled) setHydrated(true);
-    }
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
     function onEndFromOverlay() {
-      setSession(null);
-      void hideCompanionOverlay();
-      void startDesktopMeetingSession({
-        active: false,
-        screenSharing: false,
-        cueAiMode: "inactive",
-        hideCompanion: true,
-      });
+      endSession();
     }
     window.addEventListener("cueai:end-session", onEndFromOverlay);
     return () => window.removeEventListener("cueai:end-session", onEndFromOverlay);
   }, []);
 
-  function startPlatformSession(platform: MeetingPlatform) {
-    const title = `${PLATFORM_LABEL[platform]} live session`;
-    // Fire the popout immediately — same window as Ctrl+Shift+Space.
+  async function beginSession(config: LiveSessionConfig) {
+    const title = sessionTitle(config);
+    saveLiveSessionConfig(config);
+    let createdId: string | null = null;
+    try {
+      await fetch("/api/live/briefing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: config.kind,
+          company: config.company,
+          jobDescription: config.jobDescription,
+          jobLink: config.jobLink,
+          resumeName: config.resumeName,
+          resumeText: config.resumeText,
+          description: config.description,
+        }),
+      });
+    } catch {
+      // Briefing write is best-effort; meeting create still tries.
+    }
+    try {
+      const res = await fetch("/api/meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: config.kind,
+          title,
+          company: config.company,
+          jobDescription: config.jobDescription,
+          jobLink: config.jobLink,
+          resumeName: config.resumeName,
+          resumeText: config.resumeText,
+          description: config.description,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { meeting?: { id?: string } };
+      createdId = data.meeting?.id || null;
+    } catch {
+      // Overlay still works if persistence fails.
+    }
+    const next = { ...config, meetingId: createdId || config.meetingId };
+    saveLiveSessionConfig(next);
+    setMeetingId(next.meetingId || null);
     void openCompanionOverlay();
     void startDesktopMeetingSession({
       active: true,
       screenSharing: false,
-      meetingId: `live-${platform}`,
+      meetingId: next.meetingId || `live-${config.kind}-${Date.now()}`,
       title,
-      cueAiMode: "private",
+      cueAiMode: config.startMode,
       showCompanion: true,
     });
-    setSession({ platform, title });
+    setSession(next);
   }
 
-  function endSession() {
+  function endSession(durationSec = 0, spoken: { who: string; text: string }[] = []) {
+    const id = meetingIdRef.current || meetingId;
+    if (id) {
+      void fetch(`/api/meetings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          end: true,
+          durationSec,
+          transcript: spoken.map((l) => ({ who: l.who, text: l.text })),
+        }),
+      });
+    }
+    clearLiveSessionConfig();
+    setMeetingId(null);
     setSession(null);
     void startDesktopMeetingSession({
       active: false,
@@ -175,57 +145,19 @@ export default function LiveMeetingPage() {
   }
 
   if (!session) {
-    return <LiveSessionSetup onStart={startPlatformSession} />;
+    return (
+      <div data-live>
+        <CreateSessionWizard onComplete={(config) => void beginSession(config)} />
+        <p className="mt-4 text-center text-xs text-subtle">
+          Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
+          CueAI Desktop running for the pop-out window.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <ActiveLiveSession
-      platform={session.platform}
-      title={session.title}
-      onEnd={endSession}
-    />
-  );
-}
-
-function LiveSessionSetup({
-  onStart,
-}: {
-  onStart: (platform: MeetingPlatform) => void;
-}) {
-  return (
-    <div data-live className="space-y-8 animate-fade-up" style={{ maxWidth: "64rem" }}>
-      <div>
-        <h1 className="ls-hero-title">Start a Live Session</h1>
-        <p className="ls-hero-sub">
-          Choose your meeting platform to begin an AI-assisted live session.
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {PLATFORMS.map((platform) => (
-          <div
-            key={platform.id}
-            className="ls-panel ls-panel-hover flex flex-col p-5"
-          >
-            <div className="ls-platform-icon mb-4">{platform.icon}</div>
-            <h3 className="text-base font-medium tracking-tight">{platform.name}</h3>
-            <p className="mt-1.5 flex-1 text-sm text-muted">{platform.description}</p>
-            <Button
-              className="mt-5 w-full"
-              variant="primary"
-              onClick={() => onStart(platform.id)}
-            >
-              Start Session
-            </Button>
-          </div>
-        ))}
-      </div>
-
-      <p className="text-center text-xs text-subtle">
-        Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep CueAI
-        Desktop running for the pop-out window.
-      </p>
-    </div>
+    <ActiveLiveSession config={session} meetingId={meetingId} onEnd={endSession} />
   );
 }
 
@@ -233,20 +165,20 @@ type CueAiMode = "inactive" | "private" | "live";
 type CueAiProcessing = "idle" | "initializing" | "listening" | "stopped" | "error";
 
 function ActiveLiveSession({
-  platform,
-  title,
+  config,
+  meetingId,
   onEnd,
 }: {
-  platform: MeetingPlatform;
-  title: string;
-  onEnd: () => void;
+  config: LiveSessionConfig;
+  meetingId: string | null;
+  onEnd: (durationSec?: number, spoken?: { who: string; text: string }[]) => void;
 }) {
+  const title = sessionTitle(config);
   const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [lines, setLines] = useState<typeof transcript>([]);
   const [sharing, setSharing] = useState(false);
-  // Client-only mount after Start Session click — start in Private (opens overlay).
-  const [cueAiMode, setCueAiMode] = useState<CueAiMode>("private");
+  const [cueAiMode, setCueAiMode] = useState<CueAiMode>(config.startMode);
   const [cueAiProcessing, setCueAiProcessing] = useState<CueAiProcessing>("initializing");
   const [desktopReady, setDesktopReady] = useState(false);
   const [bookmarkCount, setBookmarkCount] = useState(1);
@@ -257,6 +189,7 @@ function ActiveLiveSession({
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
   const [askReply, setAskReply] = useState<string | null>(null);
+  const [askNotice, setAskNotice] = useState<string | null>(null);
   const [playheadPct, setPlayheadPct] = useState(62);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cueAiModeRef = useRef<CueAiMode>("private");
@@ -277,7 +210,7 @@ function ActiveLiveSession({
       await startDesktopMeetingSession({
         active: true,
         screenSharing: sharing,
-        meetingId: `live-${platform}`,
+        meetingId: `live-${config.kind}`,
         title,
         cueAiMode,
         showCompanion: cueAiMode !== "inactive",
@@ -304,7 +237,7 @@ function ActiveLiveSession({
       cancelled = true;
       // Intentionally no hide here — React Strict Mode remount was killing the popout.
     };
-  }, [platform, title, cueAiMode, sharing]);
+  }, [config.kind, title, cueAiMode, sharing]);
 
   useEffect(() => {
     if (paused) return;
@@ -409,15 +342,13 @@ function ActiveLiveSession({
     if (cueAiMode === "inactive") return;
     setAsking(true);
     setAsk("");
-    await new Promise((r) => setTimeout(r, 400));
-    const lower = prompt.toLowerCase();
-    const reply =
-      lower.includes("latency")
-        ? "Target p95 under 800ms for live suggestions; defer full RAG when confidence drops below 0.7."
-        : lower.includes("risk")
-          ? "Main risks: QA slip past Thursday and unestimated design polish compressing the buffer."
-          : `${DEFAULT_ASK_ANSWER} (re: “${prompt.slice(0, 60)}”)`;
+    const result = await CompanionAI.ask(
+      prompt,
+      lines.map((line) => ({ who: line.speaker, text: line.text })),
+    );
+    const reply = result.answer;
     setAskReply(reply);
+    setAskNotice(result.notice ?? null);
     setSuggestions((prev) => [
       {
         id: `ask_${Date.now()}`,
@@ -455,7 +386,7 @@ function ActiveLiveSession({
             {paused && <Badge variant="warning">Paused</Badge>}
           </div>
           <p className="mt-1 text-sm text-muted">
-            {PLATFORM_LABEL[platform]}
+            {config.kind === "interview" ? "Interview" : "Regular call"}
             {cueAiMode === "inactive"
               ? " · CueAI off"
               : cueAiMode === "private"
@@ -501,7 +432,15 @@ function ActiveLiveSession({
             {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
             {paused ? "Resume" : "Pause"}
           </Button>
-          <Link href="/meetings/m2/summary" onClick={onEnd}>
+          <Link
+            href={meetingId ? `/meetings/${meetingId}/summary` : "/meetings"}
+            onClick={() =>
+              onEnd(
+                seconds,
+                lines.map((l) => ({ who: l.speaker, text: l.text })),
+              )
+            }
+          >
             <Button variant="danger" size="sm">
               <Square className="h-3.5 w-3.5" />
               End Session
@@ -585,6 +524,7 @@ function ActiveLiveSession({
                       transcription and AI suggestions in this workspace.
                     </p>
                     {askReply && <p className="ls-reply">{askReply}</p>}
+                    {askNotice && <p className="mt-2 text-xs text-amber-400">{askNotice}</p>}
                   </>
                 )}
               </div>
@@ -717,6 +657,9 @@ function ActiveLiveSession({
                 </p>
                 {askReply && cueAiMode === "private" && (
                   <p className="mt-3 text-left text-xs text-foreground/90">{askReply}</p>
+                )}
+                {askNotice && cueAiMode === "private" && (
+                  <p className="mt-2 text-left text-xs text-amber-400">{askNotice}</p>
                 )}
               </div>
             )}

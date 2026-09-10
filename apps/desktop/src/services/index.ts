@@ -1,6 +1,11 @@
 /**
  * Replaceable service abstractions for CueAI Desktop.
  */
+import {
+  LiveAnswerUnavailable,
+  requestLiveAnswer,
+  type LiveTranscriptLine,
+} from "./live-answer";
 
 export type MeetingSummary = {
   id: string;
@@ -38,12 +43,29 @@ export type TranslationResult = {
 
 export type AskContext = {
   transcript?: string[];
+  image?: string;
+};
+
+export type AskResult = {
+  answer: string;
+  confidence: number;
+  /** Set when the answer came from the offline sample instead of Gemini. */
+  notice?: string;
+  model?: string;
 };
 
 const delay = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 
 function recentContext(context?: AskContext) {
   return (context?.transcript || []).slice(-4).join(" ");
+}
+
+function asTranscriptLines(context?: AskContext): LiveTranscriptLine[] {
+  return (context?.transcript || []).map((line) => {
+    const idx = line.indexOf(":");
+    if (idx <= 0) return { who: "Speaker", text: line };
+    return { who: line.slice(0, idx).trim(), text: line.slice(idx + 1).trim() };
+  });
 }
 
 export const AuthService = {
@@ -74,7 +96,24 @@ export const MeetingService = {
 };
 
 export const AIService = {
-  async ask(prompt: string, context?: AskContext) {
+  /** Gemini via the web API. Overlay callers should pass `{ fallback: false }`. */
+  async ask(
+    prompt: string,
+    context?: AskContext,
+    opts?: { fallback?: boolean },
+  ): Promise<AskResult> {
+    try {
+      const live = await requestLiveAnswer(prompt, asTranscriptLines(context), context?.image);
+      return { answer: live.answer, confidence: live.confidence, model: live.model };
+    } catch (err) {
+      if (!(err instanceof LiveAnswerUnavailable)) throw err;
+      if (opts?.fallback === false) throw err;
+      const fallback = await AIService.askOffline(prompt, context);
+      return { ...fallback, notice: err.message };
+    }
+  },
+
+  async askOffline(prompt: string, context?: AskContext): Promise<AskResult> {
     await delay(120);
     const q = prompt.toLowerCase().trim();
     const heard = recentContext(context);

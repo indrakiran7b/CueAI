@@ -113,7 +113,7 @@ export function registerIpcHandlers() {
     body.append("label", payload.label || "You");
     const res = await fetch(`${origin}/api/transcribe`, { method: "POST", body });
     const data = (await res.json()) as { text?: string; who?: string; error?: string };
-    if (!res.ok) throw new Error(data.error || "Transcription failed");
+    if (!res.ok) return { error: data.error || "Transcription failed" };
     return data;
   });
   ipcMain.handle(IpcChannels.COMPANION_OPEN_DASHBOARD, async () => {

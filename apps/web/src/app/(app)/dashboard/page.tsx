@@ -8,7 +8,6 @@ import {
   Library,
   Monitor,
   Sparkles,
-  Video,
 } from "lucide-react";
 import {
   Area,
@@ -27,7 +26,6 @@ import {
 } from "@/lib/mock-data";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useTheme } from "@/components/providers/theme-provider";
-import { openCompanionOverlay, toggleCompanionOverlay } from "@/lib/desktop";
 import { greetingFor } from "@/lib/auth";
 import "./dashboard.css";
 
@@ -73,10 +71,6 @@ export default function DashboardPage() {
     color: isLight ? "#090909" : "#ffffff",
   };
 
-  async function handleCompanion() {
-    await toggleCompanionOverlay();
-  }
-
   return (
     <div data-dashboard>
       {/* Hero strip */}
@@ -96,22 +90,6 @@ export default function DashboardPage() {
               ? `${workspace} · signed in as ${session.email}`
               : "Your AI copilot is ready. Sign up to personalize this workspace."}
           </p>
-        </div>
-        <div className="db-hero-actions">
-          <Link
-            href="/meetings/live"
-            className="db-btn-primary"
-            onClick={() => {
-              void openCompanionOverlay();
-            }}
-          >
-            <Video className="h-4 w-4" />
-            Start meeting
-          </Link>
-          <button type="button" className="db-btn-ghost" onClick={() => void handleCompanion()}>
-            <Monitor className="h-4 w-4" />
-            Companion
-          </button>
         </div>
       </motion.header>
 

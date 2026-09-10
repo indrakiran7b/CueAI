@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
+import type { OnboardingProfile } from "@/lib/onboarding";
 import { hashPassword } from "@/lib/server/session";
 
 export type UserStatus = "Active" | "Invited" | "Deactivated";
@@ -16,6 +17,8 @@ export type DbUser = {
   workspaceId: string;
   createdAt: string;
   lastActiveAt?: string;
+  /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
+  onboarding?: OnboardingProfile;
 };
 
 export type DbInvite = {
@@ -33,10 +36,12 @@ export type DbInvite = {
   workspaceId?: string;
 };
 
+export type AiProviderType = "groq" | "openai" | "anthropic" | "gemini" | "custom";
+
 export type DbAiProvider = {
   id: string;
   name: string;
-  type: "groq" | "openai" | "anthropic" | "custom";
+  type: AiProviderType;
   enabled: boolean;
   endpoint: string;
   apiKeyEnc?: string;
@@ -56,9 +61,9 @@ export type DbAiModel = {
 };
 
 export type DbAiConfig = {
-  provider: "groq" | "openai" | "anthropic" | "custom";
+  provider: AiProviderType;
   model: string;
-  enabledProviders: Array<"groq" | "openai" | "anthropic" | "custom">;
+  enabledProviders: AiProviderType[];
   enabledModels: string[];
   defaultModel: string;
   endpoint?: string;
@@ -132,6 +137,31 @@ export type DbWorkspace = {
   };
 };
 
+export type DbMeetingLine = { who: string; text: string; at?: string };
+
+export type DbMeeting = {
+  id: string;
+  workspaceId: string;
+  userId?: string;
+  title: string;
+  kind: "interview" | "regular";
+  status: "live" | "summary";
+  startedAt: string;
+  endedAt?: string;
+  durationSec: number;
+  attendees: number;
+  tags: string[];
+  company?: string;
+  jobDescription?: string;
+  jobLink?: string;
+  resumeName?: string;
+  resumeText?: string;
+  description?: string;
+  transcript: DbMeetingLine[];
+  answers: { prompt: string; answer: string; at: string }[];
+  summary?: string;
+};
+
 export type WorkspaceStore = {
   workspace: DbWorkspace;
   users: DbUser[];
@@ -140,9 +170,24 @@ export type WorkspaceStore = {
   usage: DbUsageEvent[];
   audit: DbAudit[];
   ai: DbAiConfig;
+  meetings?: DbMeeting[];
+  activeMeetingId?: string | null;
+  /** Latest resume / job briefing for live answers, even before a meeting starts. */
+  liveBriefing?: {
+    kind?: "interview" | "regular";
+    company?: string;
+    jobDescription?: string;
+    jobLink?: string;
+    resumeName?: string;
+    resumeText?: string;
+    description?: string;
+    updatedAt: string;
+  } | null;
 };
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+// Packaged desktop builds set CUEAI_DATA_DIR because their working directory
+// is a throwaway extraction folder.
+const DATA_DIR = process.env.CUEAI_DATA_DIR?.trim() || path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "workspace-store.json");
 
 function defaultStore(): WorkspaceStore {
@@ -185,6 +230,8 @@ function defaultStore(): WorkspaceStore {
     knowledge: [],
     usage: [],
     audit: [],
+    meetings: [],
+    activeMeetingId: null,
     ai: {
       provider: "groq",
       model: "openai/gpt-oss-20b",
@@ -295,5 +342,6 @@ export function publicUser(user: DbUser) {
     workspaceId: user.workspaceId,
     createdAt: user.createdAt,
     lastActiveAt: user.lastActiveAt || null,
+    onboardingCompleted: Boolean(user.onboarding?.completedAt),
   };
 }

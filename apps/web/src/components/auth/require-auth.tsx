@@ -11,12 +11,19 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const needsOnboarding = Boolean(session) && !session?.onboardingCompleted;
+
   useEffect(() => {
     if (!ready || AUTH_BYPASS) return;
+    const next = encodeURIComponent(pathname || "/dashboard");
     if (!session) {
-      router.replace(`/signup?next=${encodeURIComponent(pathname || "/dashboard")}`);
+      router.replace(`/signup?next=${next}`);
+      return;
     }
-  }, [ready, session, router, pathname]);
+    if (needsOnboarding) {
+      router.replace(`/onboarding?next=${next}`);
+    }
+  }, [ready, session, needsOnboarding, router, pathname]);
 
   if (!ready) {
     return (
@@ -30,6 +37,14 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
         Redirecting to sign up…
+      </div>
+    );
+  }
+
+  if (!AUTH_BYPASS && needsOnboarding) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+        Finishing your setup…
       </div>
     );
   }

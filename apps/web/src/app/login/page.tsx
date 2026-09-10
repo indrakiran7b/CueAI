@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Mail, Lock, ArrowRight, Sparkles, Shield } from "lucide-react";
 import { loginWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
+import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
 import { canAccessAdmin } from "@/lib/roles";
@@ -67,7 +68,7 @@ function LoginForm() {
 
   useEffect(() => {
     if (AUTH_BYPASS) {
-      refresh();
+      void refresh();
       router.replace("/dashboard");
     }
   }, [router, refresh]);
@@ -98,11 +99,12 @@ function LoginForm() {
     setLoading(destination);
 
     const form = document.getElementById("login-form") as HTMLFormElement | null;
-    if (!form?.reportValidity()) {
+    // Credentials are stubbed in test builds, so an empty form still signs in.
+    if (!CREDENTIALS_BYPASS && !form?.reportValidity()) {
       setLoading(null);
       return;
     }
-    const data = new FormData(form);
+    const data = new FormData(form ?? undefined);
     const result = await loginWithEmailApi({
       email: String(data.get("email") || ""),
       password: String(data.get("password") || ""),
@@ -114,7 +116,8 @@ function LoginForm() {
       return;
     }
 
-    refresh();
+    // Await so the app gate sees the fresh session before we navigate.
+    await refresh();
 
     if (destination === "admin") {
       if (!canAccessAdmin(result.session.role)) {
@@ -143,7 +146,10 @@ function LoginForm() {
         </>
       }
     >
-      <SocialAuthButtons callbackUrl="/dashboard" />
+      <SocialAuthButtons
+        callbackUrl="/dashboard"
+        onBypass={CREDENTIALS_BYPASS ? () => signIn("user") : undefined}
+      />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
@@ -157,22 +163,28 @@ function LoginForm() {
       <form id="login-form" className="space-y-4" onSubmit={onSubmit}>
         <Input
           label="Email"
-          type="email"
+          type={CREDENTIALS_BYPASS ? "text" : "email"}
           name="email"
-          placeholder="you@company.com"
+          placeholder={CREDENTIALS_BYPASS ? "Optional while testing" : "you@company.com"}
           autoComplete="email"
           leftIcon={<Mail className="h-4 w-4" />}
-          required
+          required={!CREDENTIALS_BYPASS}
         />
         <Input
           label="Password"
           type="password"
           name="password"
-          placeholder="••••••••"
+          placeholder={CREDENTIALS_BYPASS ? "Optional while testing" : "••••••••"}
           autoComplete="current-password"
           leftIcon={<Lock className="h-4 w-4" />}
-          required
+          required={!CREDENTIALS_BYPASS}
         />
+        {CREDENTIALS_BYPASS && (
+          <p className="text-xs text-subtle">
+            Auth is bypassed in this test build — press Sign in to enter the workspace. Type an
+            email to reuse a specific test account.
+          </p>
+        )}
         <div className="flex items-center justify-between text-sm">
           <label className="flex items-center gap-2 text-muted">
             <input type="checkbox" className="rounded border-[var(--border-strong)]" />

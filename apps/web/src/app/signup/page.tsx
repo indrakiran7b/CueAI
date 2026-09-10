@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react";
 import { signupWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
+import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
 
@@ -63,7 +64,7 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (AUTH_BYPASS) {
-      refresh();
+      void refresh();
       router.replace("/dashboard");
     }
   }, [router, refresh]);
@@ -72,17 +73,11 @@ export default function SignupPage() {
     return <div className="min-h-screen bg-background" />;
   }
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function createAccount(fields: { name: string; email: string; password: string }) {
     setError(null);
     setLoading(true);
 
-    const form = new FormData(e.currentTarget);
-    const result = await signupWithEmailApi({
-      name: String(form.get("name") || ""),
-      email: String(form.get("email") || ""),
-      password: String(form.get("password") || ""),
-    });
+    const result = await signupWithEmailApi(fields);
 
     if (!result.ok) {
       setError(result.error);
@@ -90,8 +85,19 @@ export default function SignupPage() {
       return;
     }
 
-    refresh();
-    router.push("/dashboard");
+    // Await so /onboarding sees the new session instead of bouncing to /login.
+    await refresh();
+    router.push("/onboarding");
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    await createAccount({
+      name: String(form.get("name") || ""),
+      email: String(form.get("email") || ""),
+      password: String(form.get("password") || ""),
+    });
   }
 
   return (
@@ -107,7 +113,14 @@ export default function SignupPage() {
         </>
       }
     >
-      <SocialAuthButtons callbackUrl="/dashboard" />
+      <SocialAuthButtons
+        callbackUrl="/onboarding"
+        onBypass={
+          CREDENTIALS_BYPASS
+            ? () => createAccount({ name: "", email: "", password: "" })
+            : undefined
+        }
+      />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
@@ -122,30 +135,36 @@ export default function SignupPage() {
         <Input
           label="Full name"
           name="name"
-          placeholder="Your full name"
+          placeholder={CREDENTIALS_BYPASS ? "Optional while testing" : "Your full name"}
           autoComplete="name"
           leftIcon={<User className="h-4 w-4" />}
-          required
+          required={!CREDENTIALS_BYPASS}
         />
         <Input
           label="Work email"
-          type="email"
+          type={CREDENTIALS_BYPASS ? "text" : "email"}
           name="email"
-          placeholder="you@company.com"
+          placeholder={CREDENTIALS_BYPASS ? "Optional while testing" : "you@company.com"}
           autoComplete="email"
           leftIcon={<Mail className="h-4 w-4" />}
-          required
+          required={!CREDENTIALS_BYPASS}
         />
         <Input
           label="Password"
           type="password"
           name="password"
-          placeholder="At least 8 characters"
+          placeholder={CREDENTIALS_BYPASS ? "Optional while testing" : "At least 8 characters"}
           autoComplete="new-password"
           leftIcon={<Lock className="h-4 w-4" />}
-          required
-          minLength={8}
+          required={!CREDENTIALS_BYPASS}
+          minLength={CREDENTIALS_BYPASS ? undefined : 8}
         />
+        {CREDENTIALS_BYPASS && (
+          <p className="text-xs text-subtle">
+            Auth is bypassed in this test build — press Create my account to go straight to the
+            setup questions.
+          </p>
+        )}
         {error && (
           <p className="text-sm text-[var(--cue-danger)]" role="alert">
             {error}

@@ -37,20 +37,38 @@ function GitHubIcon() {
   );
 }
 
-export function SocialAuthButtons({ callbackUrl = "/dashboard" }: { callbackUrl?: string }) {
+/**
+ * `onBypass` replaces the OAuth redirect while credentials are stubbed, so the
+ * provider buttons behave like the email form instead of erroring on missing keys.
+ */
+export function SocialAuthButtons({
+  callbackUrl = "/dashboard",
+  onBypass,
+}: {
+  callbackUrl?: string;
+  onBypass?: () => void | Promise<void>;
+}) {
   const [providers, setProviders] = useState<ProviderStatus>({ google: false, github: false });
   const [loading, setLoading] = useState<"google" | "github" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (onBypass) return;
     fetch("/api/auth/providers")
       .then((r) => r.json())
       .then((data: ProviderStatus) => setProviders(data))
       .catch(() => setProviders({ google: false, github: false }));
-  }, []);
+  }, [onBypass]);
 
   async function handleOAuth(provider: "google" | "github") {
     setError(null);
+
+    if (onBypass) {
+      setLoading(provider);
+      await onBypass();
+      setLoading(null);
+      return;
+    }
 
     if (!providers[provider]) {
       setError(
@@ -101,7 +119,7 @@ export function SocialAuthButtons({ callbackUrl = "/dashboard" }: { callbackUrl?
           {error}
         </p>
       )}
-      {!providers.google && !providers.github && (
+      {!onBypass && !providers.google && !providers.github && (
         <p className="text-xs text-subtle">
           OAuth keys are empty in <code className="text-muted">.env.local</code>. Add Google /
           GitHub client IDs to enable these buttons. See README.

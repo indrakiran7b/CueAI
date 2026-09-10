@@ -1257,6 +1257,7 @@ function AdminPortalInner() {
                       >
                         <option value="openai">OpenAI</option>
                         <option value="groq">Groq</option>
+                        <option value="gemini">Google Gemini</option>
                         <option value="anthropic">Anthropic</option>
                         <option value="custom">Custom</option>
                       </select>

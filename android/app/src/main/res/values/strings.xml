@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CueAI</string>
+    <string name="title_activity_main">CueAI</string>
+    <string name="package_name">com.cueai.android</string>
+    <string name="custom_url_scheme">com.cueai.android</string>
+    <string name="overlay_channel_name">CueAI Overlay</string>
+    <string name="overlay_channel_desc">Shows when the CueAI floating assistant is active</string>
+    <string name="overlay_notification_title">CueAI overlay active</string>
+    <string name="overlay_notification_text">Privacy hides CueAI from Meet Present in ~2s · use Peek while not sharing</string>
+    <string name="overlay_stop">Stop</string>
+    <string name="overlay_drag_hint">Overlay · drag to move</string>
+    <string name="overlay_privacy_on">Private</string>
+    <string name="overlay_privacy_off">Visible</string>
+    <string name="overlay_hidden_banner">Privacy on · Hides from your screen in 2s so Meet Present stays clear (no black box). Use notification Peek when you need tips.</string>
+    <string name="overlay_visible_banner">Privacy off · Entire-screen share will show CueAI to others</string>
+    <string name="overlay_hide_for_share">Hide now (required before Present)</string>
+    <string name="overlay_show">Show overlay</string>
+    <string name="overlay_peek">Peek 8s</string>
+    <string name="overlay_hidden_notification_title">CueAI hidden — Meet Present is safe</string>
+    <string name="overlay_hidden_notification_text">Not on screen · not in share · Peek for 8s if you need a tip</string>
+    <string name="overlay_listening">Listening</string>
+    <string name="overlay_what_to_say">What should I say?</string>
+    <string name="overlay_assist">Assist</string>
+    <string name="overlay_suggest">What to say</string>
+    <string name="overlay_followups">Follow-ups</string>
+    <string name="overlay_recap">Recap</string>
+    <string name="overlay_ask_hint">Ask about the call or screen…</string>
+    <string name="overlay_smart">Smart</string>
+</resources>

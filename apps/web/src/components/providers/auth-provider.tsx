@@ -23,7 +23,8 @@ import {
 type AuthContextValue = {
   session: CueSession | null;
   ready: boolean;
-  refresh: () => void;
+  /** Re-reads live membership from the server; await it before navigating on it. */
+  refresh: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -34,12 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [localSession, setLocalSession] = useState<CueSession | null>(null);
   const [ready, setReady] = useState(false);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     // Always prefer live server membership/role over stale localStorage/JWT claims.
-    void syncSessionFromServer().then((s) => {
-      setLocalSession(s);
-      setReady(true);
-    });
+    const next = await syncSessionFromServer();
+    setLocalSession(next);
+    setReady(true);
   }, []);
 
   useEffect(() => {

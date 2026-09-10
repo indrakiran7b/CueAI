@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#FFFFFF</color>
+    <color name="colorPrimaryDark">#090909</color>
+    <color name="colorAccent">#0099FF</color>
+    <color name="cue_bg">#090909</color>
+    <color name="cue_surface">#141414</color>
+    <color name="cue_text">#FFFFFF</color>
+    <color name="cue_muted">#999999</color>
+    <color name="cue_dim">#666666</color>
+    <color name="cue_teal">#FFFFFF</color>
+    <color name="cue_teal_bright">#0099FF</color>
+    <color name="cue_teal_deep">#E8E8E8</color>
+    <color name="cue_border">#262626</color>
+    <color name="cue_danger">#DC143C</color>
+    <color name="cue_ink">#090909</color>
+</resources>

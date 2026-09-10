@@ -17,6 +17,17 @@ export type CueSession = {
   email: string;
   workspace: string;
   role?: WorkspaceRole;
+  /** False until the post-signup questionnaire is submitted or skipped. */
+  onboardingCompleted?: boolean;
+};
+
+type ApiUser = {
+  id: string;
+  name: string;
+  email: string;
+  workspace: string;
+  role?: WorkspaceRole;
+  onboardingCompleted?: boolean;
 };
 
 const USERS_KEY = "cueai-users";
@@ -36,6 +47,7 @@ export const DEV_GUEST_SESSION: CueSession = {
   email: "user@cueai.local",
   workspace: "Your Workspace",
   role: "Admin",
+  onboardingCompleted: true,
 };
 
 function isLegacyIndraSession(session: CueSession) {
@@ -99,8 +111,21 @@ function setSession(user: CueUser) {
     email: user.email,
     workspace: user.workspace,
     role: normalizeRole(user.role || "User"),
+    // Local-only accounts have no server profile to collect answers into.
+    onboardingCompleted: true,
   };
   return persistSession(session);
+}
+
+function sessionFromApiUser(user: ApiUser): CueSession {
+  return persistSession({
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    workspace: user.workspace,
+    role: normalizeRole(user.role),
+    onboardingCompleted: Boolean(user.onboardingCompleted),
+  });
 }
 
 export function clearSession() {
@@ -123,27 +148,12 @@ export async function loginWithEmailApi(input: {
     });
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
-      user?: {
-        id: string;
-        name: string;
-        email: string;
-        workspace: string;
-        role?: WorkspaceRole;
-      };
+      user?: ApiUser;
     };
     if (!res.ok || !data.user) {
       return { ok: false, error: data.error || "Sign-in failed." };
     }
-    return {
-      ok: true,
-      session: persistSession({
-        userId: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        workspace: data.user.workspace,
-        role: normalizeRole(data.user.role),
-      }),
-    };
+    return { ok: true, session: sessionFromApiUser(data.user) };
   } catch {
     return { ok: false, error: "Unable to reach auth server." };
   }
@@ -162,27 +172,12 @@ export async function signupWithEmailApi(input: {
     });
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
-      user?: {
-        id: string;
-        name: string;
-        email: string;
-        workspace: string;
-        role?: WorkspaceRole;
-      };
+      user?: ApiUser;
     };
     if (!res.ok || !data.user) {
       return { ok: false, error: data.error || "Sign-up failed." };
     }
-    return {
-      ok: true,
-      session: persistSession({
-        userId: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        workspace: data.user.workspace,
-        role: normalizeRole(data.user.role),
-      }),
-    };
+    return { ok: true, session: sessionFromApiUser(data.user) };
   } catch {
     return { ok: false, error: "Unable to reach auth server." };
   }
@@ -201,23 +196,9 @@ export async function syncSessionFromServer(): Promise<CueSession | null> {
   try {
     const res = await fetch("/api/auth/me", { cache: "no-store" });
     if (!res.ok) return getSession();
-    const data = (await res.json()) as {
-      user?: {
-        id: string;
-        name: string;
-        email: string;
-        workspace: string;
-        role?: WorkspaceRole;
-      };
-    };
+    const data = (await res.json()) as { user?: ApiUser };
     if (!data.user) return getSession();
-    return persistSession({
-      userId: data.user.id,
-      name: data.user.name,
-      email: data.user.email,
-      workspace: data.user.workspace,
-      role: normalizeRole(data.user.role),
-    });
+    return sessionFromApiUser(data.user);
   } catch {
     return getSession();
   }
@@ -228,23 +209,9 @@ export async function syncOAuthMembership(): Promise<CueSession | null> {
   try {
     const res = await fetch("/api/auth/oauth-sync", { method: "POST", cache: "no-store" });
     if (!res.ok) return null;
-    const data = (await res.json()) as {
-      user?: {
-        id: string;
-        name: string;
-        email: string;
-        workspace: string;
-        role?: WorkspaceRole;
-      };
-    };
+    const data = (await res.json()) as { user?: ApiUser };
     if (!data.user) return null;
-    return persistSession({
-      userId: data.user.id,
-      name: data.user.name,
-      email: data.user.email,
-      workspace: data.user.workspace,
-      role: normalizeRole(data.user.role),
-    });
+    return sessionFromApiUser(data.user);
   } catch {
     return null;
   }

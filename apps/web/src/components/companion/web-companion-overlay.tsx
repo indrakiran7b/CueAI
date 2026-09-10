@@ -118,6 +118,7 @@ export function WebCompanionOverlay() {
   const [translated, setTranslated] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [activeLang, setActiveLang] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -193,9 +194,10 @@ export function WebCompanionOverlay() {
     setAnswerPinned(false);
     setCopied(false);
     try {
-      const result = await CompanionAI.ask(q);
+      const result = await CompanionAI.ask(q, transcript);
       setAnswer(result.answer);
       setConfidence(result.confidence);
+      setNotice(result.notice ?? null);
       setTranslated(null);
       setActiveLang(null);
     } finally {
@@ -509,6 +511,9 @@ export function WebCompanionOverlay() {
                   >
                     {mode === "mini" ? "QA can finish by Wed EOD." : answer}
                   </p>
+                )}
+                {!streaming && notice && mode !== "mini" && (
+                  <p className="mt-1.5 text-[10px] leading-snug text-amber-400">{notice}</p>
                 )}
                 {!streaming && mode !== "mini" && (
                   <div className="mt-2 flex flex-wrap gap-1">
