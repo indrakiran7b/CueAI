@@ -12,6 +12,7 @@ import {
 import { ArrowRight, ChevronDown, Check } from "lucide-react";
 import { faqs, pricing } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/ui/logo";
 import { useLandingParallax } from "@/components/landing/use-landing-parallax";
 import "./landing.css";
 
@@ -87,24 +88,6 @@ const platform = [
 ];
 
 const customers = ["Northstar", "Lumen", "Helix", "Orbit", "Vertex", "Pulse", "Miro", "Zapier"];
-
-function Logo({ size = "md" }: { size?: "sm" | "md" }) {
-  return (
-    <Link href="/" className="inline-flex items-center gap-2" aria-label="CueAI home">
-      <span
-        className={cn(
-          "inline-flex items-center justify-center rounded-[10px] bg-white font-semibold text-black",
-          size === "sm" ? "h-7 w-7 text-xs" : "h-8 w-8 text-sm"
-        )}
-      >
-        C
-      </span>
-      <span className={cn("lp-display text-white", size === "sm" ? "text-lg" : "text-xl")}>
-        CueAI
-      </span>
-    </Link>
-  );
-}
 
 function Pill({
   href,

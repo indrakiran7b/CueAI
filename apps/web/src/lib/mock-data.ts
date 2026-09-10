@@ -1,3 +1,5 @@
+import { getMeetingById, listMeetings } from "@/lib/meetings-catalog";
+
 export const stats = [
   { label: "Meetings this week", value: "24", delta: "+18%", tone: "up" as const },
   { label: "AI answers pinned", value: "86", delta: "+12%", tone: "up" as const },
@@ -5,44 +7,8 @@ export const stats = [
   { label: "Action items closed", value: "63%", delta: "+4%", tone: "up" as const },
 ];
 
-export const recentMeetings = [
-  {
-    id: "m1",
-    title: "Q3 Product Sync",
-    time: "Today · 10:00 AM",
-    duration: "42m",
-    attendees: 8,
-    status: "summary" as const,
-    tags: ["Product", "Roadmap"],
-  },
-  {
-    id: "m2",
-    title: "Enterprise Security Review",
-    time: "Today · 2:30 PM",
-    duration: "28m",
-    attendees: 5,
-    status: "live" as const,
-    tags: ["Security"],
-  },
-  {
-    id: "m3",
-    title: "Customer Success Weekly",
-    time: "Yesterday",
-    duration: "55m",
-    attendees: 12,
-    status: "summary" as const,
-    tags: ["CS"],
-  },
-  {
-    id: "m4",
-    title: "Design Critique — CueAI Companion",
-    time: "Mon",
-    duration: "36m",
-    attendees: 6,
-    status: "summary" as const,
-    tags: ["Design"],
-  },
-];
+/** Meeting list cards — sourced from the meetings catalog (single source of truth). */
+export const recentMeetings = listMeetings();
 
 export const activity = [
   { id: 1, text: "Pinned answer from Q3 Product Sync", time: "12m ago" },
@@ -61,81 +27,24 @@ export const usageSeries = [
   { day: "Sun", meetings: 2, tokens: 55 },
 ];
 
-export const transcript = [
-  {
-    id: 1,
-    speaker: "Priya Nair",
-    role: "PM",
-    text: "Let's align on the enterprise rollout timeline for CueAI Companion.",
-    time: "00:02:14",
-    confidence: 0.98,
-  },
-  {
-    id: 2,
-    speaker: "Alex Chen",
-    role: "You",
-    text: "We can ship the always-on glass panel in two sprints if screen context stays opt-in.",
-    time: "00:02:41",
-    confidence: 0.96,
-  },
-  {
-    id: 3,
-    speaker: "Marcus Lee",
-    role: "Eng",
-    text: "What's our latency budget for real-time answers during Zoom calls?",
-    time: "00:03:05",
-    confidence: 0.94,
-  },
-  {
-    id: 4,
-    speaker: "Priya Nair",
-    role: "PM",
-    text: "Sub-800ms for suggestions. Summaries can be async after the call ends.",
-    time: "00:03:22",
-    confidence: 0.97,
-  },
-];
+/** Default live-session transcript seed (Q3 Product Sync / m1). Prefer getMeetingById for meeting-scoped views. */
+export const transcript = (getMeetingById("m1")?.transcript ?? []).map((line, index) => ({
+  id: index + 1,
+  speaker: line.speaker,
+  role: line.role,
+  text: line.text,
+  time: line.time,
+  confidence: line.confidence,
+}));
 
-export const aiAnswers = [
-  {
-    id: "a1",
-    question: "Latency budget for real-time answers?",
-    answer:
-      "Target p95 < 800ms for suggestion cards. Use streaming tokens and local transcript buffer; defer full RAG to background when confidence < 0.7.",
-    pinned: true,
-  },
-  {
-    id: "a2",
-    question: "Enterprise rollout timeline?",
-    answer:
-      "Phase 1: Companion + live transcript (2 sprints). Phase 2: Screen context opt-in + admin controls. Phase 3: SSO / SCIM and retention policies.",
-    pinned: false,
-  },
-];
+export const aiAnswers = (getMeetingById("m1")?.aiAnswers ?? []).map((a) => ({
+  id: a.id,
+  question: a.question,
+  answer: a.answer,
+  pinned: a.pinned,
+}));
 
-export const actionItems = [
-  {
-    id: "ai1",
-    title: "Finalize Companion latency SLOs",
-    owner: "Marcus Lee",
-    due: "Aug 12",
-    status: "open" as const,
-  },
-  {
-    id: "ai2",
-    title: "Draft opt-in privacy copy for screen capture",
-    owner: "Alex Chen",
-    due: "Aug 10",
-    status: "open" as const,
-  },
-  {
-    id: "ai3",
-    title: "Share enterprise SSO checklist with Security",
-    owner: "Priya Nair",
-    due: "Aug 14",
-    status: "done" as const,
-  },
-];
+export const actionItems = getMeetingById("m1")?.actionItems ?? [];
 
 export const knowledgeDocs = [
   {

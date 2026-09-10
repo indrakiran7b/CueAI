@@ -14,9 +14,8 @@ import {
   Sparkles,
   PanelLeft,
   AppWindow,
-  Palette,
 } from "lucide-react";
-import { Logo } from "@/components/ui/logo";
+import { BrandMark, Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -33,7 +32,6 @@ const nav = [
   { href: "/companion", label: "Desktop Companion", icon: AppWindow },
   { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true as const },
   { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/design-system", label: "Design System", icon: Palette },
 ];
 
 /** Avoid `/meetings` staying active on `/meetings/live` (and similar overlaps). */
@@ -79,9 +77,9 @@ export function Sidebar() {
           <Link
             href="/dashboard"
             aria-label="CueAI"
-            className="flex h-8 w-8 items-center justify-center rounded-xl bg-foreground text-[var(--background)]"
+            className="flex h-8 w-8 items-center justify-center"
           >
-            <Sparkles className="h-4 w-4" />
+            <BrandMark size="sm" />
           </Link>
         ) : (
           <Logo size="sm" href="/dashboard" />

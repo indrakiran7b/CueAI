@@ -1,29 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  CheckCircle2,
   AlertTriangle,
+  CheckCircle2,
   HelpCircle,
   Languages,
   MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { actionItems } from "@/lib/mock-data";
+import { fetchMeeting } from "@/lib/meetings-client";
+import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
 
-const BASE_EMAIL = `Hi team — thanks for a focused sync. We locked Phase 1/2 scope for Companion, confirmed the 800ms latency budget, and kept Screen Context opt-in. Action items and owners are listed below. Reply if anything looks off.`;
-
 export default function MeetingSummaryPage() {
-  const [emailBody, setEmailBody] = useState(BASE_EMAIL);
+  const params = useParams<{ id: string }>();
+  const meetingId = typeof params.id === "string" ? params.id : "";
+
+  const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [emailBody, setEmailBody] = useState("");
   const [copied, setCopied] = useState(false);
   const [regenCount, setRegenCount] = useState(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setMeeting(null);
+
+    void fetchMeeting(meetingId).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+      setMeeting(result.meeting);
+      setEmailBody(result.meeting.emailBody);
+      setRegenCount(0);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId]);
+
   async function copyEmail() {
-    const full = `Subject: Notes from Q3 Product Sync\n\n${emailBody}`;
+    if (!meeting) return;
+    const full = `Subject: ${meeting.emailSubject}\n\n${emailBody}`;
     try {
       await navigator.clipboard.writeText(full);
       setCopied(true);
@@ -34,36 +65,69 @@ export default function MeetingSummaryPage() {
   }
 
   function regenerateEmail() {
+    if (!meeting) return;
     const next = regenCount + 1;
     setRegenCount(next);
     setEmailBody(
-      `${BASE_EMAIL}\n\n(Updated draft v${next + 1}) Please also review the open risks section before sending.`
+      `${meeting.emailBody}\n\n(Updated draft v${next + 1}) Please also review the open risks section before sending.`
     );
     setCopied(false);
   }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+        Loading meeting summary…
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center animate-fade-up">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
+          Meeting not found
+        </h1>
+        <p className="text-sm text-muted">
+          {error || "No meeting exists for this ID."}{" "}
+          {meetingId ? (
+            <>
+              Requested ID: <code className="text-primary">{meetingId}</code>
+            </>
+          ) : null}
+        </p>
+        <Link href="/meetings">
+          <Button variant="outline">Back to meetings</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const openCount = meeting.actionItems.filter((a) => a.status === "open").length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Badge variant="info" className="mb-2">
-            Summary ready
+          <Badge variant={meeting.status === "live" ? "success" : "info"} className="mb-2">
+            {meeting.status === "live" ? "Live" : "Summary ready"}
           </Badge>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-            Q3 Product Sync
+            {meeting.title}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Today · 42 min · 8 attendees · Generated in 18s
+            {meeting.time} · {meeting.duration} · {meeting.attendees} attendees
+            {meeting.generatedIn ? ` · Generated in ${meeting.generatedIn}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/translation">
+          <Link href={`/translation?meetingId=${encodeURIComponent(meeting.id)}`}>
             <Button variant="outline" size="sm">
               <Languages className="h-3.5 w-3.5" />
               Translation
             </Button>
           </Link>
-          <Link href="/meetings/live">
+          <Link href={`/meetings/${encodeURIComponent(meeting.id)}/feed`}>
             <Button variant="gradient" size="sm">
               <MessageSquare className="h-3.5 w-3.5" />
               Conversation feed
@@ -74,12 +138,7 @@ export default function MeetingSummaryPage() {
 
       <Card glow className="p-6">
         <CardTitle className="mb-3">Executive summary</CardTitle>
-        <p className="text-sm leading-relaxed text-muted">
-          The team aligned on a three-phase enterprise rollout for CueAI Companion.
-          Latency SLOs were set at p95 under 800ms for live suggestions. Screen Context
-          will remain opt-in with explicit privacy controls. SSO / SCIM is deferred to
-          Phase 3 pending Security review.
-        </p>
+        <p className="text-sm leading-relaxed text-muted">{meeting.executiveSummary}</p>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -88,11 +147,7 @@ export default function MeetingSummaryPage() {
             <CardTitle>Key decisions</CardTitle>
           </CardHeader>
           <ul className="space-y-3">
-            {[
-              "Ship Companion glass panel in two sprints",
-              "Keep Screen Context opt-in for enterprise",
-              "Defer deep RAG when confidence < 0.7",
-            ].map((d) => (
+            {meeting.keyDecisions.map((d) => (
               <li key={d} className="flex gap-2 text-sm text-foreground/90">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
                 {d}
@@ -109,24 +164,26 @@ export default function MeetingSummaryPage() {
             </div>
           </CardHeader>
           <ul className="space-y-3">
-            <li className="flex gap-2 text-sm">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-              <span>
-                <span className="font-medium text-amber-300">Risk · </span>
-                <span className="text-muted">
-                  Latency may spike on low-bandwidth enterprise VPNs.
+            {meeting.risks.map((r) => (
+              <li key={r.text} className="flex gap-2 text-sm">
+                {r.type === "risk" ? (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                ) : (
+                  <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                )}
+                <span>
+                  <span
+                    className={cn(
+                      "font-medium",
+                      r.type === "risk" ? "text-amber-300" : "text-violet-300"
+                    )}
+                  >
+                    {r.type === "risk" ? "Risk · " : "Question · "}
+                  </span>
+                  <span className="text-muted">{r.text}</span>
                 </span>
-              </span>
-            </li>
-            <li className="flex gap-2 text-sm">
-              <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
-              <span>
-                <span className="font-medium text-violet-300">Question · </span>
-                <span className="text-muted">
-                  Which region locks are required for EU workspaces?
-                </span>
-              </span>
-            </li>
+              </li>
+            ))}
           </ul>
         </Card>
       </div>
@@ -134,7 +191,7 @@ export default function MeetingSummaryPage() {
       <Card className="p-5">
         <CardHeader>
           <CardTitle>Action items</CardTitle>
-          <Badge>{actionItems.filter((a) => a.status === "open").length} open</Badge>
+          <Badge>{openCount} open</Badge>
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[540px] text-left text-sm">
@@ -147,7 +204,7 @@ export default function MeetingSummaryPage() {
               </tr>
             </thead>
             <tbody>
-              {actionItems.map((item) => (
+              {meeting.actionItems.map((item) => (
                 <tr key={item.id} className="border-b border-[var(--border)]/60">
                   <td className="py-3 pr-4 font-medium">{item.title}</td>
                   <td className="py-3 pr-4 text-muted">{item.owner}</td>
@@ -170,7 +227,7 @@ export default function MeetingSummaryPage() {
       <Card className="p-5">
         <CardTitle className="mb-3">Follow-up email draft</CardTitle>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4 text-sm leading-relaxed text-muted">
-          <p className="text-foreground">Subject: Notes from Q3 Product Sync</p>
+          <p className="text-foreground">Subject: {meeting.emailSubject}</p>
           <p className="mt-3 whitespace-pre-wrap">{emailBody}</p>
         </div>
         <div className="mt-3 flex gap-2">

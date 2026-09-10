@@ -105,9 +105,7 @@ export default function MeetingsPage() {
         {filtered.map((m) => (
           <Link
             key={m.id}
-            href={
-              m.status === "live" ? "/meetings/live" : `/meetings/${m.id}/summary`
-            }
+            href={`/meetings/${m.id}/summary`}
           >
             <Card hover className="h-full p-5">
               <div className="flex items-start justify-between gap-3">

@@ -200,7 +200,13 @@ export async function logoutApi() {
 export async function syncSessionFromServer(): Promise<CueSession | null> {
   try {
     const res = await fetch("/api/auth/me", { cache: "no-store" });
-    if (!res.ok) return getSession();
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        clearSession();
+        return null;
+      }
+      return getSession();
+    }
     const data = (await res.json()) as {
       user?: {
         id: string;
@@ -210,7 +216,10 @@ export async function syncSessionFromServer(): Promise<CueSession | null> {
         role?: WorkspaceRole;
       };
     };
-    if (!data.user) return getSession();
+    if (!data.user) {
+      clearSession();
+      return null;
+    }
     return persistSession({
       userId: data.user.id,
       name: data.user.name,

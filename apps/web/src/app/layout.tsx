@@ -33,6 +33,10 @@ export const metadata: Metadata = {
   },
   description:
     "Enterprise AI meeting copilot with live assistance, transcription, summaries, resume tailoring, and knowledge base.",
+  icons: {
+    icon: [{ url: "/brand/cueai-logo.png", type: "image/png" }],
+    apple: [{ url: "/brand/cueai-logo.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
