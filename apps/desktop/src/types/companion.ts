@@ -53,6 +53,7 @@ export type CompanionAPI = {
   expand: () => Promise<boolean>;
   restore: () => Promise<boolean>;
   resetSize: () => Promise<boolean>;
+  fitHeight: (height: number) => Promise<boolean>;
   beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") => Promise<boolean>;
   endResize: () => Promise<boolean>;
   getWindowState: () => Promise<CompanionWindowState | null>;

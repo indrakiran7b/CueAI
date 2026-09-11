@@ -28,6 +28,7 @@ export const IpcChannels = {
   COMPANION_EXPAND: "companion:expand",
   COMPANION_RESTORE: "companion:restore",
   COMPANION_RESET_SIZE: "companion:reset-size",
+  COMPANION_FIT_HEIGHT: "companion:fit-height",
   COMPANION_GET_WINDOW_STATE: "companion:get-window-state",
   COMPANION_TRANSCRIBE: "companion:transcribe",
   COMPANION_BEGIN_RESIZE: "companion:begin-resize",

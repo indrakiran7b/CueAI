@@ -66,3 +66,12 @@ next-env.d.ts
 
 # Generated Electron web bundle (created by scripts/prepare-desktop-web.cjs)
 apps/desktop/build-resources/
+
+# Local Qwen2.5-VL weights
+.models/
+tools/qwen-vl/.venv/
+
+# Local leftovers — never commit binaries or backup trees
+/desktop/
+/releases/
+apps/web/_local_backup/

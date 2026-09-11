@@ -4,20 +4,23 @@
 
 import { screen } from "electron";
 
-export const COMPANION_MIN_WIDTH = 400;
-export const COMPANION_MIN_HEIGHT = 420;
+export const COMPANION_MIN_WIDTH = 360;
+export const COMPANION_MIN_HEIGHT = 64;
 
-/** Default compact overlay size (user can resize above minimum). */
-export const COMPANION_DEFAULT_WIDTH = 480;
-export const COMPANION_DEFAULT_HEIGHT = 600;
+/** Idle size: compact command bar. Expands only when a question needs an answer. */
+export const COMPANION_DEFAULT_WIDTH = 752;
+export const COMPANION_DEFAULT_HEIGHT = 76;
 
-/** Expanded preset for more transcript / answer space. */
-export const COMPANION_EXPANDED_WIDTH = 720;
-export const COMPANION_EXPANDED_HEIGHT = 760;
+/** Room for the more-menu under the compact bar. */
+export const COMPANION_MENU_HEIGHT = 340;
 
-/** Presenter dock strip — still above absolute minimum. */
-export const COMPANION_PRESENTER_WIDTH = 420;
-export const COMPANION_PRESENTER_HEIGHT = 280;
+/** Expanded board for the current question + answer. */
+export const COMPANION_EXPANDED_WIDTH = 880;
+export const COMPANION_EXPANDED_HEIGHT = 540;
+
+/** Presenter dock strip. */
+export const COMPANION_PRESENTER_WIDTH = 680;
+export const COMPANION_PRESENTER_HEIGHT = 104;
 
 export type Bounds = { x: number; y: number; width: number; height: number };
 
@@ -79,8 +82,8 @@ export function defaultCompanionBounds(): Bounds {
   return sanitizeBounds({
     width: COMPANION_DEFAULT_WIDTH,
     height: COMPANION_DEFAULT_HEIGHT,
-    x: primary.x + primary.width - COMPANION_DEFAULT_WIDTH - 24,
-    y: primary.y + Math.round(primary.height * 0.1),
+    x: primary.x + Math.round((primary.width - COMPANION_DEFAULT_WIDTH) / 2),
+    y: primary.y + 18,
   });
 }
 

@@ -16,7 +16,7 @@ import {
 import { GroqError, generateGroqText, resolveGroqApiKey } from "@/lib/server/groq";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 // The desktop overlay runs on its own origin (Vite dev server or file://),
 // so it needs the same permissive CORS as /api/transcribe.
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     const transcript = parseTranscript(body?.transcript);
     const mode: LiveAnswerMode =
       typeof body?.mode === "string" &&
-      ["answer", "summarize", "actions", "risks", "explain"].includes(body.mode)
+      ["answer", "summarize", "actions", "risks", "explain", "screen"].includes(body.mode)
         ? (body.mode as LiveAnswerMode)
         : inferMode(prompt);
 
@@ -151,6 +151,7 @@ export async function POST(request: Request) {
     }
 
     const inlineImage = parseInlineImage(body?.image);
+    const rawImage = typeof body?.image === "string" ? body.image : "";
     const system = buildSystemInstruction(profileContext, hasResume || Boolean(sessionContext));
     const userPrompt = buildUserPrompt({ prompt, transcript, mode, sessionContext });
 
@@ -160,7 +161,33 @@ export async function POST(request: Request) {
       inputTokens: number;
       outputTokens: number;
     };
-    let provider: "groq" | "gemini" = "groq";
+    let provider: "groq" | "gemini" | "qwen" = "groq";
+
+    if (inlineImage && rawImage) {
+      try {
+        const { analyzeScreenWithQwen } = await import("@/lib/server/qwen-vl");
+        const local = await analyzeScreenWithQwen({
+          image: rawImage,
+          prompt: userPrompt,
+          sessionContext,
+        });
+        if (local?.answer) {
+          return json({
+            ok: true,
+            answer: local.answer,
+            confidence: local.confidence,
+            model: local.model,
+            provider: "qwen",
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Qwen2.5-VL is unavailable.";
+        if (/still loading|still downloading|could not read/i.test(message)) {
+          return json({ error: message }, 503);
+        }
+        console.error("live_answer_qwen_fallback", message);
+      }
+    }
 
     // Screen analysis needs vision — Groq chat cannot take the screenshot.
     const preferGemini = Boolean(inlineImage);
@@ -191,7 +218,10 @@ export async function POST(request: Request) {
     } else {
       if (!credentials) {
         return json(
-          { error: "Gemini is not configured for screen analysis. Add GEMINI_API_KEY." },
+          {
+            error:
+              "Qwen2.5-VL is not running yet. Keep npm run dev:vision open, or add GEMINI_API_KEY as a fallback.",
+          },
           503,
         );
       }

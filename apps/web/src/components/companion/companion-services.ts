@@ -48,12 +48,19 @@ async function loadSessionContext() {
 async function askGemini(
   prompt: string,
   transcript: LiveTranscriptLine[],
+  image?: string,
 ): Promise<CompanionAnswer> {
   const sessionContext = await loadSessionContext();
   const res = await fetch("/api/live/answer", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, transcript, sessionContext }),
+    body: JSON.stringify({
+      prompt,
+      transcript,
+      sessionContext,
+      image,
+      mode: image ? "screen" : undefined,
+    }),
   });
   const data = (await res.json().catch(() => ({}))) as {
     answer?: string;
@@ -72,10 +79,17 @@ async function askGemini(
 }
 
 export const CompanionAI = {
-  async ask(prompt: string, transcript: LiveTranscriptLine[] = []): Promise<CompanionAnswer> {
+  async ask(
+    prompt: string,
+    transcript: LiveTranscriptLine[] = [],
+    image?: string,
+  ): Promise<CompanionAnswer> {
     try {
-      return await askGemini(prompt, transcript);
+      return await askGemini(prompt, transcript, image);
     } catch (err) {
+      if (image) {
+        throw err instanceof Error ? err : new Error("Could not analyze that screen.");
+      }
       const offline = await CompanionAI.askOffline(prompt);
       return {
         ...offline,

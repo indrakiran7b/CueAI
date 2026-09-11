@@ -60,6 +60,7 @@ export type CueDesktopAPI = {
   setMeetingSession: (session: Partial<MeetingSession>) => Promise<MeetingSession>;
   getMeetingSession: () => Promise<MeetingSession>;
   getCaptureStatus: () => Promise<CaptureStatus>;
+  setExcludeCapture?: (enabled: boolean) => Promise<CaptureStatus>;
   captureScreenshot?: (opts?: { save?: boolean }) => Promise<ScreenshotResult>;
 };
 

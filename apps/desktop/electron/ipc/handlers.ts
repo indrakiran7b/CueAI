@@ -19,6 +19,7 @@ import {
   companionUserActivity,
   expandCompanion,
   restoreCompanion,
+  fitCompanionHeight,
   resetCompanionSize,
   getCompanionWindowState,
   beginOverlayResize,
@@ -95,6 +96,9 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.COMPANION_EXPAND, () => expandCompanion());
   ipcMain.handle(IpcChannels.COMPANION_RESTORE, () => restoreCompanion());
   ipcMain.handle(IpcChannels.COMPANION_RESET_SIZE, () => resetCompanionSize());
+  ipcMain.handle(IpcChannels.COMPANION_FIT_HEIGHT, (_e, height: number) =>
+    fitCompanionHeight(Number(height))
+  );
   ipcMain.handle(IpcChannels.COMPANION_GET_WINDOW_STATE, () => getCompanionWindowState());
   ipcMain.handle(
     IpcChannels.COMPANION_BEGIN_RESIZE,

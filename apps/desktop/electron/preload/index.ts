@@ -65,6 +65,8 @@ const cueDesktop = {
     ipcRenderer.invoke(IpcChannels.MEETING_GET_SESSION) as Promise<MeetingSession>,
   getCaptureStatus: () =>
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_CAPTURE_STATUS) as Promise<CaptureStatus>,
+  setExcludeCapture: (enabled: boolean) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_SET_EXCLUDE_CAPTURE, enabled) as Promise<CaptureStatus>,
   captureScreenshot: (opts?: { save?: boolean }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_CAPTURE_SCREENSHOT, opts) as Promise<{
       ok: boolean;
@@ -110,6 +112,8 @@ const cueai = {
   expand: () => ipcRenderer.invoke(IpcChannels.COMPANION_EXPAND) as Promise<boolean>,
   restore: () => ipcRenderer.invoke(IpcChannels.COMPANION_RESTORE) as Promise<boolean>,
   resetSize: () => ipcRenderer.invoke(IpcChannels.COMPANION_RESET_SIZE) as Promise<boolean>,
+  fitHeight: (height: number) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_FIT_HEIGHT, height) as Promise<boolean>,
   getWindowState: () =>
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_WINDOW_STATE) as Promise<{
       bounds: { x: number; y: number; width: number; height: number };

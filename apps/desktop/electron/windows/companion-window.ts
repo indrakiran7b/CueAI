@@ -15,6 +15,7 @@ export {
   setCompanionOpacity,
   expandCompanion,
   restoreCompanion,
+  fitCompanionHeight,
   resetCompanionSize,
   companionUserActivity,
   allowCompanionQuit,

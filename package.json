@@ -9,6 +9,8 @@
     "dev": "npm run dev -w @cueai/web",
     "dev:web": "npm run dev -w @cueai/web",
     "dev:desktop": "npm run dev -w @cueai/desktop",
+    "dev:vision": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\server.py",
+    "download:qwen-vl": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\download.py",
     "build": "npm run build -w @cueai/web",
     "build:web": "npm run build -w @cueai/web",
     "build:desktop": "npm run build -w @cueai/desktop",

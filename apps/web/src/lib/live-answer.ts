@@ -5,7 +5,7 @@
  * must be short, immediately speakable, and never hedge with filler.
  */
 
-export type LiveAnswerMode = "answer" | "summarize" | "actions" | "risks" | "explain";
+export type LiveAnswerMode = "answer" | "summarize" | "actions" | "risks" | "explain" | "screen";
 
 export type LiveTranscriptLine = { who: string; text: string };
 
@@ -21,7 +21,7 @@ export type LiveAnswerResponse = {
   answer: string;
   confidence: number;
   model: string;
-  provider: "groq" | "gemini";
+  provider: "groq" | "gemini" | "qwen";
 };
 
 /** How many transcript lines to send; enough context without slowing the call. */
@@ -34,11 +34,22 @@ const MODE_INSTRUCTIONS: Record<LiveAnswerMode, string> = {
   actions: "List the concrete action items with an owner and a due date when either was stated.",
   risks: "Name the risks or objections that are live right now, most urgent first.",
   explain: "Explain the last topic in plain language a non-expert could follow.",
+  screen:
+    "Look at the attached screenshot. First describe what is happening on screen. Then give a first-person interview-ready answer the user can say out loud.",
 };
 
 /** Guess the mode from a chip label or free-text prompt. */
 export function inferMode(prompt: string): LiveAnswerMode {
   const q = prompt.toLowerCase();
+  if (
+    q.includes("screenshot") ||
+    q.includes("on screen") ||
+    q.includes("this screen") ||
+    q.includes("what's happening") ||
+    q.includes("what is happening")
+  ) {
+    return "screen";
+  }
   if (q.includes("summar")) return "summarize";
   if (q.includes("action") || q.includes("todo") || q.includes("next step")) return "actions";
   if (q.includes("risk") || q.includes("objection") || q.includes("concern")) return "risks";
@@ -91,7 +102,9 @@ export function buildUserPrompt(input: {
     '"""',
     "",
     `TASK: ${MODE_INSTRUCTIONS[input.mode]}`,
-    "If this is an interview, give the user a ready-to-say answer that uses their resume and the job context.",
+    input.mode === "screen"
+      ? "A screenshot is attached. Reply as: On screen: <what is visible>. Say: <interview-ready first-person answer or next step>. Do not invent details that are not on screen."
+      : "If this is an interview, give the user a ready-to-say answer that uses their resume and the job context.",
     "",
     "USER REQUEST:",
     '"""',

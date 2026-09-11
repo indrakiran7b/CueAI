@@ -12,6 +12,8 @@ import {
   COMPANION_MIN_WIDTH,
   clampBoundsToWorkArea,
   defaultCompanionBounds,
+  COMPANION_DEFAULT_HEIGHT,
+  COMPANION_MENU_HEIGHT,
   expandedCompanionBounds,
   getMaxBoundsForDisplay,
   isValidPersistedBounds,
@@ -69,7 +71,11 @@ function resolveBundledCompanionPath(): string | null {
 
 function loadCompanionUrl(win: BrowserWindow) {
   const bundled = resolveBundledCompanionPath();
-  if (app.isPackaged || bundled) {
+
+  // Packaged app: always use the built overlay.
+  // Dev: always use Vite so source changes (including accents) show up.
+  // Stale apps/desktop/dist must not override the redesign.
+  if (app.isPackaged) {
     if (!bundled) {
       showCompanionLoadError(
         win,
@@ -94,11 +100,11 @@ function showCompanionLoadError(win: BrowserWindow, url: string, desc: string, c
   companionLoadError = desc || `Load failed (${code})`;
   const hint = app.isPackaged
     ? "Try reinstalling CueAI, or contact support with the error above."
-    : `<pre style="background:#111827;padding:10px;border-radius:8px;color:#2dd4bf;font-size:12px;margin:8px 0 0">npm run dev:desktop</pre>
+    : `<pre style="background:#111827;padding:10px;border-radius:8px;color:#e5e7eb;font-size:12px;margin:8px 0 0">npm run dev:desktop</pre>
       <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">Keep that terminal open so the companion UI can load on port 15174.</p>`;
   const html = `<!doctype html><html><body style="margin:0;background:rgba(11,15,16,0.92);color:#e5e7eb;font-family:Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh">
     <div style="max-width:420px;padding:20px;border:1px solid rgba(255,255,255,0.12);border-radius:16px">
-      <h1 style="font-size:16px;margin:0 0 8px;color:#2dd4bf">Companion UI failed to load</h1>
+      <h1 style="font-size:16px;margin:0 0 8px;color:#f4f4f5">Companion UI failed to load</h1>
       <p style="color:#9ca3af;font-size:13px">Could not open ${url}</p>
       <p style="color:#9ca3af;font-size:13px">${companionLoadError}</p>
       ${hint}
@@ -165,13 +171,28 @@ function applyWindowConstraints(win: BrowserWindow) {
 
 function resolveInitialBounds(): Bounds {
   const saved = getStoreValue("companionBounds");
-  if (isValidPersistedBounds(saved)) {
+  const expanded = getStoreValue("companionExpanded");
+  const defaults = defaultCompanionBounds();
+
+  if (isValidPersistedBounds(saved) && expanded) {
     const clamped = clampBoundsToWorkArea(saved);
-    log("BOUNDS", `Restored saved bounds ${clamped.width}x${clamped.height}`);
+    log("BOUNDS", `Restored expanded bounds ${clamped.width}x${clamped.height}`);
     return clamped;
   }
-  const defaults = defaultCompanionBounds();
-  log("BOUNDS", `Invalid saved bounds; using default ${defaults.width}x${defaults.height}`);
+
+  // Idle overlay is a compact bar. Ignore older tall persisted panels.
+  if (isValidPersistedBounds(saved) && !expanded) {
+    const compact = clampBoundsToWorkArea({
+      ...saved,
+      width: Math.max(saved.width, defaults.width),
+      height: defaults.height,
+      y: saved.y < 80 ? saved.y : defaults.y,
+    });
+    log("BOUNDS", `Compact bar ${compact.width}x${compact.height}`);
+    return compact;
+  }
+
+  log("BOUNDS", `Default compact ${defaults.width}x${defaults.height}`);
   return defaults;
 }
 
@@ -561,6 +582,23 @@ export function restoreCompanion() {
   win.webContents.send("companion:window-state", getCompanionWindowState());
   schedulePersistBounds();
   log("WINDOW", `Restored ${next.width}x${next.height}`);
+  return true;
+}
+
+export function fitCompanionHeight(height: number) {
+  const win = overlayWin;
+  if (!win || win.isDestroyed()) return false;
+  if (getStoreValue("companionExpanded")) return true;
+
+  const current = win.getBounds();
+  const next = clampBoundsToWorkArea({
+    ...current,
+    height: Math.round(Number(height) || COMPANION_DEFAULT_HEIGHT),
+  });
+  win.setBounds(next, true);
+  applyWindowConstraints(win);
+  win.webContents.send("companion:window-state", getCompanionWindowState());
+  schedulePersistBounds();
   return true;
 }
 

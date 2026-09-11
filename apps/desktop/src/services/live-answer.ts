@@ -70,7 +70,13 @@ export async function requestLiveAnswer(
     res = await fetch(`${apiBase}/api/live/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, transcript, sessionContext, image }),
+      body: JSON.stringify({
+        prompt,
+        transcript,
+        sessionContext,
+        image,
+        mode: image ? "screen" : undefined,
+      }),
     });
   } catch {
     throw new LiveAnswerUnavailable("CueAI server unreachable. Is the web app running?");
@@ -86,11 +92,11 @@ export async function requestLiveAnswer(
 
   if (res.status === 503) {
     throw new LiveAnswerUnavailable(
-      data.error || "Gemini is not configured. Add GEMINI_API_KEY on the server.",
+      data.error || "Vision model is not ready yet. Wait a moment and press Screen again.",
     );
   }
   if (!res.ok || !data.answer) {
-    throw new LiveAnswerUnavailable(data.error || "Gemini could not answer that. Try again.");
+    throw new LiveAnswerUnavailable(data.error || "Could not analyze that. Try again.");
   }
 
   return {

@@ -1,6 +1,8 @@
 import { BrowserWindow, desktopCapturer, dialog, screen } from "electron";
 import fs from "node:fs/promises";
-import { getCompanionWindow, hideCompanion, showCompanion } from "../windows/companion-window";
+import { getCompanionWindow } from "../windows/companion-window";
+import { getCaptureProtectionStatus } from "./screen-share";
+import { getStoreValue } from "./store";
 
 export type ScreenshotResult = {
   ok: boolean;
@@ -15,20 +17,21 @@ function sleep(ms: number) {
 
 /**
  * Capture the primary display as a PNG.
- * Temporarily hides the companion overlay so it is not included in the shot.
+ * Keep the overlay process alive — only fade it out if capture-exclusion is off.
  */
 export async function capturePrimaryScreenshot(opts?: {
   save?: boolean;
   parent?: BrowserWindow | null;
 }): Promise<ScreenshotResult> {
   const companion = getCompanionWindow();
-  const wasVisible = Boolean(companion && !companion.isDestroyed() && companion.isVisible());
+  const canHideOverlay = Boolean(companion && !companion.isDestroyed() && companion.isVisible());
+  const excluded = getCaptureProtectionStatus().applied;
+  const previousOpacity = canHideOverlay ? companion!.getOpacity() : 1;
 
   try {
-    if (wasVisible) {
-      hideCompanion();
-      // Give the compositor a beat so the overlay is gone before grab.
-      await sleep(140);
+    if (canHideOverlay && !excluded) {
+      companion!.setOpacity(0);
+      await sleep(80);
     }
 
     const display = screen.getPrimaryDisplay();
@@ -82,8 +85,9 @@ export async function capturePrimaryScreenshot(opts?: {
       error: err instanceof Error ? err.message : "Screenshot failed",
     };
   } finally {
-    if (wasVisible) {
-      showCompanion();
+    if (canHideOverlay && companion && !companion.isDestroyed()) {
+      const stored = Number(getStoreValue("companionOpacity")) || previousOpacity || 1;
+      companion.setOpacity(Math.min(1, Math.max(0.35, stored)));
     }
   }
 }
