@@ -1,65 +1,61 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { CheckCircle2, Languages, MessageSquare } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  HelpCircle,
+  Languages,
+  MessageSquare,
+} from "lucide-react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  formatDuration,
-  formatMeetingWhen,
-  type StoredMeeting,
-} from "@/lib/meetings-client";
+import { fetchMeeting } from "@/lib/meetings-client";
+import type { MeetingRecord } from "@/lib/meetings-catalog";
+import { cn } from "@/lib/utils";
 
 export default function MeetingSummaryPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id;
-  const [meeting, setMeeting] = useState<StoredMeeting | null>(null);
+  const meetingId = typeof params.id === "string" ? params.id : "";
+
+  const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [emailBody, setEmailBody] = useState("");
+  const [regenCount, setRegenCount] = useState(0);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
-    let active = true;
-    void fetch(`/api/meetings/${id}`, { cache: "no-store" })
-      .then(async (res) => {
-        const data = (await res.json().catch(() => ({}))) as {
-          meeting?: StoredMeeting;
-          error?: string;
-        };
-        if (!res.ok || !data.meeting) throw new Error(data.error || "Meeting not found.");
-        if (active) setMeeting(data.meeting);
-      })
-      .catch((err: unknown) => {
-        if (active) setError(err instanceof Error ? err.message : "Could not load meeting.");
-      });
-    return () => {
-      active = false;
-    };
-  }, [id]);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setMeeting(null);
 
-  const emailBody = meeting
-    ? [
-        `Hi — notes from ${meeting.title}.`,
-        meeting.company ? `Company: ${meeting.company}` : "",
-        meeting.summary || "",
-        meeting.answers.length
-          ? `Q&A:\n${meeting.answers
-              .slice(0, 6)
-              .map((a) => `Q: ${a.prompt}\nA: ${a.answer}`)
-              .join("\n\n")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n")
-    : "";
+    void fetchMeeting(meetingId).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+      setMeeting(result.meeting);
+      setEmailBody(result.meeting.emailBody);
+      setRegenCount(0);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId]);
 
   async function copyEmail() {
     if (!meeting) return;
     try {
-      await navigator.clipboard.writeText(`Subject: Notes from ${meeting.title}\n\n${emailBody}`);
+      await navigator.clipboard.writeText(`Subject: ${meeting.emailSubject}\n\n${emailBody}`);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -67,116 +63,217 @@ export default function MeetingSummaryPage() {
     }
   }
 
-  if (error) {
+  function regenerateEmail() {
+    if (!meeting) return;
+    const next = regenCount + 1;
+    setRegenCount(next);
+    setEmailBody(
+      `${meeting.emailBody}\n\n(Updated draft v${next + 1}) Please also review the open risks section before sending.`,
+    );
+  }
+
+  if (loading) {
     return (
-      <div className="mx-auto max-w-5xl py-12 text-center text-sm text-muted">
-        {error}{" "}
-        <Link href="/meetings" className="text-primary hover:underline">
-          Back to meetings
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+        Loading meeting summary…
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center animate-fade-up">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
+          Meeting not found
+        </h1>
+        <p className="text-sm text-muted">
+          {error || "No meeting exists for this ID."}{" "}
+          {meetingId ? (
+            <>
+              Requested ID: <code className="text-primary">{meetingId}</code>
+            </>
+          ) : null}
+        </p>
+        <Link href="/meetings">
+          <Button variant="outline">Back to meetings</Button>
         </Link>
       </div>
     );
   }
 
-  if (!meeting) {
-    return (
-      <div className="mx-auto max-w-5xl py-12 text-center text-sm text-muted">
-        Loading session…
-      </div>
-    );
-  }
+  const openCount = meeting.actionItems.filter((item) => item.status === "open").length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Badge variant="info" className="mb-2">
+          <Badge variant={meeting.status === "live" ? "success" : "info"} className="mb-2">
             {meeting.status === "live" ? "Live" : "Summary ready"}
           </Badge>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
             {meeting.title}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {formatMeetingWhen(meeting.startedAt)} · {formatDuration(meeting.durationSec)}
-            {meeting.resumeName ? ` · ${meeting.resumeName}` : ""}
+            {meeting.time} · {meeting.duration} · {meeting.attendees} attendees
+            {meeting.generatedIn ? ` · Generated in ${meeting.generatedIn}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/translation">
+          <Link href={`/translation?meetingId=${encodeURIComponent(meeting.id)}`}>
             <Button variant="outline" size="sm">
               <Languages className="h-3.5 w-3.5" />
               Translation
             </Button>
           </Link>
-          <Link href="/meetings/live">
+          <Link href={`/meetings/${encodeURIComponent(meeting.id)}/feed`}>
             <Button variant="gradient" size="sm">
               <MessageSquare className="h-3.5 w-3.5" />
-              New session
+              Conversation feed
             </Button>
           </Link>
         </div>
       </div>
 
       <Card glow className="p-6">
-        <CardTitle className="mb-3">Session briefing</CardTitle>
-        <p className="text-sm leading-relaxed text-muted">
-          {meeting.summary ||
-            (meeting.kind === "interview"
-              ? `Interview session${meeting.company ? ` at ${meeting.company}` : ""}${
-                  meeting.resumeName ? ` with ${meeting.resumeName}` : ""
-                }. CueAI used the uploaded resume to draft speakable answers.`
-              : meeting.description || "Regular live session.")}
-        </p>
+        <CardTitle className="mb-3">
+          {meeting.keyDecisions.length ? "Executive summary" : "Session briefing"}
+        </CardTitle>
+        <p className="text-sm leading-relaxed text-muted">{meeting.executiveSummary}</p>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="p-5">
-          <CardHeader>
-            <CardTitle>Asked in this session</CardTitle>
-          </CardHeader>
-          <ul className="space-y-3">
-            {meeting.answers.length === 0 && (
-              <li className="text-sm text-muted">No questions were asked.</li>
-            )}
-            {meeting.answers.slice(0, 8).map((a) => (
-              <li key={a.at} className="flex gap-2 text-sm text-foreground/90">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
-                <span>
-                  <span className="font-medium">{a.prompt}</span>
-                  <span className="mt-1 block text-muted">{a.answer}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        {meeting.keyDecisions.length > 0 && (
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Key decisions</CardTitle>
+            </CardHeader>
+            <ul className="space-y-3">
+              {meeting.keyDecisions.map((decision) => (
+                <li key={decision} className="flex gap-2 text-sm text-foreground/90">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
+                  <span>{decision}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
 
+        {meeting.aiAnswers.length > 0 && (
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Asked in this session</CardTitle>
+            </CardHeader>
+            <ul className="space-y-3">
+              {meeting.aiAnswers.slice(0, 8).map((answer) => (
+                <li key={answer.id} className="flex gap-2 text-sm text-foreground/90">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
+                  <span>
+                    <span className="font-medium">{answer.question}</span>
+                    <span className="mt-1 block text-muted">{answer.answer}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        {meeting.risks.length > 0 && (
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Risks and questions</CardTitle>
+            </CardHeader>
+            <ul className="space-y-3">
+              {meeting.risks.map((risk) => (
+                <li key={risk.text} className="flex gap-2 text-sm">
+                  {risk.type === "risk" ? (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  ) : (
+                    <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                  )}
+                  <span>
+                    <span
+                      className={cn(
+                        "font-medium",
+                        risk.type === "risk" ? "text-amber-300" : "text-violet-300",
+                      )}
+                    >
+                      {risk.type === "risk" ? "Risk · " : "Question · "}
+                    </span>
+                    <span className="text-muted">{risk.text}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        {meeting.transcript.length > 0 && (
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Transcript</CardTitle>
+            </CardHeader>
+            <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
+              {meeting.transcript.map((line) => (
+                <li key={line.id}>
+                  <span className="font-medium text-primary">{line.speaker}:</span>{" "}
+                  <span className="text-muted">{line.text}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+      </div>
+
+      {meeting.actionItems.length > 0 && (
         <Card className="p-5">
           <CardHeader>
-            <CardTitle>Transcript</CardTitle>
+            <CardTitle>Action items</CardTitle>
+            <Badge>{openCount} open</Badge>
           </CardHeader>
-          <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
-            {meeting.transcript.length === 0 && (
-              <li className="text-muted">No transcript lines were saved.</li>
-            )}
-            {meeting.transcript.map((line, i) => (
-              <li key={`${line.at || i}-${line.text.slice(0, 12)}`}>
-                <span className="font-medium text-primary">{line.who}:</span>{" "}
-                <span className="text-muted">{line.text}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[540px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wider text-subtle">
+                  <th className="pb-3 font-medium">Task</th>
+                  <th className="pb-3 font-medium">Owner</th>
+                  <th className="pb-3 font-medium">Due</th>
+                  <th className="pb-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {meeting.actionItems.map((item) => (
+                  <tr key={item.id} className="border-b border-[var(--border)]/60">
+                    <td className="py-3 pr-4 font-medium">{item.title}</td>
+                    <td className="py-3 pr-4 text-muted">{item.owner}</td>
+                    <td className="py-3 pr-4 text-muted">{item.due}</td>
+                    <td className="py-3">
+                      <Badge
+                        variant={item.status === "done" ? "success" : "warning"}
+                        className={cn(item.status === "done" && "opacity-90")}
+                      >
+                        {item.status === "done" ? "Done" : "Open"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
-      </div>
+      )}
 
       <Card className="p-5">
         <CardTitle className="mb-3">Follow-up email draft</CardTitle>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4 text-sm leading-relaxed text-muted">
-          <p className="text-foreground">Subject: Notes from {meeting.title}</p>
+          <p className="text-foreground">Subject: {meeting.emailSubject}</p>
           <p className="mt-3 whitespace-pre-wrap">{emailBody}</p>
         </div>
         <div className="mt-3 flex gap-2">
           <Button size="sm" variant="primary" onClick={() => void copyEmail()}>
             {copied ? "Copied" : "Copy email"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={regenerateEmail}>
+            Regenerate
           </Button>
         </div>
       </Card>

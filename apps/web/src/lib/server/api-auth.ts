@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { AUTH_BYPASS } from "@/lib/auth-mode";
 import { can, type AdminPermission, normalizeRole } from "@/lib/roles";
 import {
   SESSION_COOKIE,
@@ -7,10 +8,6 @@ import {
   type SessionPayload,
 } from "@/lib/server/session";
 import { readStore } from "@/lib/server/db";
-
-const AUTH_BYPASS =
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "true" ||
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "1";
 
 function bypassSession(): SessionPayload {
   return {

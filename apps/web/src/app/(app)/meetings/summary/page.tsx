@@ -39,13 +39,13 @@ export default function SummaryPage() {
           <p className="mt-1 text-sm text-muted">Aug 5, 2026 · 42 minutes · 6 attendees</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/translation">
+          <Link href="/translation?meetingId=m1">
             <Button size="sm" variant="outline">
               <Languages className="h-3.5 w-3.5" />
               Translation
             </Button>
           </Link>
-          <Link href="/meetings/live">
+          <Link href="/meetings/m1/feed">
             <Button size="sm" variant="gradient">
               <MessageSquare className="h-3.5 w-3.5" />
               Conversation feed

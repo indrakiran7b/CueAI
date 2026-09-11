@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getMeetingById } from "@/lib/meetings-catalog";
 import { finalizeMeeting, getMeeting, publicMeeting } from "@/lib/server/meetings";
 import type { DbMeetingLine } from "@/lib/server/db";
 
@@ -14,18 +15,33 @@ export async function OPTIONS() {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const meeting = await getMeeting(id);
-  if (!meeting) {
-    return NextResponse.json({ error: "Meeting not found." }, { status: 404, headers: CORS_HEADERS });
+  const stored = await getMeeting(id);
+  if (stored) {
+    return NextResponse.json(
+      { meeting: publicMeeting(stored, true) },
+      { headers: CORS_HEADERS },
+    );
   }
-  return NextResponse.json({ meeting: publicMeeting(meeting, true) }, { headers: CORS_HEADERS });
+
+  const catalog = getMeetingById(id);
+  if (catalog) {
+    return NextResponse.json({ meeting: catalog }, { headers: CORS_HEADERS });
+  }
+
+  return NextResponse.json(
+    { error: "Meeting not found" },
+    { status: 404, headers: CORS_HEADERS },
+  );
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const meeting = await getMeeting(id);
   if (!meeting) {
-    return NextResponse.json({ error: "Meeting not found." }, { status: 404, headers: CORS_HEADERS });
+    return NextResponse.json(
+      { error: "Meeting not found." },
+      { status: 404, headers: CORS_HEADERS },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as
@@ -41,5 +57,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const fresh = await getMeeting(id);
-  return NextResponse.json({ meeting: fresh ? publicMeeting(fresh, true) : null }, { headers: CORS_HEADERS });
+  return NextResponse.json(
+    { meeting: fresh ? publicMeeting(fresh, true) : null },
+    { headers: CORS_HEADERS },
+  );
 }

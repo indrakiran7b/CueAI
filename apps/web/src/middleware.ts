@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AUTH_BYPASS } from "@/lib/auth-mode";
 import {
   SESSION_COOKIE,
   verifySessionEdge,
 } from "@/lib/server/session-edge";
-
-const AUTH_BYPASS =
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "true" ||
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "1";
 
 /**
  * Middleware only verifies authentication for Admin routes.

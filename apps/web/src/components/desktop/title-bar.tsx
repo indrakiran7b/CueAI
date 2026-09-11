@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Minus, Square, Copy, X, Sparkles } from "lucide-react";
+import { Minus, Square, Copy, X } from "lucide-react";
+import { BrandMark } from "@/components/ui/logo";
 import { getDesktop, isDesktopApp } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +29,7 @@ export function DesktopTitleBar() {
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-md btn-gradient">
-          <Sparkles className="h-3 w-3 text-white" />
-        </span>
+        <BrandMark size="sm" className="h-5 w-5" />
         <span className="text-xs font-semibold tracking-tight">CueAI</span>
         <span className="rounded-md border border-teal-500/20 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-300">
           Desktop

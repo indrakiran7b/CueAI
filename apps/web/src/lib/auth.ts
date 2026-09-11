@@ -1,5 +1,8 @@
+import { AUTH_BYPASS } from "@/lib/auth-mode";
 import type { WorkspaceRole } from "@/lib/roles";
 import { normalizeRole } from "@/lib/roles";
+
+export { AUTH_BYPASS };
 
 export type CueUser = {
   id: string;
@@ -32,14 +35,6 @@ type ApiUser = {
 
 const USERS_KEY = "cueai-users";
 const SESSION_KEY = "cueai-session";
-
-/**
- * Auth bypass is OFF by default so Start free / signup creates a real user workspace.
- * Set NEXT_PUBLIC_SKIP_AUTH=true only for local demos without login.
- */
-export const AUTH_BYPASS =
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "true" ||
-  process.env.NEXT_PUBLIC_SKIP_AUTH === "1";
 
 export const DEV_GUEST_SESSION: CueSession = {
   userId: "dev-guest",
@@ -195,9 +190,19 @@ export async function logoutApi() {
 export async function syncSessionFromServer(): Promise<CueSession | null> {
   try {
     const res = await fetch("/api/auth/me", { cache: "no-store" });
-    if (!res.ok) return getSession();
+    if (!res.ok) {
+      if (!AUTH_BYPASS && (res.status === 401 || res.status === 403)) {
+        clearSession();
+        return null;
+      }
+      return getSession();
+    }
     const data = (await res.json()) as { user?: ApiUser };
-    if (!data.user) return getSession();
+    if (!data.user) {
+      if (AUTH_BYPASS) return getSession();
+      clearSession();
+      return null;
+    }
     return sessionFromApiUser(data.user);
   } catch {
     return getSession();

@@ -3,6 +3,7 @@
  */
 
 import { app, BrowserWindow, screen } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import type { CompanionMode } from "../ipc/channels";
 import { getStoreValue, setStoreValue } from "./store";
@@ -47,24 +48,60 @@ function log(tag: string, msg: string) {
   if (!app.isPackaged) console.log(`[${tag}] ${msg}`);
 }
 
+let companionLoadTarget: string | null = null;
+let companionDevFallbackAttempted = false;
+
 function getCompanionDevUrl() {
   const port = process.env.CUEAI_COMPANION_DEV_PORT ?? "15174";
-  return `http://127.0.0.1:${port}`;
+  return `http://127.0.0.1:${port}/`;
+}
+
+function resolveBundledCompanionPath(): string | null {
+  const candidates = [
+    path.join(__dirname, "../../dist/index.html"),
+    path.join(app.getAppPath(), "dist", "index.html"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 function loadCompanionUrl(win: BrowserWindow) {
-  if (!app.isPackaged) void win.loadURL(getCompanionDevUrl());
-  else void win.loadFile(path.join(__dirname, "../../dist/index.html"));
+  const bundled = resolveBundledCompanionPath();
+  if (app.isPackaged || bundled) {
+    if (!bundled) {
+      showCompanionLoadError(
+        win,
+        path.join(app.getAppPath(), "dist", "index.html"),
+        "Bundled companion UI is missing. Reinstall CueAI.",
+        -1
+      );
+      return;
+    }
+    companionLoadTarget = bundled;
+    companionDevFallbackAttempted = false;
+    void win.loadFile(bundled);
+    return;
+  }
+
+  companionLoadTarget = getCompanionDevUrl();
+  companionDevFallbackAttempted = false;
+  void win.loadURL(companionLoadTarget);
 }
 
 function showCompanionLoadError(win: BrowserWindow, url: string, desc: string, code: number) {
   companionLoadError = desc || `Load failed (${code})`;
+  const hint = app.isPackaged
+    ? "Try reinstalling CueAI, or contact support with the error above."
+    : `<pre style="background:#111827;padding:10px;border-radius:8px;color:#2dd4bf;font-size:12px;margin:8px 0 0">npm run dev:desktop</pre>
+      <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">Keep that terminal open so the companion UI can load on port 15174.</p>`;
   const html = `<!doctype html><html><body style="margin:0;background:rgba(11,15,16,0.92);color:#e5e7eb;font-family:Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh">
     <div style="max-width:420px;padding:20px;border:1px solid rgba(255,255,255,0.12);border-radius:16px">
       <h1 style="font-size:16px;margin:0 0 8px;color:#2dd4bf">Companion UI failed to load</h1>
       <p style="color:#9ca3af;font-size:13px">Could not open ${url}</p>
       <p style="color:#9ca3af;font-size:13px">${companionLoadError}</p>
-      <pre style="background:#111827;padding:10px;border-radius:8px;color:#2dd4bf;font-size:12px">npm run dev:desktop</pre>
+      ${hint}
     </div></body></html>`;
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
@@ -161,7 +198,23 @@ function wireWindowEvents(win: BrowserWindow) {
 
   win.webContents.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
     if (win.isDestroyed() || !isMainFrame || code === -3) return;
-    showCompanionLoadError(win, url || getCompanionDevUrl(), desc, code);
+
+    const bundled = resolveBundledCompanionPath();
+    const devUrl = getCompanionDevUrl();
+    if (
+      !app.isPackaged &&
+      bundled &&
+      !companionDevFallbackAttempted &&
+      (url === devUrl || url?.startsWith("http://127.0.0.1:"))
+    ) {
+      companionDevFallbackAttempted = true;
+      companionLoadTarget = bundled;
+      log("OVERLAY", "Dev server unavailable; loading built companion UI");
+      void win.loadFile(bundled);
+      return;
+    }
+
+    showCompanionLoadError(win, url || companionLoadTarget || devUrl, desc, code);
   });
 
   win.on("close", (e) => {
@@ -403,11 +456,15 @@ async function showOverlayInner() {
 
   const url = win.webContents.getURL();
   const devUrl = getCompanionDevUrl();
+  const bundled = resolveBundledCompanionPath();
+  const expectsFile = app.isPackaged || Boolean(bundled);
   const needsReload =
     companionLoadError ||
     !url ||
     url === "about:blank" ||
-    (!app.isPackaged && !url.startsWith(devUrl) && !url.startsWith("data:text/html"));
+    (expectsFile
+      ? !url.startsWith("file:") && !url.startsWith("data:text/html")
+      : !url.startsWith(devUrl) && !url.startsWith("data:text/html"));
 
   if (needsReload && !win.webContents.isLoading()) {
     log("OVERLAY", "Reloading companion UI");

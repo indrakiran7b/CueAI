@@ -125,9 +125,15 @@ export default function MeetingsPage() {
         {filtered.map((m) => (
           <Link
             key={m.id}
-            href={m.status === "live" ? "/meetings/live" : `/meetings/${m.id}/summary`}
+            href={
+              m.status === "live" && m.id.startsWith("mtg_")
+                ? "/meetings/live"
+                : `/meetings/${m.id}/summary`
+            }
             onClick={() => {
-              if (m.status === "live") void openCompanionOverlay();
+              if (m.status === "live" && m.id.startsWith("mtg_")) {
+                void openCompanionOverlay();
+              }
             }}
           >
             <Card hover className="h-full p-5">

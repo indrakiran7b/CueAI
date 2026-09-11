@@ -1,4 +1,12 @@
 /**
+ * Full auth skip for test builds: no login wall, guest session, no onboarding.
+ * Set NEXT_PUBLIC_SKIP_AUTH=false to require sign-in again.
+ */
+export const AUTH_BYPASS =
+  process.env.NEXT_PUBLIC_SKIP_AUTH !== "false" &&
+  process.env.NEXT_PUBLIC_SKIP_AUTH !== "0";
+
+/**
  * Temporary credential bypass for test builds.
  *
  * While the real auth stack is still being built, "Sign in" issues a session

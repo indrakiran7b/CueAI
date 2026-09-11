@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Copies Next.js standalone output into apps/desktop/build-resources/web
  * so electron-builder can ship a self-contained test executable.
