@@ -154,11 +154,17 @@ export const CompanionAI = {
 
 export const CompanionTranslation = {
   async translate(text: string, targetLang: string) {
-    await delay(400);
+    const { detectSourceLanguage, translateTexts } = await import("@/lib/translate-client");
+    const target = targetLang === "hi" || targetLang === "te" || targetLang === "en" ? targetLang : "en";
+    const sourceLang = detectSourceLanguage(text);
+    const [result] = await translateTexts([text], target, { sourceLanguage: sourceLang });
+    if (!result || result.status !== "ok") {
+      throw new Error(result?.error || "Translation failed.");
+    }
     return {
-      sourceLang: "en",
-      targetLang,
-      text: `[${targetLang}] ${text}`,
+      sourceLang,
+      targetLang: target,
+      text: result.text,
     };
   },
 };

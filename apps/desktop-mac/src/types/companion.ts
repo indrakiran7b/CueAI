@@ -95,4 +95,5 @@ export type CompanionAPI = {
   onCaptureStatus: (cb: (status: CaptureStatus) => void) => () => void;
   onListenSources: (cb: (sources: ListenSources) => void) => () => void;
   onWindowState: (cb: (state: CompanionWindowState) => void) => () => void;
+  onVisibility?: (cb: (visible: boolean) => void) => () => void;
 };

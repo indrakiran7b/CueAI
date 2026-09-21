@@ -90,6 +90,14 @@ export type CueDesktopAPI = {
   getMeetingSession: () => Promise<MeetingSession>;
   getCaptureStatus: () => Promise<CaptureStatus>;
   setExcludeCapture?: (enabled: boolean) => Promise<CaptureStatus>;
+  getListenSources?: () => Promise<{ mic: boolean; systemAudio: boolean }>;
+  setListenSources?: (sources: Partial<{ mic: boolean; systemAudio: boolean }>) => Promise<{
+    mic: boolean;
+    systemAudio: boolean;
+  }>;
+  endSession?: () => Promise<MeetingSession>;
+  onCaptureStatus?: (cb: (status: CaptureStatus) => void) => () => void;
+  onListenSources?: (cb: (sources: { mic: boolean; systemAudio: boolean }) => void) => () => void;
   captureScreenshot?: (opts?: { save?: boolean; displayId?: number }) => Promise<ScreenshotResult>;
   listDisplays?: () => Promise<MacDisplayInfo[]>;
   listWindows?: () => Promise<{ id: string; name: string; displayId?: string }[]>;

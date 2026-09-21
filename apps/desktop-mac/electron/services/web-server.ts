@@ -7,6 +7,12 @@ import path from "node:path";
 /** Loopback port for the embedded Next.js server inside packaged builds. */
 export const EMBEDDED_WEB_PORT = 39100;
 
+/**
+ * Development renderer origin. Keep in sync with scripts/dev-mac.cjs.
+ * Packaged builds never use this — they spawn standalone Next on EMBEDDED_WEB_PORT.
+ */
+export const DEV_WEB_ORIGIN = "http://127.0.0.1:3002";
+
 let child: ChildProcess | null = null;
 let webOrigin: string | null = null;
 let lastSpawnError = "";
@@ -15,8 +21,13 @@ function packagedWebRoot() {
   return path.join(process.resourcesPath, "web");
 }
 
-function waitForServer(url: string, timeoutMs = 45000): Promise<void> {
+export function normalizeWebOrigin(raw: string) {
+  return raw.trim().replace(/\/$/, "");
+}
+
+export function waitForWebServer(url: string, timeoutMs = 45000): Promise<void> {
   const started = Date.now();
+  const target = normalizeWebOrigin(url);
   return new Promise((resolve, reject) => {
     const tick = () => {
       if (child && child.exitCode !== null) {
@@ -27,7 +38,7 @@ function waitForServer(url: string, timeoutMs = 45000): Promise<void> {
         );
         return;
       }
-      const req = http.get(url, (res) => {
+      const req = http.get(target, { timeout: 2000 }, (res) => {
         res.resume();
         resolve();
       });
@@ -35,9 +46,17 @@ function waitForServer(url: string, timeoutMs = 45000): Promise<void> {
         if (Date.now() - started > timeoutMs) {
           reject(
             new Error(
-              `Embedded web server did not start at ${url}. ${lastSpawnError}`.trim()
+              `Web server did not start at ${target}. ${lastSpawnError}`.trim()
             )
           );
+          return;
+        }
+        setTimeout(tick, 250);
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        if (Date.now() - started > timeoutMs) {
+          reject(new Error(`Web server did not start at ${target}.`.trim()));
           return;
         }
         setTimeout(tick, 250);
@@ -109,21 +128,31 @@ function buildChildEnv(root: string): NodeJS.ProcessEnv {
   return env;
 }
 
+function resolveDevOrigin() {
+  const envUrl = process.env.CUEAI_WEB_URL?.trim();
+  if (envUrl) return normalizeWebOrigin(envUrl);
+  return DEV_WEB_ORIGIN;
+}
+
 /**
- * Dev → localhost:3002 (or CUEAI_WEB_URL).
- * Packaged → spawn Next standalone with Electron-as-Node.
+ * Dev → wait for CUEAI_WEB_URL or http://127.0.0.1:3002 (npm run dev:mac starts Next).
+ * Packaged → spawn Next standalone with Electron-as-Node on port 39100.
  */
 export async function startEmbeddedWebServer(): Promise<string> {
   if (webOrigin) return webOrigin;
 
-  const envUrl = process.env.CUEAI_WEB_URL?.trim();
-  if (envUrl) {
-    webOrigin = envUrl.replace(/\/$/, "");
-    return webOrigin;
-  }
-
   if (!app.isPackaged) {
-    webOrigin = "http://127.0.0.1:3002";
+    webOrigin = resolveDevOrigin();
+    console.log("[WEB] Waiting for web server", webOrigin);
+    try {
+      await waitForWebServer(webOrigin, 90000);
+      console.log("[WEB] Web server ready");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error("[WEB] Failed to start");
+      console.error("[WEB] Reason:", reason);
+      throw err;
+    }
     return webOrigin;
   }
 
@@ -167,12 +196,12 @@ export async function startEmbeddedWebServer(): Promise<string> {
   });
 
   webOrigin = `http://127.0.0.1:${EMBEDDED_WEB_PORT}`;
-  await waitForServer(webOrigin);
+  await waitForWebServer(webOrigin);
   return webOrigin;
 }
 
 export function getWebOrigin() {
-  return webOrigin || process.env.CUEAI_WEB_URL || "http://127.0.0.1:3002";
+  return webOrigin || process.env.CUEAI_WEB_URL?.trim().replace(/\/$/, "") || DEV_WEB_ORIGIN;
 }
 
 export function stopEmbeddedWebServer() {

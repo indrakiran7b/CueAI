@@ -18,10 +18,10 @@ test.describe("Meeting Translation & Conversation Feed", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Hindi" }).click();
-    await expect(page.getByText(/एंटरप्राइज़ रोलआउट/i).first()).toBeVisible();
+    await expect(page.locator("body")).toContainText(/[\u0900-\u097F]/, { timeout: 45000 });
 
     await page.getByRole("button", { name: "Telugu" }).click();
-    await expect(page.getByText(/ఎంటర్‌ప్రైజ్ రోలౌట్/i).first()).toBeVisible();
+    await expect(page.locator("body")).toContainText(/[\u0C00-\u0C7F]/, { timeout: 45000 });
   });
 
   test("summary → conversation feed loads that meeting", async ({ page }) => {

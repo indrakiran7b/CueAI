@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "npm run dev -w @cueai/web",
     "dev:web": "npm run dev -w @cueai/web",
+    "dev:web:mac": "npm run dev:mac -w @cueai/web",
     "dev:desktop": "npm run dev -w @cueai/desktop",
     "dev:desktop:mac": "npm run dev -w @cueai/desktop-mac",
-    "dev:mac": "npm run dev -w @cueai/desktop-mac",
+    "dev:mac": "node scripts/dev-mac.cjs",
     "dev:vision": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\server.py",
     "download:qwen-vl": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\download.py",
     "build": "npm run build -w @cueai/web",

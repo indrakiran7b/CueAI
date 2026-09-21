@@ -68,6 +68,21 @@ const cueDesktop = {
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_CAPTURE_STATUS) as Promise<CaptureStatus>,
   setExcludeCapture: (enabled: boolean) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_SET_EXCLUDE_CAPTURE, enabled) as Promise<CaptureStatus>,
+  getListenSources: () =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_GET_LISTEN_SOURCES) as Promise<ListenSources>,
+  setListenSources: (sources: Partial<ListenSources>) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_SET_LISTEN_SOURCES, sources) as Promise<ListenSources>,
+  endSession: () => ipcRenderer.invoke(IpcChannels.COMPANION_END_SESSION) as Promise<MeetingSession>,
+  onCaptureStatus: (cb: (status: CaptureStatus) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, s: CaptureStatus) => cb(s);
+    ipcRenderer.on("companion:capture-status", listener);
+    return () => ipcRenderer.removeListener("companion:capture-status", listener);
+  },
+  onListenSources: (cb: (sources: ListenSources) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, s: ListenSources) => cb(s);
+    ipcRenderer.on("companion:listen-sources", listener);
+    return () => ipcRenderer.removeListener("companion:listen-sources", listener);
+  },
   captureScreenshot: (opts?: { save?: boolean; displayId?: number }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_CAPTURE_SCREENSHOT, opts) as Promise<{
       ok: boolean;
@@ -202,10 +217,18 @@ const cueai = {
       mode: CompanionMode;
     }) => void
   ) => {
-    const listener = (_: Electron.IpcRendererEvent, s: typeof cb extends (v: infer V) => void ? V : never) =>
-      cb(s);
+    const listener = (_: Electron.IpcRendererEvent, s: {
+      bounds: { x: number; y: number; width: number; height: number };
+      expanded: boolean;
+      mode: CompanionMode;
+    }) => cb(s);
     ipcRenderer.on("companion:window-state", listener);
     return () => ipcRenderer.removeListener("companion:window-state", listener);
+  },
+  onVisibility: (cb: (visible: boolean) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, visible: boolean) => cb(visible);
+    ipcRenderer.on("companion:visibility", listener);
+    return () => ipcRenderer.removeListener("companion:visibility", listener);
   },
 };
 

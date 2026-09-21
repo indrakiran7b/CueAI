@@ -163,20 +163,34 @@ export async function createMeeting(input: {
   return meeting;
 }
 
+function transcriptEventKey(line: { who: string; text: string; at?: string }) {
+  return `${line.who}\0${line.text}\0${line.at || ""}`;
+}
+
 export async function appendMeetingExchange(
   meetingId: string,
   prompt: string,
   answer: string,
 ) {
   const now = new Date().toISOString();
+  const clippedPrompt = prompt.slice(0, 2000);
+  const clippedAnswer = answer.slice(0, 4000);
   await updateStore(async (s) => {
     const meeting = (s.meetings || []).find((m) => m.id === meetingId);
     if (!meeting) return;
-    meeting.answers.unshift({ prompt: prompt.slice(0, 2000), answer: answer.slice(0, 4000), at: now });
+    const duplicate = meeting.answers.some(
+      (row) =>
+        row.prompt === clippedPrompt &&
+        row.answer === clippedAnswer &&
+        Math.abs(Date.parse(row.at) - Date.parse(now)) < 8000,
+    );
+    if (duplicate) return;
+    meeting.answers.unshift({
+      prompt: clippedPrompt,
+      answer: clippedAnswer,
+      at: now,
+    });
     meeting.answers = meeting.answers.slice(0, 80);
-    meeting.transcript.push({ who: "You", text: prompt.slice(0, 1000), at: now });
-    meeting.transcript.push({ who: "CueAI", text: answer.slice(0, 2000), at: now });
-    meeting.transcript = meeting.transcript.slice(-200);
   });
 }
 
@@ -195,7 +209,14 @@ export async function finalizeMeeting(
     meeting.endedAt = new Date().toISOString();
     if (typeof patch.durationSec === "number") meeting.durationSec = Math.max(0, patch.durationSec);
     if (patch.transcript?.length) {
-      meeting.transcript = [...meeting.transcript, ...patch.transcript].slice(-200);
+      const seen = new Set(meeting.transcript.map(transcriptEventKey));
+      for (const line of patch.transcript) {
+        const key = transcriptEventKey(line);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        meeting.transcript.push(line);
+      }
+      meeting.transcript = meeting.transcript.slice(-200);
     }
     if (patch.summary) meeting.summary = patch.summary.slice(0, 4000);
     if (s.activeMeetingId === meetingId) s.activeMeetingId = null;

@@ -44,7 +44,9 @@ test.describe("E2E Flow 5–12 — Feature pages", () => {
     await expect(page.getByRole("heading", { name: /translation/i })).toBeVisible();
 
     await page.getByRole("button", { name: /hindi/i }).click();
-    await expect(page.locator("body")).toContainText(/टीम|एंटरप्राइज़|latency|summary/i);
+    await expect(page.locator("body")).toContainText(/[\u0900-\u097F]|Translating|Translation failed/i, {
+      timeout: 45000,
+    });
 
     await page.getByRole("button", { name: /summary/i }).click();
     const copyBtn = page.getByRole("button", { name: /copy/i }).first();

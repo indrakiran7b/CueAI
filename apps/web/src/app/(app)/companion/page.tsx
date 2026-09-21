@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MacGlassButton, MacSegmentedControl } from "@/components/mac";
+import { MacGlassButton, MacGlassToggle, MacSegmentedControl } from "@/components/mac";
 import {
   Monitor,
   Sparkles,
@@ -17,6 +17,8 @@ import {
   Mic,
   Volume2,
   Camera,
+  PhoneOff,
+  Minimize2,
 } from "lucide-react";
 import {
   DESKTOP_BRIDGE_URL,
@@ -30,7 +32,32 @@ import {
   type CompanionOpenResult,
   type MacPermissionState,
   type MacPermissionsSnapshot,
+  type MeetingSession,
 } from "@/lib/desktop";
+
+function permissionCopy(
+  state: MacPermissionState | undefined,
+  granted: string,
+  denied: string,
+  pending: string,
+  grantedMark = "✓ Permission granted",
+) {
+  if (state === "granted") return { mark: grantedMark, desc: granted };
+  if (state === "denied" || state === "restricted") {
+    return { mark: "⚠ Permission required", desc: denied };
+  }
+  if (state === "not-determined") return { mark: "⚠ Permission required", desc: pending };
+  if (!state) return { mark: "Checking…", desc: pending };
+  return { mark: "⚠ Permission required", desc: pending };
+}
+
+function permissionAction(
+  state: MacPermissionState | undefined,
+): "settings" | "fix" | null {
+  if (state === "denied" || state === "restricted") return "settings";
+  if (state === "not-determined") return "fix";
+  return null;
+}
 
 type BridgeStatus = {
   ok?: boolean;
@@ -38,6 +65,8 @@ type BridgeStatus = {
   loadError?: string | null;
   bounds?: { width: number; height: number } | null;
 };
+
+type ListenSources = { mic: boolean; systemAudio: boolean };
 
 const features = [
   {
@@ -82,18 +111,32 @@ const features = [
   },
 ];
 
-function permissionHeadline(state: MacPermissionState | undefined) {
-  if (state === "granted") return "Permission granted";
-  if (state === "denied" || state === "restricted") return "Permission required";
-  if (state === "not-determined") return "Permission not requested";
-  if (state === "unknown") return "Status unknown";
-  return "Checking…";
-}
-
-function permissionVariant(state: MacPermissionState | undefined): "success" | "warning" | "info" {
-  if (state === "granted") return "success";
-  if (state === "denied" || state === "restricted") return "warning";
-  return "info";
+function ControlCard({
+  icon: Icon,
+  title,
+  status,
+  desc,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  status: string;
+  desc: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Icon className="mb-3 h-5 w-5 text-primary" />
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="mt-1 text-xs font-medium text-foreground">{status}</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">{desc}</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2 pt-1">{children}</div>
+      </div>
+    </Card>
+  );
 }
 
 export default function CompanionPage() {
@@ -106,7 +149,16 @@ export default function CompanionPage() {
   const [view, setView] = useState<"overlay" | "capabilities">("overlay");
   const [perms, setPerms] = useState<MacPermissionsSnapshot | null>(null);
   const [capture, setCapture] = useState<CaptureStatus | null>(null);
-  const [aiReady, setAiReady] = useState<boolean | null>(null);
+  const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [listen, setListen] = useState<ListenSources>({ mic: false, systemAudio: false });
+  const [meeting, setMeeting] = useState<MeetingSession | null>(null);
+  const [shotMsg, setShotMsg] = useState<string | null>(null);
+  const [micBusy, setMicBusy] = useState(false);
+  const [systemBusy, setSystemBusy] = useState(false);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [shotBusy, setShotBusy] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => {
     setMac(isMacDesktopApp());
@@ -123,22 +175,16 @@ export default function CompanionPage() {
           if (cancelled) return;
           setDesktopReady(true);
           setOverlayVisible(Boolean(status.companionVisible));
-          if (desktop.getPermissions) {
-            const snap = await desktop.getPermissions();
-            if (!cancelled) setPerms(snap);
-          }
-          if (desktop.getCaptureStatus) {
-            const cap = await desktop.getCaptureStatus();
-            if (!cancelled) setCapture(cap);
+          try {
+            if (desktop.getPermissions) setPerms(await desktop.getPermissions());
+            if (desktop.getCaptureStatus) setCapture(await desktop.getCaptureStatus());
+            if (desktop.getListenSources) setListen(await desktop.getListenSources());
+            if (desktop.getMeetingSession) setMeeting(await desktop.getMeetingSession());
+          } catch {
+            /* permissions optional */
           }
         } catch {
           if (!cancelled) setDesktopReady(false);
-        }
-        try {
-          const res = await fetch("/api/auth/providers", { method: "GET" });
-          if (!cancelled) setAiReady(res.ok);
-        } catch {
-          if (!cancelled) setAiReady(false);
         }
         return;
       }
@@ -160,11 +206,35 @@ export default function CompanionPage() {
       }
     }
 
+    async function refreshBackend() {
+      try {
+        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!cancelled) setBackendOk(res.ok);
+      } catch {
+        if (!cancelled) setBackendOk(false);
+      }
+    }
+
     void refreshStatus();
-    const timer = window.setInterval(() => void refreshStatus(), 4000);
+    void refreshBackend();
+    const timer = window.setInterval(() => {
+      void refreshStatus();
+      void refreshBackend();
+    }, 4000);
+
+    const desktop = getDesktop();
+    const offCapture = desktop?.onCaptureStatus?.((status) => {
+      if (!cancelled) setCapture(status);
+    });
+    const offListen = desktop?.onListenSources?.((sources) => {
+      if (!cancelled) setListen(sources);
+    });
+
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      offCapture?.();
+      offListen?.();
     };
   }, []);
 
@@ -206,6 +276,129 @@ export default function CompanionPage() {
     }, 1500);
   }
 
+  async function toggleMic(next: boolean) {
+    const desktop = getDesktop();
+    if (!desktop?.setListenSources || micBusy) return;
+    setMicBusy(true);
+    try {
+      if (next && perms?.microphone.state !== "granted") {
+        await desktop.requestPermission?.("microphone");
+        if (desktop.getPermissions) setPerms(await desktop.getPermissions());
+      }
+      setListen(await desktop.setListenSources({ mic: next }));
+    } finally {
+      setMicBusy(false);
+    }
+  }
+
+  async function toggleSystemAudio(next: boolean) {
+    const desktop = getDesktop();
+    if (!desktop?.setListenSources || systemBusy) return;
+    setSystemBusy(true);
+    try {
+      if (next && perms?.systemAudio.state !== "granted") {
+        await desktop.requestPermission?.("systemAudio");
+        if (desktop.getPermissions) setPerms(await desktop.getPermissions());
+      }
+      setListen(await desktop.setListenSources({ systemAudio: next }));
+    } finally {
+      setSystemBusy(false);
+    }
+  }
+
+  async function togglePrivacy(next: boolean) {
+    const desktop = getDesktop();
+    if (!desktop?.setExcludeCapture || privacyBusy) return;
+    setPrivacyBusy(true);
+    try {
+      setCapture(await desktop.setExcludeCapture(next));
+    } finally {
+      setPrivacyBusy(false);
+    }
+  }
+
+  async function takeScreenshot() {
+    const desktop = getDesktop();
+    if (!desktop?.captureScreenshot || shotBusy) return;
+    setShotBusy(true);
+    setShotMsg(null);
+    try {
+      if (perms?.screenRecording.state !== "granted") {
+        await desktop.requestPermission?.("screen");
+        if (desktop.getPermissions) setPerms(await desktop.getPermissions());
+      }
+      const result = await desktop.captureScreenshot({ save: false });
+      setShotMsg(result.ok ? "Screenshot captured." : result.error || "Screenshot failed.");
+    } catch (err) {
+      setShotMsg(err instanceof Error ? err.message : "Screenshot failed.");
+    } finally {
+      setShotBusy(false);
+    }
+  }
+
+  async function hideOverlay() {
+    const desktop = getDesktop();
+    if (!desktop || hiding) return;
+    setHiding(true);
+    try {
+      await desktop.hideCompanion();
+      setOverlayVisible(false);
+    } finally {
+      setHiding(false);
+    }
+  }
+
+  async function endSession() {
+    const desktop = getDesktop();
+    if (!desktop?.endSession || ending) return;
+    setEnding(true);
+    try {
+      const session = await desktop.endSession();
+      setMeeting(session);
+      setOverlayVisible(false);
+    } finally {
+      setEnding(false);
+    }
+  }
+
+  async function fixPermission(kind: "microphone" | "screen" | "systemAudio") {
+    const desktop = getDesktop();
+    await desktop?.requestPermission?.(kind);
+    if (desktop?.getPermissions) setPerms(await desktop.getPermissions());
+  }
+
+  const privacyOn = Boolean(capture?.applied || capture?.requested);
+  const sessionActive = Boolean(meeting?.active);
+  const overlayStatusLine = desktopReady
+    ? [
+        `Overlay ${overlayVisible ? "visible" : "hidden"}`,
+        `Session ${sessionActive ? "active" : "idle"}${meeting?.title ? ` · ${meeting.title}` : ""}`,
+        `Microphone ${listen.mic ? "ON" : "OFF"}`,
+        `System audio ${listen.systemAudio ? "ON" : "OFF"}`,
+        `Privacy ${privacyOn ? "ON" : "OFF"}`,
+      ].join(" · ")
+    : null;
+
+  const micPerm = permissionCopy(
+    perms?.microphone.state,
+    "CueAI can access the microphone.",
+    "Microphone permission is required on macOS.",
+    "macOS will ask the first time CueAI uses the microphone.",
+  );
+  const systemPerm = permissionCopy(
+    perms?.systemAudio.state,
+    "CueAI can capture supported system/meeting audio.",
+    "Screen Recording permission is required on macOS.",
+    "System audio uses Screen Recording on macOS.",
+    "✓ Available",
+  );
+  const screenPerm = permissionCopy(
+    perms?.screenRecording.state,
+    "CueAI can capture the selected display.",
+    "Screen Recording permission is required on macOS.",
+    "macOS will ask the first time CueAI captures the display.",
+  );
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
       <div>
@@ -234,7 +427,6 @@ export default function CompanionPage() {
       )}
 
       {(!mac || view === "overlay") && (
-        <>
       <Card glow className={mac ? "mac-glass-card space-y-4 border-0 bg-transparent shadow-none" : "space-y-4"}>
         <CardHeader>
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl btn-gradient text-white">
@@ -251,11 +443,13 @@ export default function CompanionPage() {
                     : "Install / open CueAI Desktop"}
             </CardTitle>
             <CardDescription>
-              {desktopReady
-                ? overlayVisible
-                  ? "Native overlay is on screen. Use ⌘⇧Space or Ctrl+Shift+Space to hide or show it."
-                  : "Open the native system-wide overlay (same window as ⌘⇧Space / Ctrl+Shift+Space)."
-                : "Start Desktop so the Companion can float above meetings and stay hidden from capture."}
+              {overlayStatusLine
+                ? overlayStatusLine
+                : desktopReady
+                  ? overlayVisible
+                    ? "Native overlay is on screen. Use ⌘⇧Space or Ctrl+Shift+Space to hide or show it."
+                    : "Open the native system-wide overlay (same window as ⌘⇧Space / Ctrl+Shift+Space)."
+                  : "Start Desktop so the Companion can float above meetings and stay hidden from capture."}
             </CardDescription>
           </div>
         </CardHeader>
@@ -280,7 +474,7 @@ export default function CompanionPage() {
           </div>
         )}
 
-        {desktopReady && (
+        {desktopReady && !mac && (
           <p className="text-xs text-muted">
             Native overlay is always-on-top, excluded from capture when Privacy is on,
             and stays up after you close this website — dismiss only with End Session or
@@ -400,17 +594,99 @@ export default function CompanionPage() {
           )}
         </div>
       </Card>
+      )}
 
-      <div className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 ${mac && view === "overlay" ? "opacity-80" : ""}`}>
-        {features.map((f) => (
-          <Card key={f.title} className="p-4">
-            <f.icon className="mb-3 h-5 w-5 text-primary" />
-            <h3 className="text-sm font-semibold">{f.title}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-muted">{f.desc}</p>
-          </Card>
-        ))}
-      </div>
-        </>
+      {mac && view === "overlay" && desktopReady && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ControlCard
+            icon={Mic}
+            title="Microphone"
+            status={listen.mic ? "ON" : "OFF"}
+            desc="Turn microphone capture on or off for the current overlay session."
+          >
+            <MacGlassToggle
+              checked={listen.mic}
+              onChange={(next) => void toggleMic(next)}
+              label="Microphone"
+            />
+          </ControlCard>
+          <ControlCard
+            icon={Volume2}
+            title="System audio"
+            status={listen.systemAudio ? "ON" : "OFF"}
+            desc="Turn system/meeting audio capture on or off for the overlay session."
+          >
+            <MacGlassToggle
+              checked={listen.systemAudio}
+              onChange={(next) => void toggleSystemAudio(next)}
+              label="System audio"
+            />
+          </ControlCard>
+          <ControlCard
+            icon={EyeOff}
+            title="Privacy mode"
+            status={privacyOn ? "ON" : "OFF"}
+            desc="Hide the overlay from screen share and capture when privacy is on."
+          >
+            <MacGlassToggle
+              checked={privacyOn}
+              onChange={(next) => void togglePrivacy(next)}
+              label="Privacy mode"
+            />
+          </ControlCard>
+          <ControlCard
+            icon={Camera}
+            title="Screen Context"
+            status={shotMsg || "Ready"}
+            desc="Capture a screenshot or open Screen Context for display analysis."
+          >
+            <MacGlassButton
+              loading={shotBusy}
+              loadingLabel="Capturing…"
+              disabled={shotBusy}
+              onClick={() => void takeScreenshot()}
+            >
+              Screenshot
+            </MacGlassButton>
+            <MacGlassButton
+              onClick={() => {
+                window.location.href = "/screen-context";
+              }}
+            >
+              Screen Context
+            </MacGlassButton>
+          </ControlCard>
+          <ControlCard
+            icon={Minimize2}
+            title="Hide overlay"
+            status={overlayVisible ? "Visible" : "Hidden"}
+            desc="Hide the system-wide overlay without ending the CueAI session."
+          >
+            <MacGlassButton
+              loading={hiding}
+              loadingLabel="Hiding…"
+              disabled={hiding || !overlayVisible}
+              onClick={() => void hideOverlay()}
+            >
+              Hide overlay
+            </MacGlassButton>
+          </ControlCard>
+          <ControlCard
+            icon={PhoneOff}
+            title="End session"
+            status={sessionActive ? "Session active" : "No active session"}
+            desc="Stop the overlay session and return to live meetings."
+          >
+            <MacGlassButton
+              loading={ending}
+              loadingLabel="Ending…"
+              disabled={ending}
+              onClick={() => void endSession()}
+            >
+              End session
+            </MacGlassButton>
+          </ControlCard>
+        </div>
       )}
 
       {mac && view === "capabilities" && (
@@ -420,118 +696,106 @@ export default function CompanionPage() {
               {
                 icon: Layers,
                 title: "Desktop Overlay",
-                badge: overlayVisible ? "Available" : desktopReady ? "Ready" : "Not running",
-                variant: overlayVisible ? "success" : desktopReady ? "info" : "warning",
-                desc: overlayVisible
-                  ? "CueAI desktop overlay is running."
-                  : desktopReady
-                    ? "CueAI Desktop is connected. Open the overlay from the Overlay tab when you need it."
-                    : "CueAI Desktop is not connected.",
+                mark: desktopReady ? "✓ Available" : "⚠ Disconnected",
+                desc: desktopReady
+                  ? "CueAI Desktop can show a system-wide overlay on this computer."
+                  : "CueAI Desktop is not connected on this computer.",
+                settings: null as "microphone" | "screen" | "systemAudio" | null,
+                fix: null as "microphone" | "screen" | "systemAudio" | null,
               },
               {
                 icon: Mic,
                 title: "Microphone",
-                badge: permissionHeadline(perms?.microphone.state),
-                variant: permissionVariant(perms?.microphone.state),
-                desc:
-                  perms?.microphone.message ||
-                  "CueAI can access the microphone when permission is granted.",
-                settings: "microphone" as const,
-                needsSettings:
-                  perms?.microphone.state === "denied" || perms?.microphone.state === "restricted",
+                ...micPerm,
+                settings: permissionAction(perms?.microphone.state) === "settings" ? "microphone" as const : null,
+                fix: permissionAction(perms?.microphone.state) === "fix" ? "microphone" as const : null,
               },
               {
                 icon: Volume2,
                 title: "System Audio",
-                badge: permissionHeadline(perms?.systemAudio.state),
-                variant: permissionVariant(perms?.systemAudio.state),
-                desc:
-                  perms?.systemAudio.message ||
-                  "CueAI can capture supported system/meeting audio when Screen Recording is allowed.",
-                settings: "systemAudio" as const,
-                needsSettings:
-                  perms?.systemAudio.state === "denied" || perms?.systemAudio.state === "restricted",
+                ...systemPerm,
+                settings: permissionAction(perms?.systemAudio.state) === "settings" ? "screen" as const : null,
+                fix: permissionAction(perms?.systemAudio.state) === "fix" ? "systemAudio" as const : null,
               },
               {
                 icon: Camera,
-                title: "Screen Recording",
-                badge: permissionHeadline(perms?.screenRecording.state),
-                variant: permissionVariant(perms?.screenRecording.state),
-                desc:
-                  perms?.screenRecording.message ||
-                  "Screen Recording permission is required on macOS.",
-                settings: "screen" as const,
-                needsSettings:
-                  perms?.screenRecording.state === "denied" ||
-                  perms?.screenRecording.state === "restricted",
-              },
-              {
-                icon: Shield,
-                title: "Privacy",
-                badge: !capture
-                  ? "Checking…"
-                  : !capture.supported
-                    ? "Unavailable"
-                    : capture.applied
-                      ? "Enabled"
-                      : "Disabled",
-                variant: !capture
-                  ? "info"
-                  : !capture.supported
-                    ? "warning"
-                    : capture.applied
-                      ? "success"
-                      : "info",
-                desc:
-                  capture?.message ||
-                  "Capture protection hides the overlay from screen share when Privacy is on.",
+                title: "Screen Capture",
+                ...screenPerm,
+                settings: permissionAction(perms?.screenRecording.state) === "settings" ? "screen" as const : null,
+                fix: permissionAction(perms?.screenRecording.state) === "fix" ? "screen" as const : null,
               },
               {
                 icon: EyeOff,
-                title: "Background desktop operation",
-                badge: desktopReady ? "Available" : "Not running",
-                variant: desktopReady ? "success" : "warning",
+                title: "Screen-share Privacy",
+                mark: capture?.applied ? "✓ Enabled" : "⚠ Not enabled",
+                desc: capture?.message || "Capture protection status comes from the live overlay.",
+                settings: null,
+                fix: null,
+              },
+              {
+                icon: Shield,
+                title: "Background Operation",
+                mark: desktopReady ? "✓ Available" : "⚠ Disconnected",
                 desc: desktopReady
-                  ? "CueAI Desktop stays running after this page closes until you end the session."
-                  : "Start CueAI Desktop for background overlay operation.",
+                  ? "The overlay process stays up after this page is closed."
+                  : "Start CueAI Desktop to keep the companion running in the background.",
+                settings: null,
+                fix: null,
               },
               {
                 icon: Sparkles,
-                title: "AI / backend connection",
-                badge: aiReady ? "Connected" : aiReady === false ? "Unavailable" : "Checking…",
-                variant: aiReady ? "success" : aiReady === false ? "warning" : "info",
-                desc: aiReady
-                  ? "CueAI can reach the transcription and answer backend."
-                  : aiReady === false
-                    ? "The CueAI web API is not reachable from this session."
-                    : "Checking the CueAI backend…",
+                title: "AI Connection",
+                mark: backendOk
+                  ? "✓ Connected"
+                  : backendOk === false
+                    ? "⚠ Disconnected"
+                    : "Checking…",
+                desc: backendOk
+                  ? "The CueAI workspace API is reachable."
+                  : "The workspace web server is not responding.",
+                settings: null,
+                fix: null,
               },
-            ] as const
-          ).map((item) => (
-            <Card key={item.title} className="p-4">
-              <item.icon className="mb-3 h-5 w-5 text-primary" />
-              <h3 className="text-sm font-semibold">{item.title}</h3>
-              <Badge variant={item.variant} className="mt-2">
-                {item.badge}
-              </Badge>
-              <p className="mt-1 text-xs leading-relaxed text-muted">{item.desc}</p>
-              {"needsSettings" in item && item.needsSettings ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() =>
-                    void getDesktop()?.openPrivacySettings?.(
-                      "settings" in item ? item.settings : "privacy",
-                    )
-                  }
+            ]
+          ).map((row) => (
+            <Card key={row.title} className="p-4">
+              <row.icon className="mb-3 h-5 w-5 text-primary" />
+              <h3 className="text-sm font-semibold">{row.title}</h3>
+              <p className="mt-1 text-xs font-medium text-foreground">{row.mark}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">{row.desc}</p>
+              {row.fix ? (
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
+                  onClick={() => void fixPermission(row.fix)}
                 >
-                  Open System Settings
-                </Button>
+                  Fix
+                </button>
+              ) : null}
+              {row.settings ? (
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
+                  onClick={() => void getDesktop()?.openPrivacySettings?.(row.settings)}
+                >
+                  Open Settings
+                </button>
               ) : null}
             </Card>
           ))}
         </div>
+      )}
+
+      {!mac && (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((f) => (
+          <Card key={f.title} className="p-4">
+            <f.icon className="mb-3 h-5 w-5 text-primary" />
+            <h3 className="text-sm font-semibold">{f.title}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted">{f.desc}</p>
+          </Card>
+        ))}
+      </div>
       )}
     </div>
   );

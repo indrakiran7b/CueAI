@@ -10,6 +10,11 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/misc";
 import { fetchMeeting, type StoredMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
+import {
+  peekTranslation,
+  translateTexts,
+  type TranslateLang,
+} from "@/lib/translate-client";
 import { cn } from "@/lib/utils";
 
 const languages = [
@@ -20,34 +25,32 @@ const languages = [
 
 type LangId = (typeof languages)[number]["id"];
 
-function localizedLine(meeting: MeetingRecord, lang: LangId) {
-  return meeting.transcript.map((line) => ({
-    id: line.id,
-    speaker: line.speaker,
-    role: line.role,
-    time: line.time,
-    original: line.text,
-    translated:
-      lang === "hi" ? line.textHi : lang === "te" ? line.textTe : line.text,
-  }));
+type RenderedText = {
+  status: "loading" | "ok" | "error";
+  text: string;
+  error?: string;
+};
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
 }
 
-function localizedAnswers(meeting: MeetingRecord, lang: LangId) {
-  return meeting.aiAnswers.map((a) => ({
-    id: a.id,
-    originalQ: a.question,
-    originalA: a.answer,
-    question:
-      lang === "hi" ? a.questionHi : lang === "te" ? a.questionTe : a.question,
-    answer: lang === "hi" ? a.answerHi : lang === "te" ? a.answerTe : a.answer,
-    pinned: a.pinned,
-  }));
-}
-
-function localizedSummary(meeting: MeetingRecord, lang: LangId) {
-  if (lang === "hi") return meeting.executiveSummaryHi;
-  if (lang === "te") return meeting.executiveSummaryTe;
-  return meeting.executiveSummary;
+function displayTranslated(entry: RenderedText | undefined, original: string, lang: LangId) {
+  if (entry?.status === "ok" && entry.text) return entry.text;
+  if (entry?.status === "error") {
+    return entry.error || "Translation failed.";
+  }
+  if (!original.trim()) return original;
+  const peeked = peekTranslation(original, lang);
+  if (peeked !== undefined) return peeked;
+  return "Translating...";
 }
 
 function TranslationContent() {
@@ -65,6 +68,7 @@ function TranslationContent() {
   const [list, setList] = useState<StoredMeeting[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoaded, setListLoaded] = useState(false);
+  const [rendered, setRendered] = useState<Record<string, RenderedText>>({});
 
   useEffect(() => {
     if (!meetingId) {
@@ -96,6 +100,16 @@ function TranslationContent() {
   }, [meetingId]);
 
   useEffect(() => {
+    if (!meetingId || meeting?.status !== "live") return;
+    const timer = window.setInterval(() => {
+      void fetchMeeting(meetingId).then((result) => {
+        if (result.ok) setMeeting(result.meeting);
+      });
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [meetingId, meeting?.status]);
+
+  useEffect(() => {
     if (meetingId) return;
     let active = true;
     void fetch("/api/meetings", { cache: "no-store" })
@@ -121,15 +135,110 @@ function TranslationContent() {
     };
   }, [meetingId]);
 
-  const transcriptLines = useMemo(
-    () => (meeting ? localizedLine(meeting, lang) : []),
-    [meeting, lang]
-  );
-  const answers = useMemo(
-    () => (meeting ? localizedAnswers(meeting, lang) : []),
-    [meeting, lang]
-  );
-  const summaryText = meeting ? localizedSummary(meeting, lang) : "";
+  const answers = useMemo(() => {
+    if (!meeting) return [];
+    return uniqueById(meeting.aiAnswers).map((a) => ({
+      id: a.id,
+      originalQ: a.question,
+      originalA: a.answer,
+      pinned: a.pinned,
+    }));
+  }, [meeting]);
+  const transcriptLines = useMemo(() => {
+    if (!meeting) return [];
+    const answerBodies = new Set(answers.map((a) => a.originalA));
+    return uniqueById(meeting.transcript)
+      .filter((line) => !(line.speaker === "CueAI" && answerBodies.has(line.text)))
+      .map((line) => ({
+        id: line.id,
+        speaker: line.speaker,
+        role: line.role,
+        time: line.time,
+        original: line.text,
+      }));
+  }, [meeting, answers]);
+  const summaryOriginal = meeting?.executiveSummary || "";
+
+  useEffect(() => {
+    if (!meeting) {
+      setRendered({});
+      return;
+    }
+
+    const jobs: { key: string; text: string }[] = [];
+    for (const line of transcriptLines) {
+      jobs.push({ key: `t:${line.id}`, text: line.original });
+    }
+    for (const answer of answers) {
+      jobs.push({ key: `q:${answer.id}`, text: answer.originalQ });
+      jobs.push({ key: `a:${answer.id}`, text: answer.originalA });
+    }
+    jobs.push({ key: "summary", text: meeting.executiveSummary || "" });
+
+    const target = lang as TranslateLang;
+    setRendered((prev) => {
+      const next: Record<string, RenderedText> = {};
+      for (const job of jobs) {
+        const peeked = peekTranslation(job.text, target);
+        if (peeked !== undefined) {
+          next[job.key] = { status: "ok", text: peeked };
+        } else if (prev[job.key]?.status === "ok" && prev[job.key]?.text) {
+          next[job.key] = { status: "loading", text: prev[job.key].text };
+        } else {
+          next[job.key] = { status: "loading", text: "" };
+        }
+      }
+      return next;
+    });
+
+    const controller = new AbortController();
+    let cancelled = false;
+    void translateTexts(
+      jobs.map((job) => job.text),
+      target,
+      { signal: controller.signal },
+    )
+      .then((results) => {
+        if (cancelled) return;
+        setRendered(() => {
+          const next: Record<string, RenderedText> = {};
+          results.forEach((result, index) => {
+            const key = jobs[index]?.key;
+            if (!key) return;
+            next[key] =
+              result.status === "ok"
+                ? { status: "ok", text: result.text }
+                : {
+                    status: "error",
+                    text: "",
+                    error: result.error || "Translation failed.",
+                  };
+          });
+          return next;
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        const message = err instanceof Error ? err.message : "Translation failed.";
+        setRendered((prev) => {
+          const next = { ...prev };
+          for (const job of jobs) {
+            if (next[job.key]?.status !== "ok") {
+              next[job.key] = { status: "error", text: "", error: message };
+            }
+          }
+          return next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [meeting, lang, transcriptLines, answers]);
+
+  const summaryText = displayTranslated(rendered.summary, summaryOriginal, lang);
 
   async function copyTranslation() {
     try {
@@ -310,7 +419,7 @@ function TranslationContent() {
                       bilingual && lang !== "en" && "mt-2"
                     )}
                   >
-                    {line.translated}
+                    {displayTranslated(rendered[`t:${line.id}`], line.original, lang)}
                   </p>
                   <p className="mt-2 text-[11px] text-subtle">
                     {line.speaker} · {line.role} · {line.time} · Transcript
@@ -351,10 +460,10 @@ function TranslationContent() {
                       bilingual && lang !== "en" && "mt-3"
                     )}
                   >
-                    {a.question}
+                    {displayTranslated(rendered[`q:${a.id}`], a.originalQ, lang)}
                   </p>
                   <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-                    {a.answer}
+                    {displayTranslated(rendered[`a:${a.id}`], a.originalA, lang)}
                   </p>
                   <p className="mt-2 text-[11px] text-subtle">
                     AI answer{a.pinned ? " · Pinned" : ""}

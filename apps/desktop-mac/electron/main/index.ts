@@ -71,15 +71,20 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    console.log("[ELECTRON] Starting Electron");
     try {
       await startEmbeddedWebServer();
     } catch (err) {
-      dialog.showErrorBox(
-        "CueAI failed to start",
-        err instanceof Error ? err.message : "Could not start the embedded web UI."
-      );
-      app.quit();
-      return;
+      const message =
+        err instanceof Error ? err.message : "Could not start the embedded web UI.";
+      console.error("[WEB] Failed to start");
+      console.error("[WEB] Reason:", message);
+      if (app.isPackaged) {
+        dialog.showErrorBox("CueAI failed to start", message);
+        app.quit();
+        return;
+      }
+      // Development: keep Electron open so Retry can load the workspace once Next is up.
     }
 
     registerIpcHandlers();

@@ -93,6 +93,8 @@ export default function App() {
     micLevel: 0,
     systemLevel: 0,
     error: null,
+    micError: null,
+    systemError: null,
   });
   const lastAnsweredRef = useRef("");
   const startedAtRef = useRef(Date.now());
@@ -118,6 +120,11 @@ export default function App() {
   const listening = audioSession.mic === "listening" || audioSession.system === "listening";
   const micLive = audioSession.mic === "listening";
   const systemLive = audioSession.system === "listening";
+  const audioProblem =
+    statusMsg ||
+    (listen.mic || micLive ? audioSession.micError : null) ||
+    (listen.systemAudio || systemLive ? audioSession.systemError : null) ||
+    audioSession.error;
   const kicker = shotBusy
     ? "Reading screen"
     : streaming
@@ -504,12 +511,12 @@ export default function App() {
                 <button type="button" role="menuitem" onClick={() => setPinned(!pinned)}>
                   <Pin className="h-4 w-4" />
                   <span>Keep on top</span>
-                  {pinned && <Check className="h-3.5 w-3.5 cue-tick" />}
+                  <em>{pinned ? "Enabled" : "Disabled"}</em>
                 </button>
                 <button type="button" role="menuitem" onClick={() => setAutoAnswer((v) => !v)}>
                   <Sparkles className="h-4 w-4" />
                   <span>Auto-reply</span>
-                  {autoAnswer && <Check className="h-3.5 w-3.5 cue-tick" />}
+                  <em>{autoAnswer ? "Enabled" : "Disabled"}</em>
                 </button>
                 <hr />
                 <button type="button" role="menuitem" className="is-danger" onClick={() => void onEndSession()}>
@@ -578,22 +585,23 @@ export default function App() {
               </div>
             </div>
             <h1>{question || lastHeard?.text || "Ready when you are"}</h1>
-            {(statusMsg || audioSession.error) && (
+            {(audioProblem) && (
               <p className="cue-error">
-                {statusMsg || audioSession.error}
-                {(statusMsg || audioSession.error)?.includes("System Settings") && (
+                {audioProblem}
+                {audioProblem.includes("System Settings") && (
                   <button
                     type="button"
                     className="cue-action"
-                    onClick={() => {
-                      const msg = `${statusMsg || ""} ${audioSession.error || ""}`.toLowerCase();
-                      const pane = msg.includes("microphone")
-                        ? "microphone"
-                        : msg.includes("screen recording") || msg.includes("system audio")
-                          ? "screen"
-                          : "privacy";
-                      void window.cueai?.openPrivacySettings?.(pane);
-                    }}
+                    onClick={() =>
+                      void window.cueai?.openPrivacySettings?.(
+                        audioProblem.includes("Microphone")
+                          ? "microphone"
+                          : audioProblem.includes("Screen Recording") ||
+                              audioProblem.includes("System audio")
+                            ? "screen"
+                            : "privacy",
+                      )
+                    }
                   >
                     Open System Settings
                   </button>

@@ -1,4 +1,5 @@
 import type { MeetingRecord } from "@/lib/meetings-catalog";
+import { getMeetingById } from "@/lib/meetings-catalog";
 
 export type StoredMeeting = {
   id: string;
@@ -52,6 +53,18 @@ export function isMeetingRecord(value: unknown): value is MeetingRecord {
   );
 }
 
+function uniqueByEventKey<T>(items: T[], keyOf: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = keyOf(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
   const briefing =
     meeting.summary ||
@@ -75,6 +88,15 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
     .filter(Boolean)
     .join("\n\n");
 
+  const transcript = uniqueByEventKey(
+    meeting.transcript,
+    (line) => `${line.who}\0${line.text}\0${line.at || ""}`,
+  );
+  const answers = uniqueByEventKey(
+    meeting.answers,
+    (answer) => `${answer.prompt}\0${answer.answer}\0${answer.at}`,
+  );
+
   return {
     id: meeting.id,
     title: meeting.title,
@@ -89,8 +111,8 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
     keyDecisions: [],
     risks: [],
     actionItems: [],
-    transcript: meeting.transcript.map((line, index) => ({
-      id: `${meeting.id}-t${index}`,
+    transcript: transcript.map((line, index) => ({
+      id: `${meeting.id}-t-${line.at || "na"}-${index}`,
       speaker: line.who,
       role: line.who === "You" || line.who === "CueAI" ? line.who : "Participant",
       text: line.text,
@@ -99,8 +121,8 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
       time: line.at ? formatMeetingWhen(line.at) : "",
       confidence: 1,
     })),
-    aiAnswers: meeting.answers.map((answer, index) => ({
-      id: `${meeting.id}-a${index}`,
+    aiAnswers: answers.map((answer, index) => ({
+      id: `${meeting.id}-a-${answer.at || "na"}-${index}`,
       question: answer.prompt,
       questionHi: answer.prompt,
       questionTe: answer.prompt,
@@ -139,6 +161,8 @@ export async function fetchMeeting(id: string): Promise<FetchMeetingResult> {
     };
 
     if (res.status === 404) {
+      const catalog = getMeetingById(trimmed);
+      if (catalog) return { ok: true, meeting: catalog };
       return { ok: false, status: 404, error: data.error || "Meeting not found" };
     }
     if (!res.ok || !data.meeting) {

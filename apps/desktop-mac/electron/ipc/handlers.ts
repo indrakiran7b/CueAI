@@ -48,15 +48,17 @@ import {
 } from "../platform/macos";
 
 function getMainWindow() {
-  return BrowserWindow.getAllWindows().find(
-    (w) =>
+  const origin = getWebOrigin().replace(/\/$/, "");
+  return BrowserWindow.getAllWindows().find((w) => {
+    const url = w.webContents.getURL();
+    return (
       w.getTitle() === "CueAI" ||
-      w.webContents.getURL().includes("localhost:3000") ||
-      w.webContents.getURL().includes("127.0.0.1:3002") ||
-      w.webContents.getURL().includes("127.0.0.1:3030") ||
-      w.webContents.getURL().includes("127.0.0.1:39100") ||
-      w.webContents.getURL().includes("/dashboard")
-  );
+      (origin && url.startsWith(origin)) ||
+      url.includes("127.0.0.1:39100") ||
+      url.includes("/login") ||
+      url.includes("/dashboard")
+    );
+  });
 }
 
 let ipcRegistered = false;

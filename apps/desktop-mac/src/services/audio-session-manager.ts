@@ -20,6 +20,8 @@ export type AudioSessionSnapshot = {
   micLevel: number;
   systemLevel: number;
   error: string | null;
+  micError: string | null;
+  systemError: string | null;
 };
 
 type Listener = (snap: AudioSessionSnapshot) => void;
@@ -29,6 +31,8 @@ let systemState: AudioSessionState = "idle";
 let micLevel = 0;
 let systemLevel = 0;
 let lastError: string | null = null;
+let micError: string | null = null;
+let systemError: string | null = null;
 const listeners = new Set<Listener>();
 
 let micStarting = false;
@@ -41,6 +45,8 @@ function snap(): AudioSessionSnapshot {
     micLevel,
     systemLevel,
     error: lastError,
+    micError,
+    systemError,
   };
 }
 
@@ -75,6 +81,18 @@ export function setSystemLevel(level: number) {
   systemLevel = Math.min(1, Math.max(0, level));
 }
 
+export function setMicError(msg: string | null) {
+  micError = msg;
+  lastError = msg || systemError;
+  emit();
+}
+
+export function setSystemError(msg: string | null) {
+  systemError = msg;
+  lastError = msg || micError;
+  emit();
+}
+
 export function setAudioError(msg: string | null) {
   lastError = msg;
   emit();
@@ -82,6 +100,8 @@ export function setAudioError(msg: string | null) {
 
 export function clearAudioError() {
   lastError = null;
+  micError = null;
+  systemError = null;
   emit();
 }
 
@@ -140,6 +160,8 @@ export function resetAudioSessionState() {
   micLevel = 0;
   systemLevel = 0;
   lastError = null;
+  micError = null;
+  systemError = null;
   micStarting = false;
   systemStarting = false;
   emit();
