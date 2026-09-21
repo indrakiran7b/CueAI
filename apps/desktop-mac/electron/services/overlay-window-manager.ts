@@ -270,7 +270,8 @@ function wireWindowEvents(win: BrowserWindow) {
     resetIdleTimers();
   });
   win.on("hide", () => {
-    win.webContents.setBackgroundThrottling(true);
+    // Keep capture alive while the HUD is hidden (mic / system audio).
+    win.webContents.setBackgroundThrottling(false);
     clearIdleTimers();
   });
   win.on("blur", () => scheduleAutoHide());
@@ -298,7 +299,7 @@ export function ensureOverlayWindow(): BrowserWindow {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
-        backgroundThrottling: true,
+        backgroundThrottling: false,
         spellcheck: false,
         v8CacheOptions: "code",
       },

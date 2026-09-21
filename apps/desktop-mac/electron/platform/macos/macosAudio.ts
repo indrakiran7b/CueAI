@@ -88,7 +88,7 @@ export class MacOSSystemAudioService {
         sources[0];
 
       if (!matched?.id) {
-        console.log("[SYS] No display source for system audio");
+        console.log("[Audio] No display source for system audio");
         return {
           available: false,
           sourceId: null,
@@ -98,7 +98,7 @@ export class MacOSSystemAudioService {
         };
       }
 
-      console.log("[SYS] Permission =", permission.state);
+      console.log("[Audio] Permission =", permission.state);
       return {
         available: permission.state === "granted",
         sourceId: matched.id,

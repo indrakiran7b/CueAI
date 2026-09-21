@@ -86,27 +86,25 @@ export function clearAudioError() {
 }
 
 export function tryBeginMicStart(): boolean {
-  if (micStarting || micState === "listening" || micState === "connecting") return false;
+  if (micStarting || micState === "connecting" || micState === "requesting_permission") return false;
   micStarting = true;
   setMicState("requesting_permission");
   return true;
 }
 
-export function endMicStart(success: boolean) {
+export function endMicStart(_success: boolean) {
   micStarting = false;
-  if (!success && micState !== "listening") setMicState("idle");
 }
 
 export function tryBeginSystemStart(): boolean {
-  if (systemStarting || systemState === "listening" || systemState === "connecting") return false;
+  if (systemStarting || systemState === "connecting" || systemState === "requesting_permission") return false;
   systemStarting = true;
-  setSystemState("connecting");
+  setSystemState("requesting_permission");
   return true;
 }
 
-export function endSystemStart(success: boolean) {
+export function endSystemStart(_success: boolean) {
   systemStarting = false;
-  if (!success && systemState !== "listening") setSystemState("idle");
 }
 
 export function humanizeFetchError(err: unknown): string {

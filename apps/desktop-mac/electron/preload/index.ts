@@ -24,7 +24,7 @@ type ListenSources = {
 /** Main window API — CueAI shell (Next.js). */
 const cueDesktop = {
   isDesktop: true as const,
-  isMac: true as const,
+  isMac: process.platform === "darwin",
   minimize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MINIMIZE),
   maximize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MAXIMIZE),
   close: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE),
@@ -118,6 +118,7 @@ const cueDesktop = {
 
 /** Companion overlay API. */
 const cueai = {
+  isMac: process.platform === "darwin",
   minimize: () => ipcRenderer.invoke(IpcChannels.COMPANION_MINIMIZE),
   hide: () => ipcRenderer.invoke(IpcChannels.COMPANION_HIDE),
   setMode: (mode: CompanionMode) => ipcRenderer.invoke(IpcChannels.COMPANION_SET_MODE, mode),

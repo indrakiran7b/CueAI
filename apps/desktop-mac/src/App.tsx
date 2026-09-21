@@ -493,12 +493,12 @@ export default function App() {
                 <button type="button" role="menuitem" onClick={() => void toggleListen("mic")}>
                   {micLive ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
                   <span>Microphone</span>
-                  <em>{micLive ? "Listening" : listen.mic ? audioSession.mic : "Off"}</em>
+                  <em>{micLive ? "Listening" : "Off"}</em>
                 </button>
                 <button type="button" role="menuitem" onClick={() => void toggleListen("systemAudio")}>
                   {systemLive ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                   <span>System audio</span>
-                  <em>{systemLive ? "Listening" : listen.systemAudio ? audioSession.system : "Off"}</em>
+                  <em>{systemLive ? "Listening" : "Off"}</em>
                 </button>
                 <hr />
                 <button type="button" role="menuitem" onClick={() => setPinned(!pinned)}>
@@ -585,7 +585,15 @@ export default function App() {
                   <button
                     type="button"
                     className="cue-action"
-                    onClick={() => void window.cueai?.openPrivacySettings?.("privacy")}
+                    onClick={() => {
+                      const msg = `${statusMsg || ""} ${audioSession.error || ""}`.toLowerCase();
+                      const pane = msg.includes("microphone")
+                        ? "microphone"
+                        : msg.includes("screen recording") || msg.includes("system audio")
+                          ? "screen"
+                          : "privacy";
+                      void window.cueai?.openPrivacySettings?.(pane);
+                    }}
                   >
                     Open System Settings
                   </button>

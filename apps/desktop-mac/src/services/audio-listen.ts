@@ -62,6 +62,17 @@ let systemPeak = 0;
 let lastMicLevelLog = 0;
 let lastSystemLevelLog = 0;
 let healthTimer: number | null = null;
+let micWanted = false;
+let systemWanted = false;
+let micRecoverTimer: number | null = null;
+let systemRecoverTimer: number | null = null;
+let deviceChangeBound = false;
+let lifecycleBound = false;
+let permissionWatchBound = false;
+let sharedAudioCtx: AudioContext | null = null;
+let systemSourceFn: (() => Promise<string | null>) | null = null;
+let micRecoverAttempts = 0;
+let systemRecoverAttempts = 0;
 
 export function configureLiveTranscription(config: LiveTranscribeConfig | null) {
   liveConfig = config;
@@ -78,26 +89,210 @@ function readLevel(analyser: AnalyserNode) {
   return Math.min(1, Math.sqrt(sum / data.length) * 4);
 }
 
+function liveAudioTrack(stream: MediaStream | null) {
+  return stream?.getAudioTracks().find((track) => track.readyState === "live") ?? null;
+}
+
 function streamAlive(stream: MediaStream | null) {
-  return Boolean(
-    stream?.active && stream.getAudioTracks().some((track) => track.readyState === "live"),
-  );
+  return Boolean(stream?.active && liveAudioTrack(stream));
+}
+
+function getSharedAudioContext() {
+  if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
+    sharedAudioCtx = new AudioContext();
+  }
+  return sharedAudioCtx;
+}
+
+async function closeSharedAudioContextIfIdle() {
+  if (micTap || systemTap) return;
+  if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
+    sharedAudioCtx = null;
+    return;
+  }
+  try {
+    await sharedAudioCtx.close();
+  } catch {
+    /* ignore */
+  }
+  sharedAudioCtx = null;
+}
+
+function bindDeviceWatch() {
+  if (deviceChangeBound || !navigator.mediaDevices?.addEventListener) return;
+  deviceChangeBound = true;
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    console.log("[Audio] Device list changed");
+    if (micWanted) scheduleMicRecover("devicechange");
+    if (systemWanted) scheduleSystemRecover("devicechange");
+  });
+}
+
+function bindLifecycleWatch() {
+  if (lifecycleBound) return;
+  lifecycleBound = true;
+  document.addEventListener("visibilitychange", () => {
+    void resumeCaptureGraph("visibilitychange");
+  });
+  window.addEventListener("focus", () => {
+    void resumeCaptureGraph("focus");
+  });
+}
+
+function bindPermissionWatch() {
+  if (permissionWatchBound || !navigator.permissions?.query) return;
+  permissionWatchBound = true;
+  void navigator.permissions
+    .query({ name: "microphone" as PermissionName })
+    .then((status) => {
+      console.log("[Audio] Microphone permission:", status.state);
+      status.onchange = () => {
+        console.log("[Audio] Microphone permission:", status.state);
+        if (status.state === "denied") {
+          setMicState("error");
+          setAudioError(
+            "Microphone access is off. Enable CueAI in System Settings → Privacy & Security → Microphone.",
+          );
+          void releaseMicCapture();
+          return;
+        }
+        if (status.state === "granted" && micWanted) {
+          micRecoverAttempts = 0;
+          scheduleMicRecover("permission granted");
+        }
+      };
+    })
+    .catch(() => undefined);
+}
+
+async function resumeCaptureGraph(reason: string) {
+  if (sharedAudioCtx?.state === "suspended") {
+    await sharedAudioCtx.resume().catch(() => undefined);
+    console.log("[Audio] AudioContext state:", sharedAudioCtx.state);
+  }
+  if (micWanted && (!streamAlive(micStream) || micRec?.recorder.state !== "recording")) {
+    scheduleMicRecover(reason);
+  }
+  if (systemWanted && (!streamAlive(systemStream) || systemRec?.recorder.state !== "recording")) {
+    scheduleSystemRecover(reason);
+  }
+}
+
+function scheduleMicRecover(reason: string) {
+  if (!micWanted) return;
+  if (micRecoverAttempts >= 8) {
+    console.log("[Audio] Microphone recover stopped:", reason);
+    return;
+  }
+  if (micRecoverTimer != null) window.clearTimeout(micRecoverTimer);
+  micRecoverTimer = window.setTimeout(() => {
+    micRecoverTimer = null;
+    void recoverMicrophone(reason);
+  }, 450);
+}
+
+function scheduleSystemRecover(reason: string) {
+  if (!systemWanted || !systemSourceFn) return;
+  if (systemRecoverAttempts >= 8) {
+    console.log("[Audio] System audio recover stopped:", reason);
+    return;
+  }
+  if (systemRecoverTimer != null) window.clearTimeout(systemRecoverTimer);
+  systemRecoverTimer = window.setTimeout(() => {
+    systemRecoverTimer = null;
+    void recoverSystemAudio(reason);
+  }, 450);
+}
+
+async function recoverMicrophone(reason: string) {
+  if (!micWanted) return;
+  micRecoverAttempts += 1;
+  console.log("[Audio] Reinitializing microphone:", reason);
+  await releaseMicCapture();
+  try {
+    await startMicListenInternal();
+    micRecoverAttempts = 0;
+  } catch (err) {
+    console.log("[Audio] Microphone recover failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+async function recoverSystemAudio(reason: string) {
+  if (!systemWanted || !systemSourceFn) return;
+  systemRecoverAttempts += 1;
+  console.log("[Audio] Reinitializing system audio:", reason);
+  await releaseSystemCapture();
+  try {
+    await startSystemAudioListenInternal(systemSourceFn);
+    systemRecoverAttempts = 0;
+  } catch (err) {
+    console.log("[Audio] System audio recover failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+async function releaseMicCapture() {
+  await stopRecorder(micRec);
+  micRec = null;
+  releaseTap(micTap);
+  micTap = null;
+  stopStream(micStream);
+  micStream = null;
+  setMicLevel(0);
+  await closeSharedAudioContextIfIdle();
+}
+
+async function releaseSystemCapture() {
+  await stopRecorder(systemRec);
+  systemRec = null;
+  releaseTap(systemTap);
+  systemTap = null;
+  stopStream(systemStream);
+  systemStream = null;
+  setSystemLevel(0);
+  await closeSharedAudioContextIfIdle();
+}
+
+async function ensureMicrophonePermission() {
+  const api = window.cueai;
+  if (!api?.getPermissions || !api.requestPermission) return;
+  const current = await api.getPermissions();
+  console.log("[Audio] Microphone permission:", current.microphone.state);
+  if (current.microphone.state === "granted") return;
+  if (current.microphone.state === "denied" || current.microphone.state === "restricted") {
+    throw new Error(current.microphone.message);
+  }
+  const next = await api.requestPermission("microphone");
+  console.log("[Audio] Microphone permission:", next.state);
+  if (next.state === "denied" || next.state === "restricted") {
+    throw new Error(next.message);
+  }
+}
+
+function attachMicTrackWatch(track: MediaStreamTrack) {
+  track.addEventListener("ended", () => {
+    console.log("[Audio] Microphone track ended");
+    setMicState("error");
+    setAudioError("Microphone disconnected.");
+    if (micWanted) scheduleMicRecover("track ended");
+  });
 }
 
 function ensureHealthWatch() {
   if (healthTimer != null) return;
   healthTimer = window.setInterval(() => {
-    if (micStream && !streamAlive(micStream)) {
-      console.log("[MIC] Stream = dead");
+    if (micWanted && (!streamAlive(micStream) || micRec?.recorder.state !== "recording")) {
+      console.log("[Audio] Microphone stream ended");
       setMicState("error");
       setAudioError("Microphone stream ended.");
+      scheduleMicRecover("dead stream");
     }
-    if (systemStream && !streamAlive(systemStream)) {
-      console.log("[SYS] Stream = dead");
+    if (systemWanted && (!streamAlive(systemStream) || systemRec?.recorder.state !== "recording")) {
+      console.log("[Audio] System audio stream ended");
       setSystemState("error");
       setAudioError("System audio stream ended.");
+      scheduleSystemRecover("dead stream");
     }
-    if (!micStream && !systemStream && healthTimer != null) {
+    if (!micWanted && !systemWanted && !micStream && !systemStream && healthTimer != null) {
       window.clearInterval(healthTimer);
       healthTimer = null;
     }
@@ -105,7 +300,7 @@ function ensureHealthWatch() {
 }
 
 function attachTap(stream: MediaStream, kind: "mic" | "system"): LevelTap {
-  const ctx = new AudioContext();
+  const ctx = getSharedAudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 256;
@@ -118,21 +313,21 @@ function attachTap(stream: MediaStream, kind: "mic" | "system"): LevelTap {
       micPeak = Math.max(micPeak, level);
       if (level > 0.02 && Date.now() - lastMicLevelLog > 1500) {
         lastMicLevelLog = Date.now();
-        console.log("[MIC] Audio level detected");
+        console.log("[Audio] Microphone capture active");
       }
     } else {
       setSystemLevel(level);
       systemPeak = Math.max(systemPeak, level);
       if (level > 0.02 && Date.now() - lastSystemLevelLog > 1500) {
         lastSystemLevelLog = Date.now();
-        console.log("[SYS] Audio level detected");
+        console.log("[Audio] System audio capture active");
       }
     }
     emitLevelsThrottled(125);
     tap.raf = requestAnimationFrame(tick);
   };
   tap.raf = requestAnimationFrame(tick);
-  void ctx.resume();
+  if (ctx.state === "suspended") void ctx.resume();
   return tap;
 }
 
@@ -144,7 +339,6 @@ function releaseTap(tap: LevelTap | null) {
   } catch {
     /* ignore */
   }
-  void tap.ctx.close();
 }
 
 function stopStream(stream: MediaStream | null) {
@@ -173,20 +367,19 @@ async function maybeTranscribeSlice(blob: Blob, who: string) {
   else systemPeak = 0;
   if (blob.size < MIN_TRANSCRIBE_BYTES) return;
   if (peak < SILENT_PEAK && blob.size < 1200) {
-    console.log("[MIC] Silent chunk skipped");
+    console.log("[Transcription] Silent chunk skipped");
     return;
   }
   if (transcribeInFlight >= MAX_IN_FLIGHT) return;
 
   transcribeInFlight++;
-  console.log("[MIC] Audio chunk generated");
-  if (who === "You") setMicState("processing");
-  else setSystemState("processing");
+  console.log("[Transcription] Audio chunk received");
 
   try {
+    console.log("[Transcription] Request sent");
     const line = await transcribeAudioBlob(blob, who, liveConfig.apiBase);
     if (line?.text) {
-      console.log("[TRANSCRIPT] Slice received");
+      console.log("[Transcription] Response received");
       liveConfig.onResult(line);
     }
     clearAudioError();
@@ -196,10 +389,15 @@ async function maybeTranscribeSlice(blob: Blob, who: string) {
     liveConfig.onError(msg);
   } finally {
     transcribeInFlight--;
-    if (who === "You" && streamAlive(micStream)) setMicState("listening");
-    else if (who === "System" && streamAlive(systemStream)) setSystemState("listening");
-    else if (who === "You" && !streamAlive(micStream)) setMicState("error");
-    else if (who === "System" && !streamAlive(systemStream)) setSystemState("error");
+    if (who === "You" && streamAlive(micStream) && micRec?.recorder.state === "recording") {
+      setMicState("listening");
+    } else if (who === "System" && streamAlive(systemStream) && systemRec?.recorder.state === "recording") {
+      setSystemState("listening");
+    } else if (who === "You" && micWanted && !streamAlive(micStream)) {
+      setMicState("error");
+    } else if (who === "System" && systemWanted && !streamAlive(systemStream)) {
+      setSystemState("error");
+    }
   }
 }
 
@@ -247,7 +445,7 @@ export function subscribeListenLevels(cb: (state: ListenActiveState) => void) {
 }
 
 async function startMicListenInternal(): Promise<void> {
-  if (micStream) return;
+  if (micStream && streamAlive(micStream) && micRec?.recorder.state === "recording") return;
   if (!tryBeginMicStart()) {
     if (micStartPromise) await micStartPromise;
     return;
@@ -257,13 +455,16 @@ async function startMicListenInternal(): Promise<void> {
     let ok = false;
     try {
       setMicState("connecting");
-      if (window.cueai?.requestPermission) {
-        const permission = await window.cueai.requestPermission("microphone");
-        console.log("[MIC] Permission =", permission.state);
-        if (permission.state === "denied" || permission.state === "restricted") {
-          throw new Error(permission.message);
-        }
+      bindDeviceWatch();
+      bindLifecycleWatch();
+      bindPermissionWatch();
+      await ensureMicrophonePermission();
+      if (!micWanted) {
+        setMicState("idle");
+        ok = true;
+        return;
       }
+      if (micStream) await releaseMicCapture();
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -272,17 +473,36 @@ async function startMicListenInternal(): Promise<void> {
         },
         video: false,
       });
-      const liveTrack = micStream.getAudioTracks().find((t) => t.readyState === "live");
-      console.log("[MIC] Stream =", micStream.active && liveTrack ? "active" : "inactive");
-      liveTrack?.addEventListener("ended", () => {
-        console.log("[MIC] Stream = ended");
-        setMicState("error");
-        setAudioError("Microphone stream ended.");
-      });
+      if (!micWanted) {
+        await releaseMicCapture();
+        setMicState("idle");
+        ok = true;
+        return;
+      }
+      console.log("[Audio] Microphone stream started");
+      const tracks = micStream.getAudioTracks();
+      console.log("[Audio] Audio tracks:", tracks.length);
+      const liveTrack = liveAudioTrack(micStream);
+      if (!micStream.active || !liveTrack) {
+        throw new Error("Microphone stream failed to start.");
+      }
+      if (!liveTrack.enabled) liveTrack.enabled = true;
+      attachMicTrackWatch(liveTrack);
       micTap = attachTap(micStream, "mic");
+      if (micTap.ctx.state === "suspended") {
+        await micTap.ctx.resume().catch(() => undefined);
+      }
+      console.log("[Audio] AudioContext state:", micTap.ctx.state);
       micRec = startRecorder(micStream, "You");
-      if (!micRec) throw new Error("Microphone recorder unavailable");
+      if (!micRec || micRec.recorder.state !== "recording") {
+        throw new Error("Microphone recorder unavailable");
+      }
+      if (!streamAlive(micStream)) {
+        throw new Error("Microphone stream failed to start.");
+      }
+      micRecoverAttempts = 0;
       setMicState("listening");
+      console.log("[Audio] Microphone capture active");
       clearAudioError();
       ensureHealthWatch();
       ok = true;
@@ -290,8 +510,7 @@ async function startMicListenInternal(): Promise<void> {
       const msg = humanizeFetchError(err);
       setAudioError(msg);
       setMicState("error");
-      stopStream(micStream);
-      micStream = null;
+      await releaseMicCapture();
       throw err;
     } finally {
       endMicStart(ok);
@@ -303,18 +522,21 @@ async function startMicListenInternal(): Promise<void> {
 }
 
 export async function startMicListen(): Promise<void> {
+  micWanted = true;
   return startMicListenInternal();
 }
 
 export async function stopMicListen(): Promise<Blob | null> {
+  micWanted = false;
+  micRecoverAttempts = 0;
+  if (micRecoverTimer != null) {
+    window.clearTimeout(micRecoverTimer);
+    micRecoverTimer = null;
+  }
   setMicState("stopping");
   const blob = await stopRecorder(micRec);
   micRec = null;
-  releaseTap(micTap);
-  micTap = null;
-  stopStream(micStream);
-  micStream = null;
-  setMicLevel(0);
+  await releaseMicCapture();
   setMicState("idle");
   return blob;
 }
@@ -322,7 +544,8 @@ export async function stopMicListen(): Promise<Blob | null> {
 async function startSystemAudioListenInternal(
   getSourceId: () => Promise<string | null>
 ): Promise<void> {
-  if (systemStream) return;
+  systemSourceFn = getSourceId;
+  if (systemStream && streamAlive(systemStream) && systemRec?.recorder.state === "recording") return;
   if (!tryBeginSystemStart()) {
     if (systemStartPromise) await systemStartPromise;
     return;
@@ -331,12 +554,27 @@ async function startSystemAudioListenInternal(
   systemStartPromise = (async () => {
     let ok = false;
     try {
-      if (window.cueai?.requestPermission) {
-        const permission = await window.cueai.requestPermission("systemAudio");
-        console.log("[SYS] Permission =", permission.state);
-        if (permission.state === "denied" || permission.state === "restricted") {
-          throw new Error(permission.message);
+      setSystemState("connecting");
+      bindDeviceWatch();
+      bindLifecycleWatch();
+      if (window.cueai?.getPermissions && window.cueai.requestPermission) {
+        const current = await window.cueai.getPermissions();
+        console.log("[Audio] System audio permission:", current.systemAudio.state);
+        if (current.systemAudio.state === "denied" || current.systemAudio.state === "restricted") {
+          throw new Error(current.systemAudio.message);
         }
+        if (current.systemAudio.state !== "granted") {
+          const permission = await window.cueai.requestPermission("systemAudio");
+          console.log("[Audio] System audio permission:", permission.state);
+          if (permission.state === "denied" || permission.state === "restricted") {
+            throw new Error(permission.message);
+          }
+        }
+      }
+      if (!systemWanted) {
+        setSystemState("idle");
+        ok = true;
+        return;
       }
       const sourceId = await getSourceId();
       if (!sourceId) {
@@ -344,6 +582,8 @@ async function startSystemAudioListenInternal(
           "System audio is not available. Grant Screen Recording in System Settings, then try again."
         );
       }
+
+      if (systemStream) await releaseSystemCapture();
 
       const constraints = {
         audio: {
@@ -364,25 +604,43 @@ async function startSystemAudioListenInternal(
       } as unknown as MediaStreamConstraints;
 
       systemStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (!systemWanted) {
+        await releaseSystemCapture();
+        setSystemState("idle");
+        ok = true;
+        return;
+      }
       systemStream.getVideoTracks().forEach((t) => {
         t.enabled = false;
       });
-      if (!systemStream.getAudioTracks().length) {
-        stopStream(systemStream);
-        systemStream = null;
+      console.log("[Audio] System audio stream started");
+      console.log("[Audio] System audio tracks:", systemStream.getAudioTracks().length);
+      const liveTrack = liveAudioTrack(systemStream);
+      if (!systemStream.active || !liveTrack) {
+        await releaseSystemCapture();
         throw new Error("System audio capture is unavailable on this device.");
       }
-      const liveTrack = systemStream.getAudioTracks().find((t) => t.readyState === "live");
-      console.log("[SYS] Stream =", systemStream.active && liveTrack ? "active" : "inactive");
-      liveTrack?.addEventListener("ended", () => {
-        console.log("[SYS] Stream = ended");
+      liveTrack.addEventListener("ended", () => {
+        console.log("[Audio] System audio track ended");
         setSystemState("error");
         setAudioError("System audio stream ended.");
+        if (systemWanted) scheduleSystemRecover("track ended");
       });
       systemTap = attachTap(systemStream, "system");
+      if (systemTap.ctx.state === "suspended") {
+        await systemTap.ctx.resume().catch(() => undefined);
+      }
+      console.log("[Audio] AudioContext state:", systemTap.ctx.state);
       systemRec = startRecorder(systemStream, "System");
-      if (!systemRec) throw new Error("System audio recorder unavailable");
+      if (!systemRec || systemRec.recorder.state !== "recording") {
+        throw new Error("System audio recorder unavailable");
+      }
+      if (!streamAlive(systemStream)) {
+        throw new Error("System audio capture is unavailable on this device.");
+      }
+      systemRecoverAttempts = 0;
       setSystemState("listening");
+      console.log("[Audio] System audio capture active");
       clearAudioError();
       ensureHealthWatch();
       ok = true;
@@ -390,8 +648,7 @@ async function startSystemAudioListenInternal(
       const msg = humanizeFetchError(err);
       setAudioError(msg);
       setSystemState("error");
-      stopStream(systemStream);
-      systemStream = null;
+      await releaseSystemCapture();
       throw err;
     } finally {
       endSystemStart(ok);
@@ -405,18 +662,22 @@ async function startSystemAudioListenInternal(
 export async function startSystemAudioListen(
   getSourceId: () => Promise<string | null>
 ): Promise<void> {
+  systemWanted = true;
+  systemSourceFn = getSourceId;
   return startSystemAudioListenInternal(getSourceId);
 }
 
 export async function stopSystemAudioListen(): Promise<Blob | null> {
+  systemWanted = false;
+  systemRecoverAttempts = 0;
+  if (systemRecoverTimer != null) {
+    window.clearTimeout(systemRecoverTimer);
+    systemRecoverTimer = null;
+  }
   setSystemState("stopping");
   const blob = await stopRecorder(systemRec);
   systemRec = null;
-  releaseTap(systemTap);
-  systemTap = null;
-  stopStream(systemStream);
-  systemStream = null;
-  setSystemLevel(0);
+  await releaseSystemCapture();
   setSystemState("idle");
   return blob;
 }
@@ -426,15 +687,20 @@ export async function syncListenSources(opts: {
   systemAudio: boolean;
   getDesktopSourceId: () => Promise<string | null>;
 }): Promise<{ micBlob: Blob | null; systemBlob: Blob | null }> {
+  micWanted = opts.mic;
+  systemWanted = opts.systemAudio;
+  bindDeviceWatch();
   if (opts.mic) {
-    if (!micStream) await startMicListen();
-  } else if (micStream) {
+    if (!streamAlive(micStream) || micRec?.recorder.state !== "recording") await startMicListen();
+  } else {
     await stopMicListen();
   }
 
   if (opts.systemAudio) {
-    if (!systemStream) await startSystemAudioListen(opts.getDesktopSourceId);
-  } else if (systemStream) {
+    if (!streamAlive(systemStream) || systemRec?.recorder.state !== "recording") {
+      await startSystemAudioListen(opts.getDesktopSourceId);
+    }
+  } else {
     await stopSystemAudioListen();
   }
 
@@ -445,6 +711,18 @@ export async function stopAllListen(): Promise<{
   micBlob: Blob | null;
   systemBlob: Blob | null;
 }> {
+  micWanted = false;
+  systemWanted = false;
+  micRecoverAttempts = 0;
+  systemRecoverAttempts = 0;
+  if (micRecoverTimer != null) {
+    window.clearTimeout(micRecoverTimer);
+    micRecoverTimer = null;
+  }
+  if (systemRecoverTimer != null) {
+    window.clearTimeout(systemRecoverTimer);
+    systemRecoverTimer = null;
+  }
   const micBlob = micStream ? await stopMicListen() : null;
   const systemBlob = systemStream ? await stopSystemAudioListen() : null;
   resetAudioSessionState();

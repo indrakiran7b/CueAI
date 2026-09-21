@@ -53,6 +53,7 @@ export type CompanionWindowState = {
 };
 
 export type CompanionAPI = {
+  isMac?: boolean;
   minimize: () => Promise<void>;
   hide: () => Promise<void>;
   setMode: (mode: CompanionMode) => Promise<void>;

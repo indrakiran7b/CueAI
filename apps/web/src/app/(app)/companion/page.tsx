@@ -26,7 +26,10 @@ import {
   isMacDesktopApp,
   openCompanionOverlay,
   tryLaunchDesktopApp,
+  type CaptureStatus,
   type CompanionOpenResult,
+  type MacPermissionState,
+  type MacPermissionsSnapshot,
 } from "@/lib/desktop";
 
 type BridgeStatus = {
@@ -79,6 +82,20 @@ const features = [
   },
 ];
 
+function permissionHeadline(state: MacPermissionState | undefined) {
+  if (state === "granted") return "Permission granted";
+  if (state === "denied" || state === "restricted") return "Permission required";
+  if (state === "not-determined") return "Permission not requested";
+  if (state === "unknown") return "Status unknown";
+  return "Checking…";
+}
+
+function permissionVariant(state: MacPermissionState | undefined): "success" | "warning" | "info" {
+  if (state === "granted") return "success";
+  if (state === "denied" || state === "restricted") return "warning";
+  return "info";
+}
+
 export default function CompanionPage() {
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -87,6 +104,9 @@ export default function CompanionPage() {
   const [lastResult, setLastResult] = useState<CompanionOpenResult | null>(null);
   const [mac, setMac] = useState(false);
   const [view, setView] = useState<"overlay" | "capabilities">("overlay");
+  const [perms, setPerms] = useState<MacPermissionsSnapshot | null>(null);
+  const [capture, setCapture] = useState<CaptureStatus | null>(null);
+  const [aiReady, setAiReady] = useState<boolean | null>(null);
 
   useEffect(() => {
     setMac(isMacDesktopApp());
@@ -103,8 +123,22 @@ export default function CompanionPage() {
           if (cancelled) return;
           setDesktopReady(true);
           setOverlayVisible(Boolean(status.companionVisible));
+          if (desktop.getPermissions) {
+            const snap = await desktop.getPermissions();
+            if (!cancelled) setPerms(snap);
+          }
+          if (desktop.getCaptureStatus) {
+            const cap = await desktop.getCaptureStatus();
+            if (!cancelled) setCapture(cap);
+          }
         } catch {
           if (!cancelled) setDesktopReady(false);
+        }
+        try {
+          const res = await fetch("/api/auth/providers", { method: "GET" });
+          if (!cancelled) setAiReady(res.ok);
+        } catch {
+          if (!cancelled) setAiReady(false);
         }
         return;
       }
@@ -199,6 +233,8 @@ export default function CompanionPage() {
         />
       )}
 
+      {(!mac || view === "overlay") && (
+        <>
       <Card glow className={mac ? "mac-glass-card space-y-4 border-0 bg-transparent shadow-none" : "space-y-4"}>
         <CardHeader>
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl btn-gradient text-white">
@@ -374,6 +410,129 @@ export default function CompanionPage() {
           </Card>
         ))}
       </div>
+        </>
+      )}
+
+      {mac && view === "capabilities" && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {(
+            [
+              {
+                icon: Layers,
+                title: "Desktop Overlay",
+                badge: overlayVisible ? "Available" : desktopReady ? "Ready" : "Not running",
+                variant: overlayVisible ? "success" : desktopReady ? "info" : "warning",
+                desc: overlayVisible
+                  ? "CueAI desktop overlay is running."
+                  : desktopReady
+                    ? "CueAI Desktop is connected. Open the overlay from the Overlay tab when you need it."
+                    : "CueAI Desktop is not connected.",
+              },
+              {
+                icon: Mic,
+                title: "Microphone",
+                badge: permissionHeadline(perms?.microphone.state),
+                variant: permissionVariant(perms?.microphone.state),
+                desc:
+                  perms?.microphone.message ||
+                  "CueAI can access the microphone when permission is granted.",
+                settings: "microphone" as const,
+                needsSettings:
+                  perms?.microphone.state === "denied" || perms?.microphone.state === "restricted",
+              },
+              {
+                icon: Volume2,
+                title: "System Audio",
+                badge: permissionHeadline(perms?.systemAudio.state),
+                variant: permissionVariant(perms?.systemAudio.state),
+                desc:
+                  perms?.systemAudio.message ||
+                  "CueAI can capture supported system/meeting audio when Screen Recording is allowed.",
+                settings: "systemAudio" as const,
+                needsSettings:
+                  perms?.systemAudio.state === "denied" || perms?.systemAudio.state === "restricted",
+              },
+              {
+                icon: Camera,
+                title: "Screen Recording",
+                badge: permissionHeadline(perms?.screenRecording.state),
+                variant: permissionVariant(perms?.screenRecording.state),
+                desc:
+                  perms?.screenRecording.message ||
+                  "Screen Recording permission is required on macOS.",
+                settings: "screen" as const,
+                needsSettings:
+                  perms?.screenRecording.state === "denied" ||
+                  perms?.screenRecording.state === "restricted",
+              },
+              {
+                icon: Shield,
+                title: "Privacy",
+                badge: !capture
+                  ? "Checking…"
+                  : !capture.supported
+                    ? "Unavailable"
+                    : capture.applied
+                      ? "Enabled"
+                      : "Disabled",
+                variant: !capture
+                  ? "info"
+                  : !capture.supported
+                    ? "warning"
+                    : capture.applied
+                      ? "success"
+                      : "info",
+                desc:
+                  capture?.message ||
+                  "Capture protection hides the overlay from screen share when Privacy is on.",
+              },
+              {
+                icon: EyeOff,
+                title: "Background desktop operation",
+                badge: desktopReady ? "Available" : "Not running",
+                variant: desktopReady ? "success" : "warning",
+                desc: desktopReady
+                  ? "CueAI Desktop stays running after this page closes until you end the session."
+                  : "Start CueAI Desktop for background overlay operation.",
+              },
+              {
+                icon: Sparkles,
+                title: "AI / backend connection",
+                badge: aiReady ? "Connected" : aiReady === false ? "Unavailable" : "Checking…",
+                variant: aiReady ? "success" : aiReady === false ? "warning" : "info",
+                desc: aiReady
+                  ? "CueAI can reach the transcription and answer backend."
+                  : aiReady === false
+                    ? "The CueAI web API is not reachable from this session."
+                    : "Checking the CueAI backend…",
+              },
+            ] as const
+          ).map((item) => (
+            <Card key={item.title} className="p-4">
+              <item.icon className="mb-3 h-5 w-5 text-primary" />
+              <h3 className="text-sm font-semibold">{item.title}</h3>
+              <Badge variant={item.variant} className="mt-2">
+                {item.badge}
+              </Badge>
+              <p className="mt-1 text-xs leading-relaxed text-muted">{item.desc}</p>
+              {"needsSettings" in item && item.needsSettings ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() =>
+                    void getDesktop()?.openPrivacySettings?.(
+                      "settings" in item ? item.settings : "privacy",
+                    )
+                  }
+                >
+                  Open System Settings
+                </Button>
+              ) : null}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
