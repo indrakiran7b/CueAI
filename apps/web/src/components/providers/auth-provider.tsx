@@ -90,11 +90,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLocalSession({ ...DEV_GUEST_SESSION });
       return;
     }
+    try {
+      // Stop any active companion / capture when leaving the app.
+      const { startDesktopMeetingSession, hideCompanionOverlay } = await import(
+        "@/lib/desktop"
+      );
+      await startDesktopMeetingSession({
+        active: false,
+        screenSharing: false,
+        cueAiMode: "inactive",
+        hideCompanion: true,
+      });
+      await hideCompanionOverlay();
+    } catch {
+      // Desktop may not be running.
+    }
     await logoutApi();
     clearSession();
     setLocalSession(null);
     if (status === "authenticated") {
       await nextAuthSignOut({ redirect: false });
+    }
+    if (typeof window !== "undefined") {
+      window.location.assign("/login");
     }
   }, [status]);
 

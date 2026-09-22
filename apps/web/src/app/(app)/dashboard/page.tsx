@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
 import {
+  ArrowUpRight,
   FileText,
   Library,
   Monitor,
@@ -63,28 +64,37 @@ export default function DashboardPage() {
   };
 
   const [meetings, setMeetings] = useState<StoredMeeting[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [companionOn, setCompanionOn] = useState<boolean | null>(null);
 
   useEffect(() => {
-    let active = true;
-    void fetch("/api/meetings", { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Unable to load meetings.");
-        return res.json() as Promise<{ meetings?: StoredMeeting[] }>;
-      })
-      .then((data) => {
-        if (!active) return;
-        setMeetings(data.meetings || []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/meetings", { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as {
+          meetings?: StoredMeeting[];
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setMeetings([]);
+          setLoadError("Unable to load meetings.");
+          return;
+        }
+        setMeetings(Array.isArray(data.meetings) ? data.meetings : []);
         setLoadError(null);
-      })
-      .catch(() => {
-        if (!active) return;
-        setMeetings([]);
-        setLoadError("Unable to load meetings.");
-      });
+      } catch {
+        if (!cancelled) {
+          setMeetings([]);
+          setLoadError("Unable to load meetings.");
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, []);
 
@@ -111,12 +121,30 @@ export default function DashboardPage() {
   const hours = completed.reduce((sum, m) => sum + (m.durationSec || 0), 0) / 3600;
 
   const stats = [
-    { label: "Meetings this week", value: String(thisWeek.length) },
-    { label: "AI answers", value: String(answerCount) },
-    { label: "Hours transcribed", value: hours ? hours.toFixed(1) : "0" },
+    {
+      label: "Meetings this week",
+      value: loaded ? String(thisWeek.length) : "—",
+      delta: loaded
+        ? thisWeek.length
+          ? "From your workspace"
+          : "No meetings yet"
+        : "Loading…",
+    },
+    {
+      label: "AI answers",
+      value: loaded ? String(answerCount) : "—",
+      delta: loaded ? (answerCount ? "From saved sessions" : "None yet") : "Loading…",
+    },
+    {
+      label: "Hours transcribed",
+      value: loaded ? (hours ? hours.toFixed(1) : "0") : "—",
+      delta: loaded ? (hours ? "From saved sessions" : "No activity data yet") : "Loading…",
+    },
     {
       label: "Desktop companion",
       value: companionOn == null ? "—" : companionOn ? "Open" : "Idle",
+      delta:
+        companionOn == null ? "Check Desktop status" : companionOn ? "Overlay visible" : "Not open",
     },
   ];
 
@@ -173,6 +201,12 @@ export default function DashboardPage() {
           >
             <p className="db-metric-label">{s.label}</p>
             <p className="db-metric-value">{s.value}</p>
+            <p className="db-metric-delta">
+              {thisWeek.length > 0 && i === 0 ? (
+                <ArrowUpRight className="mr-0.5 inline h-3 w-3" />
+              ) : null}
+              {s.delta}
+            </p>
           </motion.div>
         ))}
       </div>
@@ -188,7 +222,11 @@ export default function DashboardPage() {
           <div className="db-panel-head">
             <div>
               <h2 className="db-section-title">Weekly activity</h2>
-              <p className="db-section-sub">Completed meetings from this account</p>
+              <p className="db-section-sub">
+                {hasUsage
+                  ? "Completed meetings from this account"
+                  : "No activity data available yet"}
+              </p>
             </div>
             <span className="db-chip">This week</span>
           </div>
@@ -221,7 +259,7 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             ) : (
               <p className="flex h-full items-center justify-center text-sm text-muted">
-                No activity yet.
+                No activity data available yet.
               </p>
             )}
           </div>
@@ -255,6 +293,12 @@ export default function DashboardPage() {
               </strong>
             </p>
           </div>
+          <p className="db-plan-note">
+            Manage your plan in{" "}
+            <Link href="/settings" className="db-link">
+              Settings
+            </Link>
+          </p>
         </motion.section>
       </div>
 
@@ -288,21 +332,22 @@ export default function DashboardPage() {
                 </button>
               </p>
             )}
-            {!loadError && completed.length === 0 && (
+            {!loadError && loaded && completed.length === 0 && (
               <p className="py-6 text-sm text-muted">No meetings yet.</p>
             )}
-            {completed.slice(0, 6).map((m) => (
-              <Link key={m.id} href={`/meetings/${m.id}/summary`} className="db-meeting">
-                <div>
-                  <p className="db-meeting-title">{m.title}</p>
-                  <p className="db-meeting-meta">
-                    {formatMeetingWhen(m.startedAt)}
-                    {m.attendees ? ` · ${m.attendees} people` : ""}
-                  </p>
-                </div>
-                <div className="db-meeting-side">{formatDuration(m.durationSec)}</div>
-              </Link>
-            ))}
+            {!loadError &&
+              completed.slice(0, 6).map((m) => (
+                <Link key={m.id} href={`/meetings/${m.id}/summary`} className="db-meeting">
+                  <div>
+                    <p className="db-meeting-title">{m.title}</p>
+                    <p className="db-meeting-meta">
+                      {formatMeetingWhen(m.startedAt)}
+                      {m.attendees ? ` · ${m.attendees} people` : ""}
+                    </p>
+                  </div>
+                  <div className="db-meeting-side">{formatDuration(m.durationSec)}</div>
+                </Link>
+              ))}
           </div>
         </motion.section>
 
@@ -337,7 +382,9 @@ export default function DashboardPage() {
             <h2 className="db-section-title">Activity</h2>
           </div>
           <div className="db-activity">
-            <p className="py-6 text-sm text-muted">No activity yet.</p>
+            <p className="db-section-sub" style={{ padding: "8px 0" }}>
+              No activity data available yet.
+            </p>
           </div>
         </motion.section>
       </div>

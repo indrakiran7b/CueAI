@@ -50,12 +50,19 @@ export default function SettingsPage() {
   );
   const [workspace, setWorkspace] = useState(session?.workspace || "");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [apiKeyVisible, setApiKeyVisible] = useState(false);
-  const [apiKey, setApiKey] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("cueai-api-key") || `cue_live_${crypto.randomUUID().slice(0, 8)}`
-      : "cue_live_••••"
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = localStorage.getItem("cueai-notif-prefs");
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [storedApiKey, setStoredApiKey] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("cueai-api-key") : null
   );
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
 
   useEffect(() => {
     setName(session?.name || "");
@@ -272,6 +279,10 @@ export default function SettingsPage() {
         {section === "notifications" && (
           <Card className="space-y-3 p-6">
             <CardTitle>Notifications</CardTitle>
+            <CardDescription>
+              Preferences are stored on this device only. Push/email delivery is
+              not connected yet.
+            </CardDescription>
             {[
               "Summary ready",
               "Action item due",
@@ -283,7 +294,16 @@ export default function SettingsPage() {
                 className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
               >
                 {l}
-                <input type="checkbox" defaultChecked className="rounded" />
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={notifPrefs[l] ?? false}
+                  onChange={(e) => {
+                    const next = { ...notifPrefs, [l]: e.target.checked };
+                    setNotifPrefs(next);
+                    localStorage.setItem("cueai-notif-prefs", JSON.stringify(next));
+                  }}
+                />
               </label>
             ))}
           </Card>
@@ -318,16 +338,17 @@ export default function SettingsPage() {
           <Card className="space-y-4 p-6">
             <div className="flex items-center justify-between">
               <CardTitle>Billing</CardTitle>
-              <Badge variant="purple">Free</Badge>
+              <Badge variant="purple">Unavailable</Badge>
             </div>
             <p className="text-sm text-muted">
-              You are on the Free plan. Upgrade when you need more seats and live sessions.
+              Billing and plan upgrades are not connected yet. No charges are
+              processed from this screen.
             </p>
             <Button
               variant="outline"
               onClick={() => window.open("/#pricing", "_self")}
             >
-              View plans
+              View marketing plans
             </Button>
           </Card>
         )}
@@ -335,27 +356,45 @@ export default function SettingsPage() {
         {section === "api" && (
           <Card className="space-y-4 p-6">
             <CardTitle>API Keys</CardTitle>
-            <div className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
-              <code className="font-mono text-xs text-muted">
-                {apiKeyVisible ? apiKey : `${apiKey.slice(0, 10)}••••••••`}
-              </code>
-              <Button size="sm" variant="ghost" onClick={() => setApiKeyVisible((v) => !v)}>
-                {apiKeyVisible ? "Hide" : "Reveal"}
-              </Button>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const next = `cue_live_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
-                setApiKey(next);
-                localStorage.setItem("cueai-api-key", next);
-                setApiKeyVisible(true);
-                setSaveMsg("New API key created locally.");
-              }}
-            >
-              Create new key
-            </Button>
+            <p className="text-sm text-muted">
+              Public developer API keys are not issued by CueAI yet. Any key
+              stored here stays on this device only and is not a real server
+              credential.
+            </p>
+            {storedApiKey ? (
+              <>
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
+                  <code className="font-mono text-xs text-muted">
+                    {apiKeyVisible
+                      ? storedApiKey
+                      : `${storedApiKey.slice(0, 10)}••••••••`}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setApiKeyVisible((v) => !v)}
+                  >
+                    {apiKeyVisible ? "Hide" : "Reveal"}
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    localStorage.removeItem("cueai-api-key");
+                    setStoredApiKey(null);
+                    setApiKeyVisible(false);
+                    setSaveMsg("Local key cleared.");
+                  }}
+                >
+                  Clear local key
+                </Button>
+              </>
+            ) : (
+              <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-muted">
+                No API keys yet.
+              </p>
+            )}
           </Card>
         )}
 

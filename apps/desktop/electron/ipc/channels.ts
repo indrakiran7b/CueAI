@@ -24,6 +24,7 @@ export const IpcChannels = {
   COMPANION_GET_DESKTOP_AUDIO_SOURCE: "companion:get-desktop-audio-source",
   COMPANION_GET_WEB_ORIGIN: "companion:get-web-origin",
   COMPANION_CAPTURE_SCREENSHOT: "companion:capture-screenshot",
+  COMPANION_LIST_DISPLAYS: "companion:list-displays",
   COMPANION_END_SESSION: "companion:end-session",
   COMPANION_EXPAND: "companion:expand",
   COMPANION_RESTORE: "companion:restore",
@@ -33,6 +34,7 @@ export const IpcChannels = {
   COMPANION_TRANSCRIBE: "companion:transcribe",
   COMPANION_BEGIN_RESIZE: "companion:begin-resize",
   COMPANION_END_RESIZE: "companion:end-resize",
+  COMPANION_PUSH_ANSWER: "companion:push-answer",
 
   // Meeting / screen-share session
   MEETING_SET_SESSION: "meeting:set-session",

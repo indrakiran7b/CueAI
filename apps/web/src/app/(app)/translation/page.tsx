@@ -31,6 +31,12 @@ type RenderedText = {
   error?: string;
 };
 
+type MeetingListItem = {
+  id: string;
+  title: string;
+  status?: string;
+};
+
 function uniqueById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
@@ -64,8 +70,7 @@ function TranslationContent() {
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(Boolean(meetingId));
   const [error, setError] = useState<string | null>(null);
-
-  const [list, setList] = useState<StoredMeeting[]>([]);
+  const [list, setList] = useState<StoredMeeting[] | MeetingListItem[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoaded, setListLoaded] = useState(false);
   const [rendered, setRendered] = useState<Record<string, RenderedText>>({});
@@ -111,27 +116,33 @@ function TranslationContent() {
 
   useEffect(() => {
     if (meetingId) return;
-    let active = true;
-    void fetch("/api/meetings", { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Unable to load meetings.");
-        return res.json() as Promise<{ meetings?: StoredMeeting[] }>;
-      })
-      .then((data) => {
-        if (!active) return;
-        setList((data.meetings || []).filter((m) => m.status !== "live"));
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/meetings", { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as {
+          meetings?: StoredMeeting[];
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setList([]);
+          setListError("Unable to load meetings.");
+          return;
+        }
+        const meetings = Array.isArray(data.meetings) ? data.meetings : [];
+        setList(meetings.filter((m) => m.status !== "live"));
         setListError(null);
-      })
-      .catch(() => {
-        if (!active) return;
-        setList([]);
-        setListError("Unable to load meetings.");
-      })
-      .finally(() => {
-        if (active) setListLoaded(true);
-      });
+      } catch {
+        if (!cancelled) {
+          setList([]);
+          setListError("Unable to load meetings.");
+        }
+      } finally {
+        if (!cancelled) setListLoaded(true);
+      }
+    })();
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, [meetingId]);
 
@@ -273,22 +284,27 @@ function TranslationContent() {
               </button>
             </p>
           )}
+          {!listLoaded && !listError && (
+            <p className="text-sm text-muted">Loading meetings…</p>
+          )}
           {listLoaded && !listError && list.length === 0 && (
             <p className="text-sm text-muted">No meetings yet.</p>
           )}
-          <ul className="space-y-2">
-            {list.map((m) => (
-              <li key={m.id}>
-                <Link
-                  href={`/translation?meetingId=${encodeURIComponent(m.id)}`}
-                  className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm transition hover:border-teal-500/30 hover:bg-teal-500/5"
-                >
-                  <span className="font-medium">{m.title}</span>
-                  <span className="text-xs text-subtle">{m.id}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {listLoaded && !listError && list.length > 0 && (
+            <ul className="space-y-2">
+              {list.map((m) => (
+                <li key={m.id}>
+                  <Link
+                    href={`/translation?meetingId=${encodeURIComponent(m.id)}`}
+                    className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm transition hover:border-teal-500/30 hover:bg-teal-500/5"
+                  >
+                    <span className="font-medium">{m.title}</span>
+                    <span className="text-xs text-subtle">{m.id}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
     );

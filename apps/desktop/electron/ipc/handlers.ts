@@ -32,7 +32,7 @@ import {
   setMeetingSession,
 } from "../services/screen-share";
 import { getDesktopAudioSourceId } from "../services/audio-listen";
-import { capturePrimaryScreenshot } from "../services/screenshot";
+import { capturePrimaryScreenshot, listCaptureDisplays } from "../services/screenshot";
 import { getWebOrigin } from "../services/web-server";
 
 function getMainWindow() {
@@ -111,8 +111,15 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string }) => {
     const origin = getWebOrigin().replace(/\/$/, "");
     const body = new FormData();
-    const ext = payload.mime.includes("ogg") ? "ogg" : payload.mime.includes("mp4") ? "m4a" : "webm";
-    const blob = new Blob([Buffer.from(payload.data)], { type: payload.mime || "audio/webm" });
+    const mime = payload.mime || "audio/wav";
+    const ext = mime.includes("wav")
+      ? "wav"
+      : mime.includes("ogg")
+        ? "ogg"
+        : mime.includes("mp4")
+          ? "m4a"
+          : "webm";
+    const blob = new Blob([Buffer.from(payload.data)], { type: mime });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
     const res = await fetch(`${origin}/api/transcribe`, { method: "POST", body });
@@ -210,13 +217,16 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(IpcChannels.COMPANION_GET_WEB_ORIGIN, () => getWebOrigin());
 
+  ipcMain.handle(IpcChannels.COMPANION_LIST_DISPLAYS, () => listCaptureDisplays());
+
   ipcMain.handle(
     IpcChannels.COMPANION_CAPTURE_SCREENSHOT,
-    async (event, payload?: { save?: boolean }) => {
-      const parent = BrowserWindow.fromWebContents(event.sender);
+    async (_event, payload?: { save?: boolean; displayId?: number | null }) => {
+      // Capture is always in-memory. `save: true` is intentionally ignored so
+      // the Screen/Capture button never opens File Explorer / Save dialogs.
       return capturePrimaryScreenshot({
-        save: payload?.save !== false,
-        parent,
+        save: false,
+        displayId: typeof payload?.displayId === "number" ? payload.displayId : null,
       });
     }
   );
@@ -239,6 +249,29 @@ export function registerIpcHandlers() {
   );
 
   ipcMain.handle(IpcChannels.MEETING_GET_SESSION, () => getMeetingSession());
+
+  /** Push a Screen Context / Vision answer into the companion overlay (primary UI). */
+  ipcMain.handle(
+    IpcChannels.COMPANION_PUSH_ANSWER,
+    async (
+      _e,
+      payload: { answer?: string; question?: string; status?: string } | null
+    ) => {
+      const answer = typeof payload?.answer === "string" ? payload.answer.trim() : "";
+      if (!answer) return { ok: false as const, error: "empty_answer" };
+      await showCompanion();
+      const companion = getCompanionWindow();
+      if (companion && !companion.isDestroyed()) {
+        companion.webContents.send(IpcChannels.COMPANION_PUSH_ANSWER, {
+          answer,
+          question:
+            typeof payload?.question === "string" ? payload.question.trim() : undefined,
+          status: typeof payload?.status === "string" ? payload.status : "ready",
+        });
+      }
+      return { ok: true as const };
+    }
+  );
 
   ipcMain.handle(IpcChannels.APP_GET_VERSION, () => app.getVersion());
   ipcMain.handle(IpcChannels.APP_IS_DESKTOP, () => true);

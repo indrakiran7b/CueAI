@@ -25,6 +25,23 @@ export type ScreenshotResult = {
   dataUrl?: string;
   savedPath?: string | null;
   error?: string;
+  meta?: {
+    width: number;
+    height: number;
+    bytes: number;
+    displayId: number;
+    displayLabel?: string;
+    sourceName?: string;
+  };
+};
+
+export type CaptureDisplay = {
+  id: number;
+  label: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  workArea?: { x: number; y: number; width: number; height: number };
+  scaleFactor: number;
+  primary: boolean;
 };
 
 export type CompanionWindowState = {
@@ -49,7 +66,10 @@ export type CompanionAPI = {
   setListenSources: (sources: Partial<ListenSources>) => Promise<ListenSources>;
   getDesktopAudioSourceId: () => Promise<string | null>;
   getWebOrigin: () => Promise<string>;
-  captureScreenshot: (opts?: { save?: boolean }) => Promise<ScreenshotResult>;
+  captureScreenshot: (opts?: {
+    save?: boolean;
+    displayId?: number | null;
+  }) => Promise<ScreenshotResult>;
   expand: () => Promise<boolean>;
   restore: () => Promise<boolean>;
   resetSize: () => Promise<boolean>;
@@ -68,4 +88,7 @@ export type CompanionAPI = {
   onCaptureStatus: (cb: (status: CaptureStatus) => void) => () => void;
   onListenSources: (cb: (sources: ListenSources) => void) => () => void;
   onWindowState: (cb: (state: CompanionWindowState) => void) => () => void;
+  onPushAnswer: (
+    cb: (payload: { answer: string; question?: string; status?: string }) => void
+  ) => () => void;
 };

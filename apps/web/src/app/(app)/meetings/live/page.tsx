@@ -29,7 +29,17 @@ import {
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import Link from "next/link";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import "./live-session.css";
+
+type TranscriptLine = {
+  id: number;
+  speaker: string;
+  role: string;
+  text: string;
+  time: string;
+  confidence: number;
+};
 
 type Suggestion = {
   id: string;
@@ -48,6 +58,7 @@ export default function LiveMeetingPage() {
 
   useEffect(() => {
     setHydrated(true);
+    persistDesktopQuery();
   }, []);
 
   useEffect(() => {
@@ -125,7 +136,7 @@ export default function LiveMeetingPage() {
           durationSec,
           transcript: spoken.map((l) => ({ who: l.who, text: l.text })),
         }),
-      });
+      }).catch(() => undefined);
     }
     clearLiveSessionConfig();
     setMeetingId(null);
@@ -180,9 +191,7 @@ function ActiveLiveSession({
   const title = sessionTitle(config);
   const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [lines, setLines] = useState<
-    { id: number; speaker: string; role: string; text: string; time: string; confidence: number }[]
-  >([]);
+  const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [sharing, setSharing] = useState(false);
   const [cueAiMode, setCueAiMode] = useState<CueAiMode>(config.startMode);
   const [cueAiProcessing, setCueAiProcessing] = useState<CueAiProcessing>("initializing");
@@ -249,6 +258,12 @@ function ActiveLiveSession({
     return () => clearInterval(t);
   }, [paused]);
 
+  // Real transcript comes from Desktop Companion / live capture — no simulated lines.
+  useEffect(() => {
+    if (cueAiMode !== "live") {
+      setLines([]);
+    }
+  }, [cueAiMode]);
   useEffect(() => {
     if (cueAiMode === "inactive") {
       setLines([]);
@@ -405,7 +420,11 @@ function ActiveLiveSession({
             {paused ? "Resume" : "Pause"}
           </Button>
           <Link
-            href={meetingId ? `/meetings/${meetingId}/summary` : "/meetings"}
+            href={
+              meetingId
+                ? withDesktopParam(`/meetings/${meetingId}/summary`)
+                : withDesktopParam("/meetings")
+            }
             onClick={() =>
               onEnd(
                 seconds,
@@ -503,10 +522,10 @@ function ActiveLiveSession({
             )}
             {cueAiMode === "live" && lines.length === 0 && (
               <div className="ls-empty">
-                <p className="text-sm font-medium">No transcript yet</p>
+                <p className="text-sm font-medium">Waiting for a question…</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Spoken audio from the companion will appear here. CueAI does not invent meeting
-                  dialogue.
+                  Live transcript appears here when Desktop Companion captures speech. CueAI does
+                  not invent meeting dialogue.
                 </p>
               </div>
             )}

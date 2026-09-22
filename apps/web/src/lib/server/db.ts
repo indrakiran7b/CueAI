@@ -137,7 +137,24 @@ export type DbWorkspace = {
   };
 };
 
-export type DbMeetingLine = { who: string; text: string; at?: string };
+export type DbMeetingLine = {
+  who: string;
+  text: string;
+  at?: string;
+  source?: "system" | "microphone" | "screen" | "user" | "cueai";
+};
+
+export type DbMeetingAnswer = {
+  prompt: string;
+  answer: string;
+  at: string;
+  provider?: string;
+  model?: string;
+  latencyMs?: number;
+  source?: "auto" | "manual" | "screen";
+  status?: "ok" | "failed";
+  questionWho?: string;
+};
 
 export type DeviceStatus = "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED";
 
@@ -164,7 +181,8 @@ export type DbMeeting = {
   userId?: string;
   title: string;
   kind: "interview" | "regular";
-  status: "live" | "summary";
+  /** live = active session (hidden from history). completed/summary = history. incomplete = interrupted. */
+  status: "live" | "summary" | "completed" | "incomplete";
   startedAt: string;
   endedAt?: string;
   durationSec: number;
@@ -177,7 +195,7 @@ export type DbMeeting = {
   resumeText?: string;
   description?: string;
   transcript: DbMeetingLine[];
-  answers: { prompt: string; answer: string; at: string }[];
+  answers: DbMeetingAnswer[];
   summary?: string;
 };
 
@@ -267,9 +285,20 @@ function defaultStore(): WorkspaceStore {
 
 let memory: WorkspaceStore | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
+let loadedMtimeMs = 0;
+
+async function storeFileMtime(): Promise<number> {
+  try {
+    const st = await fs.stat(STORE_PATH);
+    return st.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 
 async function ensureLoaded(): Promise<WorkspaceStore> {
-  if (memory) {
+  const mtime = await storeFileMtime();
+  if (memory && mtime && loadedMtimeMs && mtime <= loadedMtimeMs) {
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
     return memory;
@@ -278,6 +307,7 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     await fs.mkdir(DATA_DIR, { recursive: true });
     const raw = await fs.readFile(STORE_PATH, "utf8");
     memory = JSON.parse(raw) as WorkspaceStore;
+    loadedMtimeMs = mtime || Date.now();
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
     if (!memory.workspace.createdAt) {
@@ -294,6 +324,7 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     ensureAiCatalog(memory.ai);
     memory.workspace.createdAt = new Date().toISOString();
     await persist(memory);
+    loadedMtimeMs = await storeFileMtime();
     return memory;
   }
 }
@@ -303,12 +334,19 @@ async function persist(store: WorkspaceStore) {
   writeQueue = writeQueue.then(async () => {
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
+    loadedMtimeMs = await storeFileMtime();
   });
   await writeQueue;
 }
 
 export async function readStore() {
   return ensureLoaded();
+}
+
+/** Drop in-memory cache so the next read picks up disk changes (e.g. purge). */
+export function invalidateStoreCache() {
+  memory = null;
+  loadedMtimeMs = 0;
 }
 
 export async function updateStore(mutator: (store: WorkspaceStore) => void | Promise<void>) {

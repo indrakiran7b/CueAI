@@ -67,11 +67,35 @@ const cueDesktop = {
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_CAPTURE_STATUS) as Promise<CaptureStatus>,
   setExcludeCapture: (enabled: boolean) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_SET_EXCLUDE_CAPTURE, enabled) as Promise<CaptureStatus>,
-  captureScreenshot: (opts?: { save?: boolean }) =>
+  listDisplays: () =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_LIST_DISPLAYS) as Promise<
+      {
+        id: number;
+        label: string;
+        bounds: { x: number; y: number; width: number; height: number };
+        workArea: { x: number; y: number; width: number; height: number };
+        scaleFactor: number;
+        primary: boolean;
+      }[]
+    >,
+  captureScreenshot: (opts?: { save?: boolean; displayId?: number | null }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_CAPTURE_SCREENSHOT, opts) as Promise<{
       ok: boolean;
       dataUrl?: string;
       savedPath?: string | null;
+      error?: string;
+      meta?: {
+        width: number;
+        height: number;
+        bytes: number;
+        displayId: number;
+        displayLabel: string;
+        sourceName: string;
+      };
+    }>,
+  pushCompanionAnswer: (payload: { answer: string; question?: string; status?: string }) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_PUSH_ANSWER, payload) as Promise<{
+      ok: boolean;
       error?: string;
     }>,
 };
@@ -99,12 +123,20 @@ const cueai = {
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_DESKTOP_AUDIO_SOURCE) as Promise<string | null>,
   getWebOrigin: () =>
     ipcRenderer.invoke(IpcChannels.COMPANION_GET_WEB_ORIGIN) as Promise<string>,
-  captureScreenshot: (opts?: { save?: boolean }) =>
+  captureScreenshot: (opts?: { save?: boolean; displayId?: number | null }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_CAPTURE_SCREENSHOT, opts) as Promise<{
       ok: boolean;
       dataUrl?: string;
       savedPath?: string | null;
       error?: string;
+      meta?: {
+        width: number;
+        height: number;
+        bytes: number;
+        displayId: number;
+        displayLabel: string;
+        sourceName: string;
+      };
     }>,
   beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") =>
     ipcRenderer.invoke(IpcChannels.COMPANION_BEGIN_RESIZE, dir) as Promise<boolean>,
@@ -159,6 +191,16 @@ const cueai = {
       cb(s);
     ipcRenderer.on("companion:window-state", listener);
     return () => ipcRenderer.removeListener("companion:window-state", listener);
+  },
+  onPushAnswer: (
+    cb: (payload: { answer: string; question?: string; status?: string }) => void
+  ) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      payload: { answer: string; question?: string; status?: string }
+    ) => cb(payload);
+    ipcRenderer.on(IpcChannels.COMPANION_PUSH_ANSWER, listener);
+    return () => ipcRenderer.removeListener(IpcChannels.COMPANION_PUSH_ANSWER, listener);
   },
 };
 

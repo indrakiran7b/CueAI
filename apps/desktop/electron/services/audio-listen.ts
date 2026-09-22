@@ -28,6 +28,29 @@ export function registerMediaPermissionHandler() {
       p === "microphone"
     );
   });
+
+  // Prefer silent Windows loopback for getDisplayMedia (Teams/Zoom/browser audio).
+  try {
+    session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+      try {
+        const screens = await desktopCapturer.getSources({
+          types: ["screen"],
+          thumbnailSize: { width: 1, height: 1 },
+        });
+        const primary = screens[0];
+        if (!primary) {
+          callback({});
+          return;
+        }
+        callback({ video: primary, audio: "loopback" });
+      } catch (err) {
+        console.error("[AUDIO] displayMedia handler failed", err);
+        callback({});
+      }
+    });
+  } catch (err) {
+    console.error("[AUDIO] setDisplayMediaRequestHandler unavailable", err);
+  }
 }
 
 /** Primary screen/desktop source id for system-audio loopback capture. */

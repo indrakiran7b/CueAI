@@ -1,0 +1,18 @@
+directories:
+  output: C:/cueai-dist
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+extraResources:
+  - from: build-resources/web
+    to: web
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  artifactName: CueAI-${version}-portable.${ext}
+  signAndEditExecutable: false
+portable:
+  artifactName: CueAI-${version}-portable.${ext}

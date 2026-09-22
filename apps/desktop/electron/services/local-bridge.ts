@@ -5,7 +5,10 @@ import {
   toggleCompanion,
   getCompanionBridgeStatus,
 } from "../services/overlay-window-manager";
+import { getCompanionWindow } from "../windows/companion-window";
+import { IpcChannels } from "../ipc/channels";
 import { setMeetingSession, getMeetingSession } from "./screen-share";
+import { capturePrimaryScreenshot, listCaptureDisplays } from "./screenshot";
 
 /** Loopback-only control port so the web UI (browser or Electron) can open the overlay. */
 export const CUEAI_BRIDGE_PORT = 39291;
@@ -85,10 +88,54 @@ export function startLocalBridge() {
         return;
       }
 
+      if (url.pathname === "/displays" && method === "GET") {
+        sendJson(res, 200, { ok: true, displays: listCaptureDisplays() });
+        return;
+      }
+
+      if (url.pathname === "/screenshot" && method === "POST") {
+        const raw = await readBody(req);
+        const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        const displayId =
+          typeof payload.displayId === "number" ? payload.displayId : null;
+        const result = await capturePrimaryScreenshot({
+          save: false,
+          displayId,
+        });
+        sendJson(res, result.ok ? 200 : 500, {
+          ok: result.ok,
+          dataUrl: result.dataUrl,
+          error: result.error,
+          meta: result.meta,
+        });
+        return;
+      }
+
+      if (url.pathname === "/companion/answer" && method === "POST") {
+        const raw = await readBody(req);
+        const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        const answer = typeof payload.answer === "string" ? payload.answer.trim() : "";
+        if (!answer) {
+          sendJson(res, 400, { ok: false, error: "answer_required" });
+          return;
+        }
+        await showCompanion();
+        const companion = getCompanionWindow();
+        if (companion && !companion.isDestroyed()) {
+          companion.webContents.send(IpcChannels.COMPANION_PUSH_ANSWER, {
+            answer,
+            question:
+              typeof payload.question === "string" ? payload.question.trim() : undefined,
+            status: typeof payload.status === "string" ? payload.status : "ready",
+          });
+        }
+        sendJson(res, 200, { ok: true, ...getCompanionBridgeStatus() });
+        return;
+      }
+
       if (url.pathname === "/meeting/session" && method === "POST") {
         const raw = await readBody(req);
         const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        // Session update owns show/hide via screen-share controller.
         setMeetingSession({
           active: typeof payload.active === "boolean" ? payload.active : undefined,
           screenSharing:
@@ -102,7 +149,6 @@ export function startLocalBridge() {
               ? payload.cueAiMode
               : undefined,
         });
-        // Explicit re-show when already active (e.g. Start Session / Live click).
         if (payload.showCompanion === true) {
           await showCompanion();
         }

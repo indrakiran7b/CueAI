@@ -113,15 +113,21 @@ export function humanizeFetchError(err: unknown): string {
   if (!(err instanceof Error)) return "Audio service unavailable.";
   const m = err.message.toLowerCase();
   if (m.includes("failed to fetch") || m.includes("networkerror")) {
-    return "Cannot reach CueAI web API. Start npm run dev:web (port 3000) and keep dev:desktop running.";
+    return "Cannot reach CueAI web API. Keep the desktop app (or npm run dev:web) running.";
   }
-  if (m.includes("permission") || m.includes("notallowed")) {
+  if (m.includes("permission") || m.includes("notallowed") || m.includes("denied")) {
     return "Microphone permission is required.";
   }
-  if (m.includes("not found") || m.includes("device")) {
+  if (m.includes("in use") || m.includes("notreadable") || m.includes("busy")) {
+    return "Microphone is already in use by another app.";
+  }
+  if (m.includes("not found") || m.includes("device") || m.includes("no microphone")) {
     return "No microphone is available.";
   }
-  if (m.includes("system audio")) {
+  if (m.includes("disconnected")) {
+    return err.message;
+  }
+  if (m.includes("system audio") || m.includes("loopback")) {
     return "System audio capture is unavailable on this device.";
   }
   return err.message;

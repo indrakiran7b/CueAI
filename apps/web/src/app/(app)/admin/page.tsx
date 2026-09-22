@@ -678,33 +678,25 @@ function AdminPortalInner() {
             {tab === "overview" && overview && (
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {overview.metrics.activeUsers > 0 && (
-                    <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
-                  )}
-                  {overview.metrics.pendingInvites > 0 && (
-                    <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
-                  )}
-                  {overview.metrics.knowledgeItems > 0 && (
-                    <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
-                  )}
-                  {overview.metrics.periodTokenUsage > 0 && (
-                    <Metric icon={Cpu} label="Tokens this period" value={overview.metrics.periodTokenUsage.toLocaleString()} />
-                  )}
-                  {overview.metrics.periodMeetingSessions > 0 && (
-                    <Metric icon={Clock3} label="Meetings processed" value={overview.metrics.periodMeetingSessions} />
-                  )}
-                  {overview.metrics.periodResumeRewrites > 0 && (
-                    <Metric icon={FilePenLine} label="Resume rewrites" value={overview.metrics.periodResumeRewrites} />
-                  )}
+                  <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
+                  <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
+                  <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
+                  <Metric
+                    icon={Cpu}
+                    label="Tokens this period"
+                    value={overview.metrics.periodTokenUsage.toLocaleString()}
+                  />
+                  <Metric
+                    icon={Clock3}
+                    label="Meetings processed"
+                    value={overview.metrics.periodMeetingSessions}
+                  />
+                  <Metric
+                    icon={FilePenLine}
+                    label="Resume rewrites"
+                    value={overview.metrics.periodResumeRewrites}
+                  />
                 </div>
-                {!overview.metrics.activeUsers &&
-                  !overview.metrics.pendingInvites &&
-                  !overview.metrics.knowledgeItems &&
-                  !overview.metrics.periodTokenUsage &&
-                  !overview.metrics.periodMeetingSessions &&
-                  !overview.metrics.periodResumeRewrites && (
-                    <Card><Empty>No workspace activity yet.</Empty></Card>
-                  )}
                 <Card className="p-5">
                   <SectionTitle
                     icon={Activity}

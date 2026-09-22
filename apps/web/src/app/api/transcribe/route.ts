@@ -58,10 +58,14 @@ export async function POST(request: Request) {
 
     if (groqKey) {
       const upstream = new FormData();
-      upstream.append("file", file, file.name || "listen.webm");
+      upstream.append("file", file, file.name || "listen.wav");
       upstream.append("model", GROQ_STT_MODEL);
       upstream.append("response_format", "json");
       upstream.append("temperature", "0");
+      // Prefer English for interview/meeting questions when auto-detect is noisy.
+      if (process.env.GROQ_STT_LANGUAGE?.trim()) {
+        upstream.append("language", process.env.GROQ_STT_LANGUAGE.trim());
+      }
 
       const groqRes = await fetch(GROQ_URL, {
         method: "POST",

@@ -45,6 +45,10 @@ yarn-debug.log*
 
 # local admin / workspace store
 **/.data/
+**/.data-e2e/
+
+# LLM benchmark secrets (results are committed for shared reports)
+llm-benchmark/.env
 
 # ngrok local agent secrets (authtoken)
 ngrok.yml.local
