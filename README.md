@@ -1,48 +1,54 @@
 # CueAI
 
-Monorepo:
+Monorepo layout:
 
-| App | Stack | Role |
-|-----|--------|------|
-| `apps/web` | Next.js + Tailwind | Design source of truth — dashboard, admin, resume, settings |
-| `apps/desktop` | Electron + React + TypeScript | Windows desktop shell + floating companion |
-| `backend` | FastAPI + PostgreSQL + Redis | Production API (REST + WebSocket) |
+| Path | Stack | Role |
+|------|--------|------|
+| `apps/web` | Next.js + Tailwind | Web app, admin, API routes, JSON persistence (`.data/`) |
+| `apps/desktop/windows` | Electron + React + Vite | Windows desktop shell + floating companion |
+| `apps/desktop/macos` | Electron + React + Vite | macOS menu-bar companion + native HUD |
+| `apps/desktop/shared` | — | Cross-platform desktop build resources (embedded web bundle) |
+| `tests/web/e2e` | Playwright | Web E2E and AI provider tests |
+
+There is no separate FastAPI backend in this repo — REST APIs live under `apps/web/src/app/api/`.
 
 ## Development
 
-Terminal 1 — web (required for desktop main window):
+### Web
 
 ```bash
 npm run dev:web
 ```
 
-Terminal 2 — Electron (loads http://localhost:3000 + companion on :15174):
+### Windows desktop
+
+One command (starts web + Electron together):
 
 ```bash
 npm run dev:desktop
 ```
 
-Terminal 3 — API (Phase 1+):
+Web-only (browser, no Electron):
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --port 8000
+npm run dev:web
 ```
 
-See `backend/README.md` for backend phases and architecture.
-
-Docker (API + Postgres/pgvector + Redis + MinIO + Celery):
+Electron-only when web is already running on `:3000`:
 
 ```bash
-cd backend
-cp docker/.env.docker.example docker/.env
-docker compose --env-file docker/.env up --build
+npm run dev:desktop:electron
 ```
 
-### Desktop shortcuts
+### macOS desktop
+
+```bash
+npm run dev:mac
+```
+
+Starts Next.js on `127.0.0.1:3002` (unless already running) and the macOS Electron app.
+
+### Desktop shortcuts (Windows)
 
 | Shortcut | Action |
 |----------|--------|
@@ -54,16 +60,28 @@ docker compose --env-file docker/.env up --build
 | `Esc` | Hide companion |
 
 ### Architecture
-- **Main window** → Next.js `apps/web` (design source of truth, including redesigned landing) via `http://localhost:3000`
-- **Companion window** → Vite React overlay in `apps/desktop/src` (always-on-top) via `:15174`
+
+- **Main window** → Next.js `apps/web` via `http://localhost:3000` (Windows) or `:3002` (macOS dev)
+- **Companion overlay** → Vite React in each desktop app (`:15174` Windows, `:15175` macOS)
 - **Preload** → secure `contextBridge` IPC (`window.cueDesktop` / `window.cueai`)
-- **Tray** · global shortcuts · JSON settings store · electron-builder
-- **Backend** → FastAPI clean architecture (`backend/app`)
+- **API / persistence** → Next.js route handlers in `apps/web/src/app/api/` and `apps/web/src/lib/server/`
 
 ## Build
 
 ```bash
 npm run build:web
-npm run build:desktop
-npm run dist -w @cueai/desktop
+npm run build:desktop          # Windows
+npm run build:desktop:mac      # macOS
+npm run dist:desktop           # Windows portable (after web build + prepare-desktop-web)
+npm run dist:mac               # macOS DMG (macOS only)
 ```
+
+## Tests
+
+```bash
+npm run lint
+npm run test:e2e
+npm run test:e2e:ai-providers
+```
+
+See `docs/RESTRUCTURE-MIGRATION.md` for the repository layout migration report.

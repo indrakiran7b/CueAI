@@ -1,0 +1,97 @@
+{
+  "name": "@cueai/desktop-mac",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CueAI for macOS — menu bar companion with a native HUD",
+  "author": "CueAI",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:mac": "vite",
+    "build": "tsc -p tsconfig.node.json --noEmit && vite build && tsc -p tsconfig.electron.json",
+    "build:mac": "npm run build",
+    "dist:mac": "npm run dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
+    "pack": "npm run build && electron-builder --dir --mac",
+    "dist": "npm run build && electron-builder --mac dmg zip --universal"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.28.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "37.10.3",
+    "electron-builder": "^26.0.12",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^7.0.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.cueai.desktop.mac",
+    "productName": "CueAI",
+    "electronVersion": "37.10.3",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../shared/build-resources/web",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["universal"]
+        }
+      ],
+      "artifactName": "CueAI-${version}-${arch}.${ext}",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "CFBundleDisplayName": "CueAI",
+        "CFBundleName": "CueAI",
+        "NSMicrophoneUsageDescription": "CueAI uses the microphone to transcribe your side of a meeting and suggest answers.",
+        "NSScreenCaptureUsageDescription": "CueAI captures the selected display for Screen Context and can use that capture path for system audio.",
+        "NSAudioCaptureUsageDescription": "CueAI captures system audio from the selected display so Auto Answer can hear the meeting."
+      }
+    },
+    "dmg": {
+      "title": "CueAI for Mac",
+      "backgroundColor": "#f4f1ea"
+    },
+    "protocols": [
+      {
+        "name": "CueAI",
+        "schemes": ["cueai"]
+      }
+    ]
+  }
+}

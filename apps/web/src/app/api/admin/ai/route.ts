@@ -168,13 +168,20 @@ export async function POST(req: NextRequest) {
     null;
 
   const isGemini = provider?.type === "gemini";
-  const key =
-    (provider?.apiKeyEnc ? decryptSecret(provider.apiKeyEnc) : "") ||
-    (isGemini
-      ? process.env.GEMINI_API_KEY || ""
-      : (store.ai.apiKeyEnc ? decryptSecret(store.ai.apiKeyEnc) : "") ||
-        process.env.GROQ_API_KEY ||
-        "");
+  const stored = provider?.apiKeyEnc ? decryptSecret(provider.apiKeyEnc) : "";
+  // Only the selected provider's key (or that provider's own env var). Never
+  // fall back to another provider's credential.
+  const envForType =
+    provider?.type === "gemini"
+      ? process.env.GEMINI_API_KEY
+      : provider?.type === "openai"
+        ? process.env.OPENAI_API_KEY
+        : provider?.type === "anthropic"
+          ? process.env.ANTHROPIC_API_KEY
+          : provider?.type === "groq"
+            ? process.env.GROQ_API_KEY
+            : "";
+  const key = stored || envForType || "";
 
   if (!key) {
     return NextResponse.json({ ok: false, error: "No API key configured for this provider." }, { status: 400 });
@@ -188,6 +195,7 @@ export async function POST(req: NextRequest) {
     // Gemini authenticates with x-goog-api-key rather than a bearer token.
     const res = await fetch(`${endpoint}/models`, {
       headers: isGemini ? { "x-goog-api-key": key } : { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       return NextResponse.json({ ok: false, error: `Provider responded with ${res.status}` });

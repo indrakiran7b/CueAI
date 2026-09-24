@@ -29,18 +29,22 @@ export function DesktopBridge() {
     }
     document.title = "CueAI";
 
-    const offNav = desktop.onNavigate((path) => {
-      router.push(withDesktopParam(path));
-    });
+    const offNav = desktop.onNavigate
+      ? desktop.onNavigate((path) => {
+          router.push(withDesktopParam(path));
+        })
+      : () => {};
 
-    const offShortcut = desktop.onShortcut((name) => {
-      if (name === "command-palette") {
-        document.querySelector<HTMLButtonElement>("[data-command-trigger]")?.click();
-      }
-      if (name === "end-session") {
-        window.dispatchEvent(new CustomEvent("cueai:end-session"));
-      }
-    });
+    const offShortcut = desktop.onShortcut
+      ? desktop.onShortcut((name) => {
+          if (name === "command-palette") {
+            document.querySelector<HTMLButtonElement>("[data-command-trigger]")?.click();
+          }
+          if (name === "end-session") {
+            window.dispatchEvent(new CustomEvent("cueai:end-session"));
+          }
+        })
+      : () => {};
 
     return () => {
       offNav();

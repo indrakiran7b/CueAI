@@ -22,7 +22,8 @@
 # production
 /build
 **/release/
-apps/desktop/release/
+apps/desktop/windows/release/
+apps/desktop/macos/release/
 apps/web/public/downloads/
 *.exe
 !**/electron-builder.yml
@@ -69,7 +70,7 @@ next-env.d.ts
 /playwright/.cache/
 
 # Generated Electron web bundle (created by scripts/prepare-desktop-web.cjs)
-apps/desktop/build-resources/
+apps/desktop/shared/build-resources/
 
 # Local Qwen2.5-VL weights
 .models/

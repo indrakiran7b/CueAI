@@ -767,7 +767,9 @@ export default function CompanionPage() {
                 <button
                   type="button"
                   className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
-                  onClick={() => void fixPermission(row.fix)}
+                  onClick={() => {
+                    if (row.fix) void fixPermission(row.fix);
+                  }}
                 >
                   Fix
                 </button>
@@ -776,7 +778,9 @@ export default function CompanionPage() {
                 <button
                   type="button"
                   className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
-                  onClick={() => void getDesktop()?.openPrivacySettings?.(row.settings)}
+                  onClick={() => {
+                    if (row.settings) void getDesktop()?.openPrivacySettings?.(row.settings);
+                  }}
                 >
                   Open Settings
                 </button>

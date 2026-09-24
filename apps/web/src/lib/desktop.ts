@@ -154,6 +154,40 @@ export type CueDesktopAPI = {
     cleared: boolean;
     identityPreserved: boolean;
   }>;
+  getLicenseDevice?: () => Promise<{
+    deviceId: string;
+    maskedId: string;
+    deviceName: string;
+    platform: "windows" | "macos";
+    appVersion: string;
+    secureStorageAvailable: boolean;
+  }>;
+  getLicenseStatus?: () => Promise<LicenseStatusPayload>;
+  activateLicense?: (licenseKey: string) => Promise<LicenseStatusPayload>;
+  validateLicense?: () => Promise<LicenseStatusPayload>;
+  deactivateLicense?: () => Promise<LicenseStatusPayload>;
+};
+
+export type LicenseStatusPayload = {
+  ok: boolean;
+  state:
+    | "ACTIVE"
+    | "EXPIRED"
+    | "REVOKED"
+    | "INVALID"
+    | "DEVICE_LIMIT_REACHED"
+    | "NOT_ACTIVATED"
+    | "NETWORK_ERROR";
+  authorized: boolean;
+  message?: string;
+  clientName?: string;
+  licenseType?: string;
+  expiresAt?: string;
+  devicesActive?: number;
+  maxDevices?: number;
+  licenseId?: string;
+  deviceId?: string;
+  platform?: "windows" | "macos";
 };
 
 declare global {
