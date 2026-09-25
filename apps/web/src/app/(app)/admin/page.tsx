@@ -81,12 +81,10 @@ const NAV: Array<{
   { id: "users", label: "Users", icon: Users, permission: "users.read" },
   { id: "invitations", label: "Invitations", icon: Mail, permission: "users.read" },
   { id: "roles", label: "Roles", icon: Shield, permission: "users.read" },
-  { id: "knowledge", label: "Knowledge", icon: BookOpen, permission: "knowledge.read" },
   { id: "providers", label: "AI Providers", icon: KeyRound, permission: "ai.read" },
   { id: "models", label: "AI Models", icon: Bot, permission: "ai.read" },
   { id: "tokens", label: "Token Usage", icon: Cpu, permission: "usage.read" },
   { id: "meetings", label: "Meeting Minutes", icon: Clock3, permission: "usage.read" },
-  { id: "resume", label: "Resume Rewrite", icon: FilePenLine, permission: "usage.read" },
   { id: "privacy", label: "Privacy", icon: Lock, permission: "privacy.read" },
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
   { id: "audit", label: "Activity Log", icon: ScrollText, permission: "audit.read" },
@@ -436,6 +434,12 @@ function AdminPortalInner() {
     () => NAV.filter((item) => can(role, item.permission)),
     [role],
   );
+
+  useEffect(() => {
+    if (!visibleNav.some((item) => item.id === tab)) {
+      setTab("overview");
+    }
+  }, [visibleNav, tab]);
   const permissions = useMemo(() => rolePermissionMatrix(), []);
 
   const fail = (cause: unknown, fallback: string) => {
@@ -466,13 +470,6 @@ function AdminPortalInner() {
           api<{ users: User[] }>("/api/admin/users").then((data) => setUsers(data.users)),
           api<{ invites: Invite[] }>("/api/admin/invites").then((data) =>
             setInvites(data.invites),
-          ),
-        );
-      }
-      if (can(role, "knowledge.read")) {
-        requests.push(
-          api<{ items: KnowledgeItem[] }>("/api/admin/knowledge").then((data) =>
-            setKnowledge(data.items),
           ),
         );
       }
@@ -1536,6 +1533,7 @@ function AdminPortalInner() {
                             <th className="py-2 pr-3">Provider</th>
                             <th className="py-2 pr-3">Capability</th>
                             <th className="py-2 pr-3">Status</th>
+                            <th className="py-2 pr-3">Default</th>
                             <th className="py-2">Actions</th>
                           </tr>
                         </thead>
@@ -1554,6 +1552,9 @@ function AdminPortalInner() {
                                 <Badge variant={model.enabled ? "success" : "warning"}>
                                   {model.enabled ? "Enabled" : "Disabled"}
                                 </Badge>
+                              </td>
+                              <td className="py-3 pr-3">
+                                {model.isDefault ? <Badge variant="info">Default</Badge> : "—"}
                               </td>
                               <td className="py-3">
                                 {can(role, "ai.write") && (

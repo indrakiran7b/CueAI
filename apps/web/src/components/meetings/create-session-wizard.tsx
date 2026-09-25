@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Briefcase,
@@ -337,11 +336,7 @@ export function CreateSessionWizard({
                       ) : null}
                       {resumes.length === 0 && (
                         <p className="text-xs text-subtle">
-                          Upload here or on{" "}
-                          <Link href="/resume" className="text-primary hover:underline">
-                            Resume Tailor
-                          </Link>
-                          .
+                          Upload a PDF here so CueAI can use it for this session.
                         </p>
                       )}
                     </div>

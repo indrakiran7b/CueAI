@@ -10,7 +10,6 @@ import {
   LogOut,
   Video,
   FileText,
-  BookOpen,
   Settings,
   Check,
   User,
@@ -45,7 +44,7 @@ type WorkspaceRow = {
 const COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
-  { label: "Knowledge Base", href: "/knowledge", icon: BookOpen },
+  { label: "Desktop Companion", href: "/companion", icon: Video },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

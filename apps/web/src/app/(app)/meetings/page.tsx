@@ -192,7 +192,7 @@ export default function MeetingsPage() {
       {loaded && !loadError && filtered.length === 0 && (
         <p className="py-8 text-center text-sm text-muted">
           {meetings.length === 0
-            ? "No meetings yet."
+            ? "No meeting summaries yet."
             : `No meetings match your search${statusFilter !== "all" ? " or filters" : ""}.`}
         </p>
       )}

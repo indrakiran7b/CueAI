@@ -13,6 +13,9 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminUser } from "@/lib/app-access";
+import { canViewFullMeetingQa, FREE_MEETING_QA_LIMIT } from "@/lib/entitlements";
 import { fetchMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
@@ -20,6 +23,9 @@ import { cn } from "@/lib/utils";
 export default function MeetingSummaryPage() {
   const params = useParams<{ id: string }>();
   const meetingId = typeof params.id === "string" ? params.id : "";
+  const { session } = useAuth();
+  const admin = isAdminUser(session?.role);
+  const fullQa = canViewFullMeetingQa({ role: session?.role, plan: session?.plan });
 
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,6 +124,7 @@ export default function MeetingSummaryPage() {
             {meeting.generatedIn ? ` · Generated in ${meeting.generatedIn}` : ""}
           </p>
         </div>
+        {admin && (
         <div className="flex flex-wrap gap-2">
           <Link href={`/translation?meetingId=${encodeURIComponent(meeting.id)}`}>
             <Button variant="outline" size="sm">
@@ -132,6 +139,7 @@ export default function MeetingSummaryPage() {
             </Button>
           </Link>
         </div>
+        )}
       </div>
 
       <Card glow className="p-6">
@@ -145,7 +153,7 @@ export default function MeetingSummaryPage() {
         {meeting.keyDecisions.length > 0 && (
           <Card className="p-5">
             <CardHeader>
-              <CardTitle>Key decisions</CardTitle>
+              <CardTitle>Key points</CardTitle>
             </CardHeader>
             <ul className="space-y-3">
               {meeting.keyDecisions.map((decision) => (
@@ -161,10 +169,13 @@ export default function MeetingSummaryPage() {
         {meeting.aiAnswers.length > 0 && (
           <Card className="p-5">
             <CardHeader>
-              <CardTitle>Asked in this session</CardTitle>
+              <CardTitle>Questions & Answers</CardTitle>
             </CardHeader>
             <ul className="space-y-3">
-              {meeting.aiAnswers.slice(0, 8).map((answer) => (
+              {(fullQa
+                ? meeting.aiAnswers
+                : meeting.aiAnswers.slice(0, FREE_MEETING_QA_LIMIT)
+              ).map((answer) => (
                 <li key={answer.id} className="flex gap-2 text-sm text-foreground/90">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
                   <span>
@@ -174,6 +185,22 @@ export default function MeetingSummaryPage() {
                 </li>
               ))}
             </ul>
+            {!fullQa && meeting.aiAnswers.length > FREE_MEETING_QA_LIMIT && (
+              <div className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4">
+                <p className="text-sm font-medium text-foreground">Unlock Complete Meeting Summary</p>
+                <p className="mt-2 text-xs text-muted">Get access to:</p>
+                <ul className="mt-2 space-y-1 text-xs text-muted">
+                  <li>✓ All questions and answers</li>
+                  <li>✓ Complete meeting insights</li>
+                  <li>✓ Full meeting details</li>
+                </ul>
+                <Link href="/settings">
+                  <Button className="mt-3" size="sm" variant="outline">
+                    Upgrade to Premium
+                  </Button>
+                </Link>
+              </div>
+            )}
           </Card>
         )}
 
@@ -207,7 +234,7 @@ export default function MeetingSummaryPage() {
           </Card>
         )}
 
-        {meeting.transcript.length > 0 && (
+        {admin && meeting.transcript.length > 0 && (
           <Card className="p-5">
             <CardHeader>
               <CardTitle>Transcript</CardTitle>
@@ -262,6 +289,7 @@ export default function MeetingSummaryPage() {
         </Card>
       )}
 
+      {admin && (
       <Card className="p-5">
         <CardTitle className="mb-3">Follow-up email draft</CardTitle>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4 text-sm leading-relaxed text-muted">
@@ -277,6 +305,7 @@ export default function MeetingSummaryPage() {
           </Button>
         </div>
       </Card>
+      )}
     </div>
   );
 }

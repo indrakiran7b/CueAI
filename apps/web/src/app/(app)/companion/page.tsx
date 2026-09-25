@@ -767,7 +767,10 @@ export default function CompanionPage() {
                 <button
                   type="button"
                   className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
-                  onClick={() => void fixPermission(row.fix)}
+                  onClick={() => {
+                    const kind = row.fix;
+                    if (kind) void fixPermission(kind);
+                  }}
                 >
                   Fix
                 </button>
@@ -776,7 +779,10 @@ export default function CompanionPage() {
                 <button
                   type="button"
                   className="mt-2 text-xs text-[var(--accent)] underline-offset-2 hover:underline"
-                  onClick={() => void getDesktop()?.openPrivacySettings?.(row.settings)}
+                  onClick={() => {
+                    const pane = row.settings;
+                    if (pane) void getDesktop()?.openPrivacySettings?.(pane);
+                  }}
                 >
                   Open Settings
                 </button>

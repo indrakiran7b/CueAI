@@ -5,8 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Video,
-  FileText,
-  Library,
   Languages,
   Monitor,
   Settings,
@@ -17,19 +15,17 @@ import {
 } from "lucide-react";
 import { BrandMark, Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { canAccessAdmin } from "@/lib/roles";
+import { isAdminUser, isCueAiUserNavHref } from "@/lib/app-access";
 import { isMacDesktopApp } from "@/lib/desktop";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/meetings", label: "Meetings", icon: Video },
   { href: "/meetings/live", label: "Live Session", icon: Sparkles },
-  { href: "/resume", label: "Resume Tailor", icon: FileText },
-  { href: "/knowledge", label: "Knowledge Base", icon: Library },
-  { href: "/translation", label: "Translation", icon: Languages },
-  { href: "/screen-context", label: "Screen Context", icon: Monitor },
+  { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
+  { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
   { href: "/companion", label: "Desktop Companion", icon: AppWindow },
   { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true as const },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -37,18 +33,19 @@ const nav = [
 
 const MAC_SECTIONS = [
   {
-    title: "Home",
-    hrefs: ["/dashboard", "/meetings/live", "/meetings"],
+    title: "CUE AI",
+    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/companion"],
   },
   {
-    title: "Library",
-    hrefs: ["/resume", "/knowledge", "/translation", "/screen-context"],
+    title: "Workspace",
+    hrefs: ["/translation", "/screen-context", "/admin"],
   },
   {
-    title: "System",
-    hrefs: ["/companion", "/admin", "/settings"],
+    title: "Settings",
+    hrefs: ["/settings"],
   },
 ] as const;
+
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") {
     return pathname === "/dashboard";
@@ -69,15 +66,15 @@ function isNavActive(pathname: string, href: string): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [mac, setMac] = useState(false);
+  const [mac] = useState(() => isMacDesktopApp());
   const { session } = useAuth();
-  const showAdmin = canAccessAdmin(session?.role);
+  const admin = isAdminUser(session?.role);
 
-  useEffect(() => {
-    setMac(isMacDesktopApp());
-  }, []);
-
-  const items = nav.filter((item) => !item.adminOnly || showAdmin);
+  const items = nav.filter((item) => {
+    if ("adminOnly" in item && item.adminOnly) return admin;
+    if ("adminExtra" in item && item.adminExtra) return admin;
+    return isCueAiUserNavHref(item.href);
+  });
 
   function renderLink(item: (typeof nav)[number], hudLabel = false) {
     const active = isNavActive(pathname, item.href);

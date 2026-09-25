@@ -41,10 +41,12 @@ type Suggestion = {
 
 export default function LiveMeetingPage() {
   const [session, setSession] = useState<LiveSessionConfig | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const meetingIdRef = useRef<string | null>(null);
   meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
+  const setupAbortRef = useRef(false);
 
   useEffect(() => {
     setHydrated(true);
@@ -58,7 +60,23 @@ export default function LiveMeetingPage() {
     return () => window.removeEventListener("cueai:end-session", onEndFromOverlay);
   }, []);
 
+  function cancelSetup() {
+    setupAbortRef.current = true;
+    clearLiveSessionConfig();
+    setMeetingId(null);
+    setSession(null);
+    setSetupOpen(false);
+    void startDesktopMeetingSession({
+      active: false,
+      screenSharing: false,
+      cueAiMode: "inactive",
+      hideCompanion: true,
+    });
+    void hideCompanionOverlay();
+  }
+
   async function beginSession(config: LiveSessionConfig) {
+    setupAbortRef.current = false;
     const title = sessionTitle(config);
     saveLiveSessionConfig(config);
     let createdId: string | null = null;
@@ -99,9 +117,21 @@ export default function LiveMeetingPage() {
     } catch {
       // Overlay still works if persistence fails.
     }
+    if (setupAbortRef.current) {
+      if (createdId) {
+        void fetch(`/api/meetings/${createdId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ end: true, durationSec: 0, transcript: [] }),
+        });
+      }
+      clearLiveSessionConfig();
+      return;
+    }
     const next = { ...config, meetingId: createdId || config.meetingId };
     saveLiveSessionConfig(next);
     setMeetingId(next.meetingId || null);
+    setSetupOpen(false);
     void openCompanionOverlay();
     void startDesktopMeetingSession({
       active: true,
@@ -130,6 +160,7 @@ export default function LiveMeetingPage() {
     clearLiveSessionConfig();
     setMeetingId(null);
     setSession(null);
+    setSetupOpen(false);
     void startDesktopMeetingSession({
       active: false,
       screenSharing: false,
@@ -148,10 +179,35 @@ export default function LiveMeetingPage() {
     );
   }
 
+  if (!session && !setupOpen) {
+    return (
+      <div data-live className="mx-auto max-w-xl space-y-6 py-16 text-center animate-fade-up">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Live Session</h1>
+          <p className="mt-2 text-sm text-muted">
+            Start a live session to open Create Session. Cancel returns here without creating a meeting.
+          </p>
+        </div>
+        <Button
+          variant="gradient"
+          onClick={() => {
+            setupAbortRef.current = false;
+            setSetupOpen(true);
+          }}
+        >
+          Start Live Session
+        </Button>
+      </div>
+    );
+  }
+
   if (!session) {
     return (
       <div data-live>
-        <CreateSessionWizard onComplete={(config) => void beginSession(config)} />
+        <CreateSessionWizard
+          onCancel={cancelSetup}
+          onComplete={(config) => void beginSession(config)}
+        />
         <p className="mt-4 text-center text-xs text-subtle">
           Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
           CueAI Desktop running for the pop-out window.

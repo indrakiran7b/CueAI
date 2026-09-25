@@ -3,12 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
-import {
-  FileText,
-  Library,
-  Monitor,
-  Sparkles,
-} from "lucide-react";
+import { Monitor, Sparkles } from "lucide-react";
+import { isAdminUser } from "@/lib/app-access";
 import {
   Area,
   AreaChart,
@@ -37,11 +33,10 @@ const fade: Variants = {
   }),
 };
 
-const quickActions = [
-  { href: "/resume", icon: FileText, label: "Tailor a resume" },
-  { href: "/knowledge", icon: Library, label: "Upload to Knowledge" },
+const adminQuickActions = [
   { href: "/screen-context", icon: Monitor, label: "Enable Screen AI" },
   { href: "/translation", icon: Sparkles, label: "Start translation" },
+  { href: "/meetings/live", icon: Sparkles, label: "Start live session" },
 ];
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -51,6 +46,7 @@ export default function DashboardPage() {
   const { theme } = useTheme();
   const name = session?.name || "there";
   const workspace = session?.workspace || "Your Workspace";
+  const admin = isAdminUser(session?.role);
   const isLight = theme === "light";
   const chartTick = isLight ? "#999999" : "#666666";
   const chartStroke = isLight ? "#090909" : "#ffffff";
@@ -289,7 +285,7 @@ export default function DashboardPage() {
               </p>
             )}
             {!loadError && completed.length === 0 && (
-              <p className="py-6 text-sm text-muted">No meetings yet.</p>
+              <p className="py-6 text-sm text-muted">No meeting summaries yet.</p>
             )}
             {completed.slice(0, 6).map((m) => (
               <Link key={m.id} href={`/meetings/${m.id}/summary`} className="db-meeting">
@@ -306,6 +302,7 @@ export default function DashboardPage() {
           </div>
         </motion.section>
 
+        {admin && (
         <motion.section
           className="db-panel"
           custom={8}
@@ -317,7 +314,7 @@ export default function DashboardPage() {
             <h2 className="db-section-title">Quick actions</h2>
           </div>
           <div className="db-actions">
-            {quickActions.map((a) => (
+            {adminQuickActions.map((a) => (
               <Link key={a.href} href={a.href} className="db-action">
                 <span>{a.label}</span>
                 <a.icon className="db-action-icon h-4 w-4" />
@@ -325,6 +322,7 @@ export default function DashboardPage() {
             ))}
           </div>
         </motion.section>
+        )}
 
         <motion.section
           className="db-panel"

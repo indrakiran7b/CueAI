@@ -19,6 +19,8 @@ export type DbUser = {
   lastActiveAt?: string;
   /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
   onboarding?: OnboardingProfile;
+  /** Optional billing entitlement. Absent means free. */
+  plan?: "free" | "premium";
 };
 
 export type DbInvite = {
@@ -368,5 +370,6 @@ export function publicUser(user: DbUser) {
     createdAt: user.createdAt,
     lastActiveAt: user.lastActiveAt || null,
     onboardingCompleted: Boolean(user.onboarding?.completedAt),
+    plan: user.plan === "premium" ? "premium" : "free",
   };
 }
