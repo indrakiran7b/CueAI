@@ -113,8 +113,8 @@ export default function MeetingSummaryPage() {
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Badge variant={meeting.status === "live" ? "success" : "info"} className="mb-2">
-            {meeting.status === "live" ? "Live" : "Summary ready"}
+          <Badge variant="info" className="mb-2">
+            Completed
           </Badge>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
             {meeting.title}

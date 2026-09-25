@@ -10,29 +10,6 @@ export type KnowledgeDoc = {
 
 const STORAGE_KEY = "cueai-knowledge-docs";
 
-const SEED: KnowledgeDoc[] = [
-  {
-    id: "d1",
-    name: "CueAI Security Whitepaper.pdf",
-    folder: "Security",
-    tags: ["SOC2", "Enterprise"],
-    updated: "2d ago",
-    size: "2.4 MB",
-    preview:
-      "CueAI encrypts meeting data in transit and at rest. Enterprise workspaces can enforce region locks, retention policies, and private model endpoints.",
-  },
-  {
-    id: "d2",
-    name: "Pricing & Packaging Q3.md",
-    folder: "GTM",
-    tags: ["Pricing"],
-    updated: "5d ago",
-    size: "48 KB",
-    preview:
-      "Pro plan is $79 / seat / month. Free tier includes 3 live sessions and basic companion overlay.",
-  },
-];
-
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -49,17 +26,22 @@ function guessFolder(name: string): string {
 }
 
 export function loadKnowledgeDocs(): KnowledgeDoc[] {
-  if (typeof window === "undefined") return SEED;
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED));
-      return [...SEED];
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as KnowledgeDoc[];
-    return Array.isArray(parsed) && parsed.length ? parsed : [...SEED];
+    if (!Array.isArray(parsed)) return [];
+    // Drop legacy seed docs if they were auto-written previously.
+    return parsed.filter(
+      (d) =>
+        d?.id &&
+        d.id !== "d1" &&
+        d.id !== "d2" &&
+        !/Security Whitepaper|Pricing & Packaging Q3/i.test(d.name || ""),
+    );
   } catch {
-    return [...SEED];
+    return [];
   }
 }
 

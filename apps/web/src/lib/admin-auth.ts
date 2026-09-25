@@ -9,20 +9,17 @@ export type AdminSession = {
 const ADMIN_SESSION_KEY = "cueai-admin-session";
 const ADMIN_COOKIE = "cueai-admin";
 
-export const ADMIN_BOOTSTRAP = {
-  email: "user2071018416@cueai.local",
-  password: "password123",
-  name: "User 2071018416",
-  role: "Admin" as AdminRole,
-};
-
+/**
+ * Optional env-configured admin accounts for the legacy client-side admin form.
+ * Prefer the real server session + RequireAdmin path (/admin).
+ * Never hardcode passwords in source.
+ */
 const ADMIN_ACCOUNTS: Array<{
   email: string;
   password: string;
   name: string;
   role: AdminRole;
 }> = [
-  ADMIN_BOOTSTRAP,
   {
     email: process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase() || "",
     password: process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "",

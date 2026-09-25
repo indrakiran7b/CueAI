@@ -170,9 +170,9 @@ export function CreateSessionWizard({
               onClick={() => {
                 patch({
                   kind: "interview",
-                  company: "Mock Company",
+                  company: "",
                   jobDescription:
-                    "Practice behavioral and system design questions for a senior software engineer role.",
+                    "Practice interview — answer behavioral and system design questions for a software engineer role. (No specific company selected.)",
                 });
                 setStep(1);
               }}

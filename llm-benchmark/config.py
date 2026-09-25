@@ -30,9 +30,6 @@ CHART_SUCCESS = RESULTS_DIR / "chart_success_rate.png"
 CHART_ACCURACY = RESULTS_DIR / "chart_accuracy.png"
 CHART_CUEAI_TTFT = RESULTS_DIR / "chart_cueai_ttft.png"
 CHART_CUEAI_LATENCY = RESULTS_DIR / "chart_cueai_latency.png"
-CHART_CATEGORY_LATENCY = RESULTS_DIR / "chart_category_latency.png"
-CHART_CATEGORY_ACCURACY = RESULTS_DIR / "chart_category_accuracy.png"
-CHART_QUESTION_LATENCY = RESULTS_DIR / "chart_question_latency.png"
 
 # Back-compat aliases used by older helpers
 SUMMARY_CSV = MODEL_SUMMARY_CSV
@@ -51,9 +48,9 @@ OPENROUTER_APP_TITLE = "CueAI LLM Benchmark"
 # Run settings (override via CLI: --runs / --quick / --cueai)
 # ---------------------------------------------------------------------------
 
-# Same settings for every model and every question.
-RUNS_PER_PROMPT = 5
-MAX_TOKENS = 512
+RUNS_PER_PROMPT = 1
+MAX_TOKENS = 280  # CueAI-style brevity for conceptual / short answers
+MAX_TOKENS_CODE = 700  # coding / debugging / SQL need a function + complexity
 TEMPERATURE = 0.2
 REQUEST_TIMEOUT_SEC = 90.0
 MAX_RETRIES = 3
@@ -118,57 +115,4 @@ def find_model(model_id: str) -> ModelConfig | None:
     for m in MODELS:
         if m.model_id.lower() == needle or m.display_name.lower() == needle:
             return m
-    return None
-
-
-CATEGORY_ALIASES = {
-    "technical": "TECHNICAL",
-    "aptitude": "APTITUDE",
-    "logical": "LOGICAL_REASONING",
-    "logical_reasoning": "LOGICAL_REASONING",
-    "reasoning": "LOGICAL_REASONING",
-    "coding": "CODING",
-    "debugging": "DEBUGGING",
-    "sql": "SQL_DATABASE",
-    "database": "SQL_DATABASE",
-    "sql_database": "SQL_DATABASE",
-    "computer_science": "COMPUTER_SCIENCE",
-    "cs": "COMPUTER_SCIENCE",
-    "scenario": "SCENARIO",
-    "scenario-based": "SCENARIO",
-    "realtime": "REALTIME_INTERVIEW",
-    "real-time": "REALTIME_INTERVIEW",
-    "realtime_interview": "REALTIME_INTERVIEW",
-    "hr": "BEHAVIORAL_HR",
-    "behavioral": "BEHAVIORAL_HR",
-    "behavioral_hr": "BEHAVIORAL_HR",
-    "short": "SHORT_ANSWER",
-    "short_answer": "SHORT_ANSWER",
-    "followup": "FOLLOW_UP",
-    "follow-up": "FOLLOW_UP",
-    "follow_up": "FOLLOW_UP",
-}
-
-
-def resolve_category(name: str) -> str | None:
-    raw = name.strip().upper().replace(" ", "_").replace("-", "_")
-    known = {
-        "TECHNICAL",
-        "APTITUDE",
-        "LOGICAL_REASONING",
-        "CODING",
-        "DEBUGGING",
-        "SQL_DATABASE",
-        "COMPUTER_SCIENCE",
-        "SCENARIO",
-        "REALTIME_INTERVIEW",
-        "BEHAVIORAL_HR",
-        "SHORT_ANSWER",
-        "FOLLOW_UP",
-    }
-    alias = CATEGORY_ALIASES.get(name.strip().lower())
-    if alias:
-        return alias
-    if raw in known:
-        return raw
     return None

@@ -15,6 +15,7 @@ import {
   FilePenLine,
   KeyRound,
   Laptop,
+  Ticket,
   Lock,
   Mail,
   Plus,
@@ -37,6 +38,7 @@ import {
 } from "recharts";
 import { RequireAdmin } from "@/components/auth/require-admin";
 import { AdminDevicesPanel } from "@/components/admin/admin-devices-panel";
+import { AdminLicensesPanel } from "@/components/admin/admin-licenses-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +70,7 @@ type NavId =
   | "retention"
   | "audit"
   | "devices"
+  | "licenses"
   | "settings";
 
 const NAV: Array<{
@@ -89,6 +92,7 @@ const NAV: Array<{
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
   { id: "audit", label: "Activity Log", icon: ScrollText, permission: "audit.read" },
   { id: "devices", label: "Mac devices", icon: Laptop, permission: "devices.read" },
+  { id: "licenses", label: "Licenses", icon: Ticket, permission: "licenses.read" },
   { id: "settings", label: "Settings", icon: Settings, permission: "workspace.read" },
 ];
 
@@ -675,33 +679,25 @@ function AdminPortalInner() {
             {tab === "overview" && overview && (
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {overview.metrics.activeUsers > 0 && (
-                    <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
-                  )}
-                  {overview.metrics.pendingInvites > 0 && (
-                    <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
-                  )}
-                  {overview.metrics.knowledgeItems > 0 && (
-                    <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
-                  )}
-                  {overview.metrics.periodTokenUsage > 0 && (
-                    <Metric icon={Cpu} label="Tokens this period" value={overview.metrics.periodTokenUsage.toLocaleString()} />
-                  )}
-                  {overview.metrics.periodMeetingSessions > 0 && (
-                    <Metric icon={Clock3} label="Meetings processed" value={overview.metrics.periodMeetingSessions} />
-                  )}
-                  {overview.metrics.periodResumeRewrites > 0 && (
-                    <Metric icon={FilePenLine} label="Resume rewrites" value={overview.metrics.periodResumeRewrites} />
-                  )}
+                  <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
+                  <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
+                  <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
+                  <Metric
+                    icon={Cpu}
+                    label="Tokens this period"
+                    value={overview.metrics.periodTokenUsage.toLocaleString()}
+                  />
+                  <Metric
+                    icon={Clock3}
+                    label="Meetings processed"
+                    value={overview.metrics.periodMeetingSessions}
+                  />
+                  <Metric
+                    icon={FilePenLine}
+                    label="Resume rewrites"
+                    value={overview.metrics.periodResumeRewrites}
+                  />
                 </div>
-                {!overview.metrics.activeUsers &&
-                  !overview.metrics.pendingInvites &&
-                  !overview.metrics.knowledgeItems &&
-                  !overview.metrics.periodTokenUsage &&
-                  !overview.metrics.periodMeetingSessions &&
-                  !overview.metrics.periodResumeRewrites && (
-                    <Card><Empty>No workspace activity yet.</Empty></Card>
-                  )}
                 <Card className="p-5">
                   <SectionTitle
                     icon={Activity}
@@ -1413,11 +1409,20 @@ function AdminPortalInner() {
                                       onClick={() =>
                                         void mutate(
                                           `test-${provider.id}`,
-                                          () =>
-                                            api<{ ok: boolean; message?: string }>("/api/admin/ai", {
+                                          async () => {
+                                            const result = await api<{
+                                              ok: boolean;
+                                              message?: string;
+                                              error?: string;
+                                            }>("/api/admin/ai", {
                                               method: "POST",
                                               body: JSON.stringify({ providerId: provider.id }),
-                                            }),
+                                            });
+                                            if (!result.ok) {
+                                              throw new Error(result.error || "Connection failed.");
+                                            }
+                                            return result;
+                                          },
                                           "Connection successful.",
                                         )
                                       }
@@ -1903,6 +1908,8 @@ function AdminPortalInner() {
             )}
 
             {tab === "devices" && <AdminDevicesPanel />}
+
+            {tab === "licenses" && <AdminLicensesPanel />}
 
             {tab === "settings" && (
               <Card className="p-5">

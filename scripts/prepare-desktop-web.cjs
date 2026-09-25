@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Copies Next.js standalone output into apps/desktop/build-resources/web
+ * Copies Next.js standalone output into apps/desktop/shared/build-resources/web
  * so electron-builder can ship a self-contained test executable.
  *
  * IMPORTANT: electron-builder's default FileSet filters exclude node_modules
@@ -13,7 +13,7 @@ const path = require("node:path");
 const repoRoot = path.resolve(__dirname, "..");
 const webDir = path.join(repoRoot, "apps", "web");
 const standaloneRoot = path.join(webDir, ".next", "standalone");
-const outDir = path.join(repoRoot, "apps", "desktop", "build-resources", "web");
+const outDir = path.join(repoRoot, "apps", "desktop", "shared", "build-resources", "web");
 
 function mustExist(p, label) {
   if (!fs.existsSync(p)) {

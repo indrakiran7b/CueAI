@@ -12,102 +12,195 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { getDesktop, isMacDesktopApp, type MacDisplayInfo } from "@/lib/desktop";
+import {
+  captureDesktopScreenshot,
+  getDesktop,
+  isMacDesktopApp,
+  listDesktopDisplays,
+  openCompanionOverlay,
+  pushCompanionAnswer,
+  type CaptureDisplay,
+} from "@/lib/desktop";
+import { cn } from "@/lib/utils";
+
+type AnalyzeStatus = "idle" | "analyzing" | "ready" | "error";
 
 export default function ScreenContextPage() {
   const [enabled, setEnabled] = useState(false);
   const [privacy, setPrivacy] = useState(true);
   const [showPermission, setShowPermission] = useState(false);
-  const [analysis, setAnalysis] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [displays, setDisplays] = useState<MacDisplayInfo[]>([]);
-  const [displayId, setDisplayId] = useState<number | null>(null);
+  const [aiStatus, setAiStatus] = useState<AnalyzeStatus>("idle");
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
+  const [displays, setDisplays] = useState<CaptureDisplay[]>([]);
+  const [selectedDisplayId, setSelectedDisplayId] = useState<number | null>(null);
   const [permMsg, setPermMsg] = useState<string | null>(null);
   const mac = isMacDesktopApp();
 
   useEffect(() => {
-    const desktop = getDesktop();
-    if (!desktop?.listDisplays) return;
-    void desktop.listDisplays().then((list) => {
+    let cancelled = false;
+    void (async () => {
+      const list = await listDesktopDisplays();
+      if (cancelled) return;
       setDisplays(list);
-      setDisplayId(list.find((d) => d.primary)?.id ?? list[0]?.id ?? null);
+      if (list.length) {
+        const primary = list.find((d) => d.primary) || list[0];
+        setSelectedDisplayId((prev) => prev ?? primary.id);
+      }
+    })();
+
+    const desktop = getDesktop();
+    if (desktop?.getPermissions) {
+      void desktop.getPermissions().then((perms) => {
+        if (!cancelled) setPermMsg(perms.screenRecording.message);
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  async function capturePhysicalDisplay(): Promise<string | null> {
+    const desktop = getDesktop();
+    // Privacy = exclude CueAI from capture pipelines (never redact the user's screen).
+    if (privacy && desktop?.setExcludeCapture) {
+      try {
+        await desktop.setExcludeCapture(true);
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    if (mac && desktop?.requestPermission) {
+      const permission = await desktop.requestPermission("screen");
+      setPermMsg(permission.message);
+      if (permission.state === "denied" || permission.state === "restricted") {
+        setAiStatus("error");
+        setStatusLabel(permission.message);
+        return null;
+      }
+    }
+
+    console.log("[SCREEN] Capture requested");
+    const selected = displays.find((d) => d.id === selectedDisplayId);
+    console.log("[SCREEN] Selected display:", selected?.label || selectedDisplayId);
+
+    const shot = await captureDesktopScreenshot({
+      displayId: selectedDisplayId,
     });
-    void desktop.getPermissions?.().then((perms) => {
-      setPermMsg(perms.screenRecording.message);
+    if (shot.ok && shot.dataUrl) {
+      console.log("[SCREEN] Physical display screenshot captured", shot.meta);
+      return shot.dataUrl;
+    }
+    if (desktop?.captureScreenshot) {
+      console.error("[SCREEN] Capture failed", shot.error);
+      return null;
+    }
+
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
     });
-  }, []);
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.muted = true;
+    await video.play();
+    await new Promise((r) => window.setTimeout(r, 200));
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    stream.getTracks().forEach((t) => t.stop());
+    video.srcObject = null;
+    return dataUrl;
+  }
 
   async function captureAndAnalyze() {
-    if (!enabled) return;
+    if (!enabled || busy) return;
     setBusy(true);
-    setAnalysis(null);
+    setAiStatus("analyzing");
+    setStatusLabel("Analyzing screen...");
+    setAiAnswer(null);
+
     try {
-      const desktop = getDesktop();
-      let dataUrl: string | undefined;
-      if (desktop?.captureScreenshot) {
-        if (mac && desktop.requestPermission) {
-          const permission = await desktop.requestPermission("screen");
-          setPermMsg(permission.message);
-          if (permission.state === "denied" || permission.state === "restricted") {
-            setAnalysis(permission.message);
-            return;
-          }
-        }
-        const shot = await desktop.captureScreenshot({
-          save: false,
-          displayId: displayId ?? undefined,
-        });
-        if (!shot.ok) {
-          setAnalysis(shot.error || "Could not capture the selected display.");
-          return;
-        }
-        dataUrl = shot.dataUrl;
-      } else {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false,
-        });
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        video.muted = true;
-        await video.play();
-        await new Promise((r) => window.setTimeout(r, 200));
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
-        canvas.getContext("2d")?.drawImage(video, 0, 0);
-        dataUrl = canvas.toDataURL("image/png");
-        stream.getTracks().forEach((t) => t.stop());
-        video.srcObject = null;
-      }
+      void openCompanionOverlay();
+      const dataUrl = await capturePhysicalDisplay();
       if (!dataUrl) {
-        setAnalysis("Could not capture a frame. Allow Screen Recording and try again.");
+        setAiStatus("error");
+        setStatusLabel((prev) => prev || "Unable to analyze the screen. Please try again.");
+        setAiAnswer(null);
         return;
       }
+
       setPreviewUrl(privacy ? null : dataUrl);
-      const res = await fetch("/api/live/answer", {
+
+      console.log("[SCREEN-AI] Vision request started");
+      const res = await fetch("/api/live/screen", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          prompt:
-            "What is happening on this screen? Describe it briefly, then give a first-person interview-ready answer if there is a question or prompt.",
           image: dataUrl,
-          mode: "screen",
+          prompt:
+            "Analyze the screenshot of the user's physical display. Identify the visible question or task (e.g. Notepad, browser, IDE, PDF) and provide an accurate, concise answer. Ignore any CueAI UI if somehow present.",
         }),
       });
-      const data = (await res.json()) as { answer?: string; error?: string };
-      if (!res.ok) {
-        setAnalysis(data.error || "Vision AI could not read this capture.");
+
+      const payload = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        answer?: string;
+        error?: string;
+      };
+
+      if (!res.ok || !payload.answer?.trim()) {
+        console.error("[SCREEN-AI] Vision failed", payload.error);
+        setAiStatus("error");
+        setStatusLabel(
+          payload.error
+            ? `Unable to analyze the screen. ${payload.error}`
+            : "Unable to analyze the screen. Please try again.",
+        );
+        setAiAnswer(null);
         return;
       }
-      setAnalysis(data.answer || "No answer returned.");
+
+      console.log("[SCREEN-AI] First response received");
+      const answer = payload.answer.trim();
+      setAiAnswer(answer);
+      setAiStatus("ready");
+      setStatusLabel("Answer ready");
+      console.log("[SCREEN-AI] Answer rendered");
+
+      await pushCompanionAnswer({
+        answer,
+        question: "Screen context",
+        status: "ready",
+      });
     } catch (err) {
-      setAnalysis(err instanceof Error ? err.message : "Screen capture cancelled.");
+      console.error("[SCREEN-AI] Failed", err);
+      setAiStatus("error");
+      setStatusLabel("Unable to analyze the screen. Please try again.");
+      setAiAnswer(null);
     } finally {
       setBusy(false);
     }
   }
+
+  const monitorOptions =
+    displays.length > 0
+      ? displays
+      : ([
+          {
+            id: -1,
+            label: "Built-in Display",
+            bounds: { x: 0, y: 0, width: 0, height: 0 },
+            scaleFactor: 1,
+            primary: true,
+          },
+        ] as CaptureDisplay[]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
@@ -181,7 +274,13 @@ export default function ScreenContextPage() {
               </Badge>
               <Badge variant="info">
                 <ScanText className="h-3 w-3" />
-                {busy ? "Analyzing screen..." : analysis ? "Screen analyzed" : enabled ? "OCR ready" : "OCR off"}
+                {busy
+                  ? "Analyzing screen..."
+                  : aiAnswer
+                    ? "Screen analyzed"
+                    : enabled
+                      ? "OCR ready"
+                      : "OCR off"}
               </Badge>
             </div>
           </div>
@@ -190,15 +289,31 @@ export default function ScreenContextPage() {
           >
             {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewUrl} alt="Screen capture preview" className="h-full w-full object-cover object-top" />
+              <img
+                src={previewUrl}
+                alt="Captured physical display"
+                className="absolute inset-0 h-full w-full object-contain object-top"
+              />
             ) : (
-              <p className="relative z-10 px-6 text-center text-sm text-muted">
-                {!enabled
-                  ? "Enable Screen AI to preview context"
-                  : busy
-                    ? "Analyzing screen..."
-                    : "Screen preview"}
-              </p>
+              <>
+                <div className="absolute inset-4 rounded-xl border border-dashed border-[var(--border-strong)] bg-gradient-to-br from-teal-500/10 via-transparent to-violet-500/10">
+                  <div className="absolute left-4 top-4 h-3 w-32 rounded bg-white/10" />
+                  <div className="absolute left-4 top-10 h-2 w-48 rounded bg-white/5" />
+                  <div className="absolute bottom-4 left-4 right-4 h-20 rounded-lg border border-white/10 bg-white/5" />
+                  {enabled && (
+                    <div className="absolute right-4 top-4 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[10px] text-teal-300">
+                      Ready · physical display capture
+                    </div>
+                  )}
+                </div>
+                <p className="relative z-10 px-6 text-center text-sm text-muted">
+                  {!enabled
+                    ? "Enable Screen AI to preview context"
+                    : busy
+                      ? "Analyzing screen..."
+                      : "Screen preview"}
+                </p>
+              </>
             )}
           </div>
           <div className="flex gap-2 border-t border-[var(--border)] p-3">
@@ -225,24 +340,41 @@ export default function ScreenContextPage() {
               size="sm"
               className="ml-auto"
               onClick={() => setPrivacy((p) => !p)}
+              title="Privacy excludes CueAI from capture — your screen content stays readable for analysis"
             >
               {privacy ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               Privacy {privacy ? "on" : "off"}
             </Button>
           </div>
-          {(previewUrl || analysis) && (
-            <div className="space-y-2 border-t border-[var(--border)] p-3">
-              {previewUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={previewUrl}
-                  alt="Screen capture preview"
-                  className="max-h-40 w-full rounded-lg object-cover object-top"
-                />
+
+          {aiStatus !== "idle" && (
+            <div className="space-y-2 border-t border-[var(--border)] p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  AI Answer
+                </p>
+                {statusLabel && (
+                  <span
+                    className={cn(
+                      "text-[11px]",
+                      aiStatus === "error" ? "text-red-300" : "text-muted"
+                    )}
+                  >
+                    {statusLabel}
+                  </span>
+                )}
+              </div>
+              {aiStatus === "analyzing" && (
+                <p className="text-sm text-muted">Analyzing screen...</p>
               )}
-              {analysis && (
-                <p className="text-sm text-foreground">
-                  {/unable|could not|denied|error|fail/i.test(analysis) ? `Unable to analyze screen. ${analysis}` : analysis}
+              {aiStatus === "error" && (
+                <p className="text-sm text-red-300">
+                  {statusLabel || "Unable to analyze the screen. Please try again."}
+                </p>
+              )}
+              {aiStatus === "ready" && aiAnswer && (
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {aiAnswer}
                 </p>
               )}
             </div>
@@ -253,26 +385,42 @@ export default function ScreenContextPage() {
           <Card className="p-5">
             <CardTitle className="mb-3">Display selection</CardTitle>
             <div className="space-y-2">
-              {(displays.length ? displays : [{ id: 0, label: "Primary display", primary: true, scaleFactor: 1, internal: true, bounds: { x: 0, y: 0, width: 0, height: 0 } }]).map((display) => (
-                <label
-                  key={display.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 text-sm hover:bg-[var(--surface-hover)]"
-                >
-                  <input
-                    type="radio"
-                    name="monitor"
-                    checked={displayId === display.id || (displayId == null && display.primary)}
-                    onChange={() => setDisplayId(display.id)}
-                  />
-                  <span>
-                    {display.label}
-                    {display.primary ? " · Primary" : ""}
-                    {display.scaleFactor > 1 ? ` · ${display.scaleFactor}x` : ""}
-                  </span>
-                </label>
-              ))}
+              {monitorOptions.map((m) => {
+                const checked =
+                  selectedDisplayId != null
+                    ? selectedDisplayId === m.id
+                    : Boolean(m.primary);
+                return (
+                  <label
+                    key={m.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 text-sm hover:bg-[var(--surface-hover)]"
+                  >
+                    <input
+                      type="radio"
+                      name="monitor"
+                      checked={checked}
+                      onChange={() => setSelectedDisplayId(m.id)}
+                      disabled={m.id < 0}
+                    />
+                    <span className="flex-1">
+                      {m.label}
+                      {m.scaleFactor > 1 ? ` · ${m.scaleFactor}x` : ""}
+                    </span>
+                    {m.primary && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted">
+                        Primary
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
             </div>
             {permMsg && <p className="mt-3 text-xs text-muted">{permMsg}</p>}
+            {displays.length === 0 && (
+              <p className="mt-3 text-xs text-muted">
+                Open CueAI Desktop to list physical monitors and capture your screen.
+              </p>
+            )}
             {mac && (
               <Button
                 size="sm"

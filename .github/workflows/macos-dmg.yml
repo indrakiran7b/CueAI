@@ -39,7 +39,7 @@ jobs:
         with:
           name: CueAI-mac
           path: |
-            apps/desktop-mac/release/*.dmg
-            apps/desktop-mac/release/*.zip
+            apps/desktop/macos/release/*.dmg
+            apps/desktop/macos/release/*.zip
           if-no-files-found: error
           retention-days: 14

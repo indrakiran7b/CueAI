@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server/api-auth";
-import { createMeeting, listMeetingsForUser, publicMeeting } from "@/lib/server/meetings";
+import {
+  createMeeting,
+  listCompletedMeetingsForUser,
+  publicMeeting,
+} from "@/lib/server/meetings";
 import { sessionTitle, type LiveSessionKind } from "@/lib/live-session-config";
 
 const CORS_HEADERS: Record<string, string> = {
@@ -15,15 +19,21 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   const { error, session } = await requireAuth(req);
-  if (error || !session) return error;
+  if (error || !session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
+  }
 
-  const stored = (await listMeetingsForUser(session.userId)).map((meeting) => publicMeeting(meeting));
+  const stored = (await listCompletedMeetingsForUser(session)).map((meeting) =>
+    publicMeeting(meeting),
+  );
   return NextResponse.json({ meetings: stored }, { headers: CORS_HEADERS });
 }
 
 export async function POST(req: NextRequest) {
   const { error, session } = await requireAuth(req);
-  if (error || !session) return error;
+  if (error || !session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
+  }
 
   const body = (await req.json().catch(() => null)) as
     | {

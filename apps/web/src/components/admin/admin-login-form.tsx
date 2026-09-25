@@ -6,10 +6,7 @@ import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
-import {
-  loginAdmin,
-  type AdminSession,
-} from "@/lib/admin-auth";
+import { loginAdmin, type AdminSession } from "@/lib/admin-auth";
 
 export function AdminLoginForm({
   onSuccess,
@@ -58,7 +55,7 @@ export function AdminLoginForm({
           </p>
         </div>
         <p className="relative z-10 text-xs text-subtle">
-          Workspace administration for authenticated Admin and Manager accounts.
+          Use your workspace Admin credentials.
         </p>
       </div>
 

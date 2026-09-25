@@ -1,11 +1,12 @@
 """
 CueAI OpenRouter LLM speed + response benchmark.
 
-Usage (macOS / POSIX):
-  python3 main.py --quick
-  python3 main.py --runs 5
-  python3 main.py --category realtime --runs 5
-  python3 main.py --model openai/gpt-4o-mini --runs 5
+Usage:
+  python main.py --quick
+  python main.py --runs 5
+  python main.py --runs 10
+  python main.py --cueai --runs 5
+  python main.py --model openai/gpt-4o-mini --runs 5
 """
 
 from __future__ import annotations
@@ -25,7 +26,6 @@ from config import (
     RUNS_PER_PROMPT,
     enabled_models,
     find_model,
-    resolve_category,
 )
 from metrics import summarize_categories, summarize_models, summarize_questions
 from prompts import category_counts, select_prompts, validate_question_bank
@@ -39,14 +39,6 @@ from reporting import (
     save_raw_csv,
 )
 from runner import run_streaming_request
-
-
-def platform_label() -> str:
-    if sys.platform == "darwin":
-        return "macOS"
-    if sys.platform == "win32":
-        return "Windows"
-    return sys.platform
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -68,18 +60,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Quick test: 2 questions from each category, 1 run, all models",
+        help="Quick smoke test: 1 question x 1 run per model",
     )
     parser.add_argument(
         "--cueai",
         action="store_true",
         help="Run only CueAI real-time short questions",
-    )
-    parser.add_argument(
-        "--category",
-        type=str,
-        default=None,
-        help="Run one category (e.g. technical, realtime, aptitude)",
     )
     parser.add_argument(
         "--list",
@@ -109,8 +95,6 @@ def verify_api_key(api_key: str) -> tuple[bool, str]:
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             return False, "OpenRouter rejected OPENROUTER_API_KEY (401/403)"
-        if exc.code == 402:
-            return False, "OpenRouter reports insufficient credits (HTTP 402)"
         return False, f"OpenRouter auth check failed (HTTP {exc.code})"
     except urllib.error.URLError as exc:
         return False, f"Network error during auth check: {exc.reason}"
@@ -119,6 +103,7 @@ def verify_api_key(api_key: str) -> tuple[bool, str]:
 
 
 def _safe_print(text: str) -> None:
+    """Print without crashing on Windows charmap consoles."""
     try:
         print(text, flush=True)
     except UnicodeEncodeError:
@@ -127,41 +112,47 @@ def _safe_print(text: str) -> None:
 
 
 def print_live(result, *, runs: int) -> None:
+    q_short = result.question.replace("\n", " ")
+    if len(q_short) > 90:
+        q_short = q_short[:87] + "..."
     status = result.status
     if status != "SUCCESS" and result.error_type:
         status = f"FAILED ({result.error_type})"
+
     ttft = f"{result.ttft_ms:.0f} ms" if result.ttft_ms is not None else "-"
     total = (
-        f"{result.total_latency_ms / 1000:.2f} s"
+        f"{result.total_latency_ms:.0f} ms"
         if result.total_latency_ms is not None
         else "-"
     )
     tps = (
-        f"{result.tokens_per_second:.1f} tok/s"
+        f"{result.tokens_per_second:.1f} tokens/sec"
         if result.tokens_per_second is not None
         else "-"
     )
-    out_tok = str(result.output_tokens) if result.output_tokens is not None else "-"
-    acc = (result.accuracy_label or "-").upper()
+    out_tok = (
+        str(result.output_tokens) if result.output_tokens is not None else "-"
+    )
 
     _safe_print(
         "\n"
         + "=" * 40
         + "\n"
-        "CUEAI LLM BENCHMARK\n"
+        "CueAI LLM BENCHMARK\n"
         + "=" * 40
         + "\n\n"
-        f"Platform: {platform_label()}\n\n"
-        f"Provider:\n{result.provider}\n\n"
-        f"Model:\n{result.model_name}\n\n"
-        f"Category:\n{result.category}\n\n"
-        f"Question:\n{result.question_id}\n\n"
-        f"Run:\n{result.run_number}/{runs}\n\n"
+        f"Model:\n{result.provider} / {result.model_name}\n\n"
+        f"Question:\n{result.question_id} / {result.question_total}\n\n"
+        f"Run:\n{result.run_number} / {runs}\n\n"
+        f"Question:\n\"{q_short}\"\n\n"
+        f"Request started:\n{result.request_start_time or '-'}\n\n"
+        f"First token:\n{result.first_token_time or '-'}\n\n"
         f"TTFT:\n{ttft}\n\n"
-        f"Total:\n{total}\n\n"
-        f"Tokens:\n{out_tok}\n\n"
-        f"Speed:\n{tps}\n\n"
-        f"Accuracy:\n{acc}\n\n"
+        f"Completed:\n{result.completion_time or '-'}\n\n"
+        f"Total latency:\n{total}\n\n"
+        f"Output tokens:\n{out_tok}\n\n"
+        f"Generation speed:\n{tps}\n\n"
+        f"Accuracy:\n{result.accuracy_label or '-'}\n\n"
         f"Status:\n{status}\n\n"
         + "=" * 40
     )
@@ -171,9 +162,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:
-        validate_question_bank()
-    except ValueError as exc:
+        api_key = load_api_key()
+    except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    ok, auth_msg = verify_api_key(api_key)
+    if not ok:
+        print(
+            f"ERROR: {auth_msg}. "
+            "Update llm-benchmark/.env with a valid key from https://openrouter.ai/keys "
+            "then re-run. The key is never logged.",
+            file=sys.stderr,
+        )
         return 2
 
     models = enabled_models()
@@ -192,65 +193,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("ERROR: No models enabled in config.py", file=sys.stderr)
         return 2
 
-    category = None
-    if args.category:
-        category = resolve_category(args.category)
-        if category is None:
-            print(
-                f"ERROR: Unknown category '{args.category}'. "
-                "Try technical, aptitude, realtime, coding, ...",
-                file=sys.stderr,
-            )
-            return 2
-
-    if args.list:
-        counts = category_counts()
-        print(f"Platform: {platform_label()}")
-        print(f"Shared question bank: {sum(counts.values())} questions")
-        for cat, n in counts.items():
-            print(f"  {cat}: {n}")
-        for p in select_prompts(cueai_only=args.cueai, category=category):
-            print(f"{p.id}\t{p.category}\t{p.difficulty}\t{p.eval_type}")
-        return 0
-
     try:
-        api_key = load_api_key()
-    except RuntimeError as exc:
+        validate_question_bank()
+    except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    ok, auth_msg = verify_api_key(api_key)
-    if not ok:
-        if "401" in auth_msg or "403" in auth_msg or "rejected" in auth_msg.lower():
-            print("AUTHENTICATION REJECTED", file=sys.stderr)
-        print(
-            f"ERROR: {auth_msg}. "
-            "Update llm-benchmark/.env with a valid OpenRouter key from https://openrouter.ai/keys "
-            "then re-run. The key is never logged.",
-            file=sys.stderr,
-        )
-        return 2
-    print("AUTHENTICATION SUCCESSFUL", flush=True)
+    if args.list:
+        counts = category_counts()
+        print(f"Shared question bank: {sum(counts.values())} questions")
+        for cat, n in counts.items():
+            print(f"  {cat}: {n}")
+        prompts = select_prompts(cueai_only=args.cueai, quick=False)
+        for p in prompts:
+            print(f"{p.id}\t{p.category}\t{p.eval_type}")
+        return 0
 
-    prompts = select_prompts(
-        cueai_only=args.cueai,
-        quick=args.quick,
-        category=category,
-    )
-    if not prompts:
-        print("ERROR: No questions selected.", file=sys.stderr)
-        return 2
-
+    prompts = select_prompts(cueai_only=args.cueai, quick=args.quick)
     runs = RUNS_PER_PROMPT if args.runs is None else max(1, args.runs)
     if args.quick:
         runs = 1
 
     total_req = len(models) * len(prompts) * runs
-    mode = "CueAI realtime" if args.cueai or category == "REALTIME_INTERVIEW" else (
-        "quick" if args.quick else "full"
-    )
+    mode = "CueAI realtime" if args.cueai else ("quick" if args.quick else "full")
     print(
-        f"CueAI LLM Benchmark [{mode}] [{platform_label()}] - {len(models)} model(s), "
+        f"CueAI LLM Benchmark [{mode}] - {len(models)} model(s), "
         f"{len(prompts)} question(s), {runs} run(s) each "
         f"({total_req} total requests)",
         flush=True,
@@ -258,11 +225,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     client = get_client()
     results = []
+    auth_failed = False
 
     for model in models:
         try:
+            stop_model = False
             for q_idx, prompt in enumerate(prompts, start=1):
-                skip_remaining_for_model = False
+                if stop_model:
+                    break
                 for run_number in range(1, runs + 1):
                     result = run_streaming_request(
                         client=client,
@@ -272,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         question_total=len(prompts),
                         run_number=run_number,
                     )
+                    # Patch run denominator into live print via question_total already set
                     results.append(result.to_row())
                     try:
                         print_live(result, runs=runs)
@@ -282,16 +253,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                             flush=True,
                         )
 
-                    if result.error_type in {"invalid_api_key", "insufficient_credits"}:
+                    if result.error_type == "invalid_api_key":
+                        auth_failed = True
+                        stop_model = True
                         print(
-                            f"{result.error_type} for {model.display_name} - "
-                            "skipping remaining questions for this model.",
+                            "Stopping remaining models: API key rejected by OpenRouter.",
                             flush=True,
                         )
-                        skip_remaining_for_model = True
                         break
-                if skip_remaining_for_model:
-                    break
+                    if result.error_type == "model_unavailable":
+                        print(
+                            "Model unavailable - skipping remaining runs for this model.",
+                            flush=True,
+                        )
+                        stop_model = True
+                        break
+            if auth_failed:
+                break
         except Exception as exc:  # noqa: BLE001
             print(
                 f"\nModel aborted unexpectedly ({type(exc).__name__}): "
@@ -307,18 +285,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_df = pd.DataFrame(results)
     model_summary = summarize_models(raw_df)
     question_summary = summarize_questions(raw_df)
-    category_summary = summarize_categories(raw_df)
 
     raw_path = save_raw_csv(raw_df)
     model_path = save_model_summary_csv(model_summary)
     question_path = save_question_summary_csv(question_summary)
-    category_path = save_category_summary_csv(category_summary)
     charts = generate_charts(model_summary, raw_df)
     excel_path = save_excel_report(
         raw=raw_df,
         model_summary=model_summary,
         question_summary=question_summary,
-        category_summary=category_summary,
         chart_paths=charts,
     )
 
@@ -326,10 +301,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\nresults/raw_results.csv\n  -> {raw_path}")
     print(f"results/model_summary.csv\n  -> {model_path}")
     print(f"results/question_summary.csv\n  -> {question_path}")
-    print(f"results/category_summary.csv\n  -> {category_path}")
     print(f"results/LLM_Benchmark_Report.xlsx\n  -> {excel_path}")
-    failed_all = bool(results) and all(r.get("status") != "SUCCESS" for r in results)
-    return 1 if failed_all else 0
+    return 2 if auth_failed else 0
 
 
 if __name__ == "__main__":

@@ -1,185 +1,601 @@
-question_id,category,difficulty,question,provider,model,model_name,model_id,runs,success_rate,avg_ttft_ms,avg_total_latency_ms,avg_tokens_per_sec,accuracy,status
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1819.272,2557.862,123.21,0.8,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1162.056,2062.187,91.1,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1021.164,1158.09,175.28,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1428.902,1430.979,3850.41,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,781.556,1295.15,126.56,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1127.33,1127.496,12026.44,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1173.931,1808.06,115.12,0.775,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,2408.417,3485.82,107.67,1.0,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+question_id,category,question,provider,model_name,model_id,runs,success_rate,avg_ttft_ms,avg_total_latency_ms,avg_tokens_per_sec,accuracy
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1351.991,1915.706,156.11,0.8
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1983.582,2376.803,211.08,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1727.787,2867.839,120.17,0.4
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,2070.041,3504.64,108.04,0.8333
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1136.972,2584.477,76.68,0.6667
+Q06,TECHNICAL,What is database normalization?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1187.468,2056.047,125.49,0.4
+Q07,TECHNICAL,What is indexing in SQL?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1042.064,1871.424,138.66,0.6
+Q08,TECHNICAL,What is an API endpoint?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1580.278,2087.705,114.3,0.8
+Q09,TECHNICAL,What is Docker in one short paragraph?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,886.979,1371.381,97.03,0.4
+Q10,TECHNICAL,What is an LLM?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,657.575,1141.391,107.48,0.8
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,724.226,933.23,114.83,1.0
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1785.219,2604.262,141.63,1.0
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,975.62,975.62,,1.0
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,2325.015,3203.838,153.61,1.0
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,898.942,1473.257,153.23,1.0
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,877.665,1316.844,122.96,1.0
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1461.773,2415.5,132.11,1.0
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1608.621,2129.089,151.79,1.0
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1913.404,1955.648,1420.33,1.0
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,821.902,823.02,2683.12,1.0
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,992.884,1016.882,208.35,1.0
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,709.781,738.377,174.85,0.0
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1347.376,1385.957,1114.54,1.0
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,901.254,1133.503,68.89,1.0
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1394.043,1799.611,177.53,0.7625
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,649.774,1248.215,157.07,1.0
+Q27,CODING,Write a Python function that returns duplicate values from a list.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1351.409,2300.214,124.37,0.7
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,864.603,2410.996,103.47,0.7625
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,703.289,1221.857,158.13,0.7
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,802.228,1563.931,158.85,0.6125
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1404.149,2260.442,152.98,0.85
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,883.99,1615.572,146.26,0.78
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,805.497,1822.718,131.73,0.825,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,807.786,1765.5,140.96,0.8833
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,860.341,1464.903,114.13,0.8833,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,777.433,1449.589,127.95,0.9143,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1639.961,2113.037,179.68,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,2236.185,3102.191,124.71,1.0,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1464.113,2159.823,116.43,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1269.167,1858.745,127.21,0.5357,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1807.612,2704.776,114.81,1.0,SUCCESS
-Q53,REALTIME_INTERVIEW,MEDIUM,What is polymorphism?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1773.314,2731.081,98.14,1.0,SUCCESS
-Q54,REALTIME_INTERVIEW,MEDIUM,What is REST API?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,799.22,1433.903,138.65,0.75,SUCCESS
-Q61,BEHAVIORAL_HR,MEDIUM,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,2035.45,3850.009,69.44,0.9833,SUCCESS
-Q62,BEHAVIORAL_HR,MEDIUM,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1624.145,1979.708,219.37,0.35,SUCCESS
-Q66,SHORT_ANSWER,MEDIUM,In one sentence: what is TTFT?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1960.138,1998.175,815.0,1.0,SUCCESS
-Q67,SHORT_ANSWER,MEDIUM,In one sentence: what is RAG?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1690.096,1894.756,156.36,1.0,SUCCESS
-Q71,FOLLOW_UP,EASY,What is REST API?,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1556.12,2341.995,111.98,1.0,SUCCESS
-Q72,FOLLOW_UP,MEDIUM,Explain it with a concrete example.,OpenAI,GPT-4o mini,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1362.338,2124.343,137.79,0.8,SUCCESS
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1060.222,1198.405,347.37,0.4,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,729.385,1175.336,293.75,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,770.289,838.601,307.41,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,788.237,1282.735,277.05,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,755.004,984.339,327.03,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,967.523,967.523,,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,746.476,1016.269,389.19,0.775,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2524.974,2875.177,351.23,0.85,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+Explain and fix.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,637.83,1025.141,178.15,0.8833
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1550.582,2263.551,130.44,0.565
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,793.286,1698.917,160.11,0.9125
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,847.104,1377.584,137.61,0.9125
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,751.763,1297.751,170.33,0.9143
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1673.994,2200.221,161.53,1.0
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,930.166,977.939,397.72,1.0
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1812.619,2145.308,228.44,0.8
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,768.243,1480.897,133.3,1.0
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1419.126,2290.203,110.21,1.0
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1239.372,1772.579,151.91,1.0
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1591.179,1883.156,229.47,1.0
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1411.843,1415.132,6080.88,1.0
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,579.572,1045.512,145.94,0.8
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1194.003,1905.999,134.83,0.1429
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,803.229,1665.558,117.12,0.6667
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1794.033,2543.545,158.77,0.6667
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1003.319,1916.102,141.33,0.1429
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,778.744,2733.596,112.54,0.6667
+Q53,REALTIME_INTERVIEW,What is polymorphism?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1850.877,2636.481,131.11,1.0
+Q54,REALTIME_INTERVIEW,What is REST API?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1399.511,2391.64,93.74,0.75
+Q55,REALTIME_INTERVIEW,Explain inheritance.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1363.315,2308.13,131.24,0.75
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,866.303,1913.156,108.9,0.6667
+Q57,REALTIME_INTERVIEW,What is an API?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,883.385,1495.876,161.64,1.0
+Q58,REALTIME_INTERVIEW,What is a database index?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1430.207,1644.513,284.64,0.75
+Q59,REALTIME_INTERVIEW,What is recursion?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,845.207,1501.206,126.52,1.0
+Q60,REALTIME_INTERVIEW,What is binary search?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1495.431,2424.257,133.5,1.0
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,798.007,1745.087,127.76,0.9833
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1344.977,1905.726,139.1,0.35
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1502.495,2102.442,175.02,0.9833
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1442.846,1732.739,169.03,0.8167
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,714.438,1069.822,149.13,0.55
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1457.162,1484.794,1230.49,0.75
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1373.531,1609.215,161.23,1.0
+Q68,SHORT_ANSWER,In one sentence: what is Git?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1277.116,1321.822,469.73,1.0
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,691.11,811.319,141.42,0.6
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,933.217,1206.249,95.23,0.8
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,4016.702,4609.585,175.41,0.8333
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1470.213,2226.057,144.21,0.8333
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1492.725,1522.928,1191.96,0.6667
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,1016.773,1852.895,131.56,1.0
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1.0,918.223,1728.52,120.94,0.8
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,710.255,863.231,313.77,0.4
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,742.803,1212.026,274.92,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2645.22,3162.618,299.58,0.8
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2536.188,3032.942,261.7,0.6667
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1239.087,1653.837,361.66,0.8333
+Q06,TECHNICAL,What is database normalization?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,809.841,1156.605,291.26,0.6
+Q07,TECHNICAL,What is indexing in SQL?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,778.926,1176.172,334.81,0.4
+Q08,TECHNICAL,What is an API endpoint?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,816.432,958.874,182.53,0.6
+Q09,TECHNICAL,What is Docker in one short paragraph?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,708.675,854.671,273.98,0.6
+Q10,TECHNICAL,What is an LLM?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,748.805,1003.324,330.03,0.8
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,643.521,724.793,258.39,1.0
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,766.917,810.905,113.67,1.0
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,682.871,862.376,267.4,1.0
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,728.886,928.627,425.55,1.0
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2530.951,2761.012,408.59,1.0
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2514.806,2610.479,303.12,1.0
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,711.424,925.413,341.14,1.0
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,662.882,863.714,473.03,1.0
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,700.827,877.357,424.86,1.0
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,642.885,678.44,56.25,1.0
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,712.395,754.483,118.8,1.0
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,702.084,786.021,95.31,1.0
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,726.574,820.247,138.78,1.0
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,724.297,776.409,268.65,1.0
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,635.264,898.75,398.5,0.7625
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,948.355,1230.815,435.46,1.0
+Q27,CODING,Write a Python function that returns duplicate values from a list.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,685.228,1133.518,405.99,0.7
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,717.234,1012.918,388.93,0.7625
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,654.155,1081.395,210.65,0.7
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,684.45,1047.541,426.89,0.7
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,704.347,1192.495,446.59,0.71
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,712.838,1194.836,456.43,0.63
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,762.654,1165.663,429.27,0.8833,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,751.493,1191.452,440.95,0.9417
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,971.662,1341.357,240.74,0.8833,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,660.074,789.056,201.58,0.6571,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,792.973,1021.129,359.4,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1010.521,1306.798,391.53,0.8,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,756.228,1292.646,305.73,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1360.301,1822.669,311.44,0.5357,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,936.308,1373.985,235.33,0.9167,SUCCESS
-Q53,REALTIME_INTERVIEW,MEDIUM,What is polymorphism?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2649.962,3007.602,293.59,1.0,SUCCESS
-Q54,REALTIME_INTERVIEW,MEDIUM,What is REST API?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,738.299,1510.303,266.84,0.75,SUCCESS
-Q61,BEHAVIORAL_HR,MEDIUM,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,709.356,1243.82,318.08,1.0,SUCCESS
-Q62,BEHAVIORAL_HR,MEDIUM,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,787.239,957.279,294.05,0.35,SUCCESS
-Q66,SHORT_ANSWER,MEDIUM,In one sentence: what is TTFT?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1059.057,1195.554,263.74,0.5,SUCCESS
-Q67,SHORT_ANSWER,MEDIUM,In one sentence: what is RAG?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,690.517,827.964,232.82,1.0,SUCCESS
-Q71,FOLLOW_UP,EASY,What is REST API?,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,684.7,1444.183,262.02,1.0,SUCCESS
-Q72,FOLLOW_UP,MEDIUM,Explain it with a concrete example.,Google Gemini,Gemini 2.5 Flash Lite,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,678.368,1085.6,326.6,0.8,SUCCESS
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,866.045,1846.47,69.36,1.0,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,811.014,3132.601,71.07,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,862.743,1085.407,58.38,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,855.676,924.589,58.04,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,987.295,1411.084,103.83,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,848.541,848.861,6250.0,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,929.026,1900.212,96.79,1.0,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,819.719,2171.679,99.12,1.0,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+Explain and fix.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,709.317,999.692,254.84,1.0
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,822.772,1095.127,337.79,0.705
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,707.124,1210.107,401.6,0.9125
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,706.401,1091.48,301.24,0.9125
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,795.413,902.218,243.44,0.6571
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2556.914,2768.529,378.05,1.0
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,728.059,830.751,204.49,1.0
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,688.073,1008.729,318.1,0.8
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1506.869,1781.454,265.86,1.0
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,721.208,991.12,374.2,0.6
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,701.891,1154.841,344.41,1.0
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,728.542,983.916,317.18,1.0
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,646.153,716.648,255.34,1.0
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2509.212,2726.743,234.45,0.6
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2502.193,3038.626,268.44,0.4286
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,707.902,1186.367,227.81,0.5
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,757.327,1544.424,266.8,0.8333
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,706.843,1061.916,239.39,0.1429
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,665.169,1377.432,308.87,1.0
+Q53,REALTIME_INTERVIEW,What is polymorphism?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,701.432,1056.33,307.13,1.0
+Q54,REALTIME_INTERVIEW,What is REST API?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,747.903,1258.677,356.32,1.0
+Q55,REALTIME_INTERVIEW,Explain inheritance.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,754.223,1183.085,324.11,0.75
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,707.401,1139.059,287.26,1.0
+Q57,REALTIME_INTERVIEW,What is an API?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,717.243,1295.777,305.95,1.0
+Q58,REALTIME_INTERVIEW,What is a database index?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,1101.5,1622.558,289.79,0.5
+Q59,REALTIME_INTERVIEW,What is recursion?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,727.88,982.989,344.95,1.0
+Q60,REALTIME_INTERVIEW,What is binary search?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,744.049,1062.367,480.65,0.8
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,2578.569,3208.801,277.68,1.0
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,717.017,1056.808,208.95,0.15
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,693.945,1296.253,249.04,0.9833
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,773.13,1032.392,277.71,0.8167
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,659.077,886.402,250.74,0.15
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,777.241,1142.262,76.71,0.75
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,692.806,822.9,245.98,1.0
+Q68,SHORT_ANSWER,In one sentence: what is Git?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,703.224,789.534,208.55,1.0
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,743.513,874.997,136.9,0.4
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,799.138,883.164,261.83,0.4
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,701.821,1158.697,354.58,0.8333
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,745.146,1303.096,272.43,0.6667
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,691.98,771.755,275.78,0.3333
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,779.309,1362.156,368.88,0.8
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1.0,716.951,1151.148,329.34,1.0
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,731.004,1467.821,103.15,1.0
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,866.549,2349.454,111.94,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,736.385,1652.139,110.29,0.4
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,770.559,3157.246,92.18,0.8333
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,858.864,3061.846,99.86,0.8333
+Q06,TECHNICAL,What is database normalization?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,790.133,2780.739,110.52,0.8
+Q07,TECHNICAL,What is indexing in SQL?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,819.299,2863.918,107.6,0.6
+Q08,TECHNICAL,What is an API endpoint?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,798.184,2498.864,111.13,0.6
+Q09,TECHNICAL,What is Docker in one short paragraph?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,750.539,1567.029,83.28,0.6
+Q10,TECHNICAL,What is an LLM?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1083.582,1692.899,175.61,0.8
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,785.718,869.304,155.53,1.0
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,850.756,857.896,560.18,1.0
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1011.35,1011.35,,1.0
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,879.133,879.133,,1.0
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,817.426,1224.016,162.33,1.0
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,854.767,860.261,910.23,1.0
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,844.718,1145.313,199.6,1.0
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,764.289,1072.827,142.61,1.0
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,722.458,1007.937,154.13,1.0
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,751.641,752.14,4015.26,1.0
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,988.269,1006.349,442.5,1.0
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1007.64,1016.838,326.15,1.0
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1829.677,2120.762,106.5,1.0
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,874.27,1230.29,92.69,0.5
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1997.939,2791.457,118.46,0.85
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,790.538,1639.838,157.78,1.0
+Q27,CODING,Write a Python function that returns duplicate values from a list.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,784.73,1625.863,111.75,0.7
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,693.312,1306.881,136.9,0.7625
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,729.057,1059.941,132.98,0.7
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,802.558,1903.755,81.73,0.6125
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1126.672,1405.953,361.64,0.85
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,840.939,2186.091,85.49,0.85
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,915.162,2619.141,82.16,0.7333,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,865.963,3503.799,52.32,0.9417
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,938.886,2265.763,63.31,1.0,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,902.427,1810.64,79.28,0.9143,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,889.04,1774.384,70.03,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,883.106,2372.29,65.14,0.8,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,798.683,2510.185,94.07,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,834.263,2478.381,56.57,0.3929,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,874.733,3096.47,67.51,1.0,SUCCESS
-Q53,REALTIME_INTERVIEW,MEDIUM,What is polymorphism?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,920.678,3853.757,83.87,1.0,SUCCESS
-Q54,REALTIME_INTERVIEW,MEDIUM,What is REST API?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,795.356,3414.068,89.74,1.0,SUCCESS
-Q61,BEHAVIORAL_HR,MEDIUM,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,872.006,3361.715,69.49,0.8167,SUCCESS
-Q62,BEHAVIORAL_HR,MEDIUM,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,823.206,1942.339,75.95,0.75,SUCCESS
-Q66,SHORT_ANSWER,MEDIUM,In one sentence: what is TTFT?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,847.698,1205.395,69.89,1.0,SUCCESS
-Q67,SHORT_ANSWER,MEDIUM,In one sentence: what is RAG?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,885.476,1225.857,88.14,0.3333,SUCCESS
-Q71,FOLLOW_UP,EASY,What is REST API?,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,819.011,3698.791,81.6,1.0,SUCCESS
-Q72,FOLLOW_UP,MEDIUM,Explain it with a concrete example.,xAI Grok,Grok 4.20,Grok 4.20,x-ai/grok-4.20,1,1.0,941.605,6478.696,75.85,1.0,SUCCESS
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,585.576,3457.139,27.51,1.0,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1187.657,4851.309,29.75,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,828.992,1578.013,32.04,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,4363.323,4500.092,29.25,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,658.21,2043.756,44.75,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2654.027,2843.876,21.07,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,606.329,4725.27,37.39,0.85,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,599.162,4717.989,35.93,1.0,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+Explain and fix.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,743.22,1835.464,77.82,1.0
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,732.143,2007.567,100.36,0.705
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,788.689,2305.112,110.79,0.9125
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,772.282,1451.785,128.03,0.9125
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,807.947,1902.963,115.98,0.9143
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,685.492,1261.136,114.65,1.0
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,865.89,968.907,184.44,1.0
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,723.488,2512.719,111.78,0.8
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,971.326,1590.122,127.67,1.0
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,852.891,1627.627,129.08,0.8
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,740.616,2010.075,125.25,1.0
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,820.419,1499.809,104.51,1.0
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,653.227,934.761,120.77,1.0
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,900.82,1695.915,109.42,0.6
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,723.765,1952.688,96.02,0.1429
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1863.305,2788.524,207.52,0.8333
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,900.251,2605.981,93.22,0.8333
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,861.277,2994.838,95.15,0.5714
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1212.628,2774.827,119.06,1.0
+Q53,REALTIME_INTERVIEW,What is polymorphism?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,825.528,2548.017,127.72,1.0
+Q54,REALTIME_INTERVIEW,What is REST API?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,792.58,2447.246,132.96,1.0
+Q55,REALTIME_INTERVIEW,Explain inheritance.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,911.131,2933.035,108.81,1.0
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,796.063,2511.518,128.25,0.6667
+Q57,REALTIME_INTERVIEW,What is an API?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,808.713,2734.866,113.18,1.0
+Q58,REALTIME_INTERVIEW,What is a database index?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,826.952,2452.827,135.31,0.5
+Q59,REALTIME_INTERVIEW,What is recursion?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,795.604,2268.986,126.24,1.0
+Q60,REALTIME_INTERVIEW,What is binary search?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,817.719,2262.707,137.03,1.0
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,827.641,2457.079,98.19,0.9833
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,967.09,1815.706,119.02,0.75
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,766.397,2309.83,93.3,1.0
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,868.388,1461.031,97.87,0.8167
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,723.198,1904.426,91.43,0.35
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,873.958,1087.896,116.86,1.0
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,788.601,989.526,144.33,0.3333
+Q68,SHORT_ANSWER,In one sentence: what is Git?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,681.382,926.875,81.47,1.0
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,802.854,922.164,259.83,1.0
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,777.152,863.399,231.89,0.4
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,754.804,2860.58,84.53,1.0
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,1054.87,2640.938,122.95,0.8333
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,925.056,1151.798,189.64,0.3333
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,837.241,2642.686,121.85,1.0
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1.0,793.388,2479.9,130.45,1.0
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1180.339,2987.672,55.88,1.0
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,638.291,4878.712,28.53,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,645.388,6982.087,25.41,0.6
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1259.083,8147.803,26.86,1.0
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1046.775,6263.422,21.85,0.8333
+Q06,TECHNICAL,What is database normalization?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2418.136,11604.221,11.32,0.4
+Q07,TECHNICAL,What is indexing in SQL?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2305.936,5034.608,63.4,0.8
+Q08,TECHNICAL,What is an API endpoint?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,918.268,6207.592,21.55,0.8
+Q09,TECHNICAL,What is Docker in one short paragraph?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1106.105,2130.595,49.78,0.6
+Q10,TECHNICAL,What is an LLM?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,984.494,6047.886,23.11,0.8
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,900.444,1596.042,34.5,1.0
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,770.787,4765.191,23.03,1.0
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,694.745,694.745,,1.0
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1022.706,5854.315,27.53,1.0
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,579.818,3459.984,28.82,1.0
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,681.094,2409.792,24.3,1.0
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,627.684,3808.438,23.58,1.0
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1234.936,3295.204,75.23,1.0
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1255.587,3617.743,24.55,1.0
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1203.0,1291.295,33.98,1.0
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,651.94,1742.877,22.92,1.0
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,762.59,2495.225,23.66,1.0
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,843.367,3489.156,20.41,1.0
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,720.177,1891.001,24.77,1.0
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,704.788,3878.816,25.83,0.85
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,556.144,9761.935,23.9,1.0
+Q27,CODING,Write a Python function that returns duplicate values from a list.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,863.578,6246.661,28.61,0.7
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2316.316,4638.886,61.57,0.7625
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,650.561,3703.58,27.84,0.7
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1051.943,3725.372,65.83,0.7
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,596.848,5018.25,29.63,0.85
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1007.518,5728.934,31.56,0.78
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,752.268,6065.501,27.48,0.7333,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,780.073,10937.772,16.64,0.8833
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,821.54,3741.623,30.82,1.0,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1696.389,4712.06,45.43,0.8286,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,692.178,2393.985,39.37,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,548.836,3867.26,31.34,0.8,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1742.272,6080.345,52.79,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,707.246,3319.686,32.54,0.5357,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,5708.531,8332.641,28.58,0.9167,SUCCESS
-Q53,REALTIME_INTERVIEW,MEDIUM,What is polymorphism?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,718.409,7356.066,21.85,0.8,SUCCESS
-Q54,REALTIME_INTERVIEW,MEDIUM,What is REST API?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1095.881,8508.053,21.59,1.0,SUCCESS
-Q61,BEHAVIORAL_HR,MEDIUM,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,726.825,5165.934,27.71,0.9833,SUCCESS
-Q62,BEHAVIORAL_HR,MEDIUM,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1033.933,5765.626,27.9,0.75,SUCCESS
-Q66,SHORT_ANSWER,MEDIUM,In one sentence: what is TTFT?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,609.169,1570.782,23.92,0.25,SUCCESS
-Q67,SHORT_ANSWER,MEDIUM,In one sentence: what is RAG?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2091.767,2425.1,78.0,1.0,SUCCESS
-Q71,FOLLOW_UP,EASY,What is REST API?,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1045.534,5354.628,30.86,1.0,SUCCESS
-Q72,FOLLOW_UP,MEDIUM,Explain it with a concrete example.,DeepSeek,DeepSeek Chat,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,889.604,11293.758,38.16,1.0,SUCCESS
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1708.882,2256.258,186.34,1.0,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1110.087,2292.443,121.79,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1444.203,1562.432,203.0,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1181.352,1556.706,207.8,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1432.325,1497.57,996.25,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1267.338,1267.835,12070.0,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1132.331,2641.746,192.79,0.925,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1430.628,2736.683,227.4,1.0,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+Explain and fix.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2080.125,6053.217,19.88,0.8833
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,750.234,5644.089,21.05,0.705
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1460.121,9177.047,22.03,0.9125
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1117.808,4679.797,26.39,0.9125
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1368.807,5522.816,25.04,0.6571
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1341.627,3769.145,28.01,1.0
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,676.238,1354.597,29.48,1.0
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,759.992,4100.714,23.65,0.8
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1132.527,4044.368,30.56,1.0
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,729.135,4631.725,19.22,0.8
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1168.331,7870.469,32.83,1.0
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,689.623,3682.621,21.72,1.0
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1277.867,2337.994,87.73,1.0
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,2016.928,2474.223,170.57,1.0
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1504.231,5886.419,21.22,0.1429
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1293.168,3212.18,75.56,0.6667
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1621.854,3587.154,80.39,0.8333
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,633.524,4019.133,23.92,0.0
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,736.12,11846.621,19.8,1.0
+Q53,REALTIME_INTERVIEW,What is polymorphism?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,892.639,9067.943,26.3,1.0
+Q54,REALTIME_INTERVIEW,What is REST API?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1654.164,5595.564,34.25,1.0
+Q55,REALTIME_INTERVIEW,Explain inheritance.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1057.997,11020.637,22.08,1.0
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,707.073,9773.346,18.75,0.6667
+Q57,REALTIME_INTERVIEW,What is an API?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,751.293,4624.644,21.94,1.0
+Q58,REALTIME_INTERVIEW,What is a database index?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1241.772,3852.102,63.59,0.75
+Q59,REALTIME_INTERVIEW,What is recursion?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1291.502,5628.608,18.68,1.0
+Q60,REALTIME_INTERVIEW,What is binary search?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1131.488,9041.768,27.31,1.0
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1503.123,9262.427,22.81,1.0
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1321.902,3015.693,74.39,0.95
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1135.292,2306.447,70.87,0.9833
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1212.731,2860.363,52.8,0.8167
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,528.656,5279.607,24.21,0.15
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,691.239,1741.434,29.52,1.0
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,685.297,1524.787,35.74,1.0
+Q68,SHORT_ANSWER,In one sentence: what is Git?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,714.801,1184.476,40.45,1.0
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,640.692,1420.425,29.5,0.8
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,823.66,2004.335,27.1,0.4
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1548.448,3400.059,61.57,0.8333
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1135.72,5936.209,25.0,0.8333
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,647.055,2642.524,34.08,1.0
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1001.053,5111.986,32.11,0.8
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1.0,1123.84,5779.502,30.72,0.8
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1138.302,1983.937,120.62,1.0
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1791.884,2646.383,153.31,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1150.295,2152.88,179.54,0.8
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1711.95,3025.927,167.43,0.8333
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1159.545,3135.512,111.34,0.6667
+Q06,TECHNICAL,What is database normalization?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1465.605,2589.713,195.71,0.4
+Q07,TECHNICAL,What is indexing in SQL?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1175.954,2645.529,149.7,0.6
+Q08,TECHNICAL,What is an API endpoint?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1137.019,5623.548,32.32,0.8
+Q09,TECHNICAL,What is Docker in one short paragraph?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,2115.664,2766.681,119.81,1.0
+Q10,TECHNICAL,What is an LLM?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1974.442,3936.737,112.11,1.0
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1169.879,1399.493,104.52,1.0
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1317.827,1489.862,453.4,1.0
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1194.193,1194.193,,1.0
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1432.899,1737.051,249.88,1.0
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1188.117,1750.6,188.45,1.0
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1215.536,1486.819,188.0,1.0
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1374.034,1741.67,296.49,1.0
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1203.25,1783.679,261.88,1.0
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1346.511,1375.917,2210.5,1.0
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1640.4,1640.71,19392.37,1.0
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1171.936,1442.158,99.92,1.0
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1432.726,1640.882,211.38,1.0
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1396.068,1705.652,174.43,1.0
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1322.596,1381.507,594.11,1.0
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1182.56,2315.315,194.22,0.4083
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1389.526,2342.705,230.81,1.0
+Q27,CODING,Write a Python function that returns duplicate values from a list.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1278.503,2097.479,268.63,0.85
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1341.802,2285.966,233.01,0.7625
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1557.859,2428.522,194.1,0.7
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1165.665,2275.718,153.15,0.8833,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1202.564,1900.941,134.6,0.8833,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1323.856,2164.703,187.91,1.0,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1705.329,2566.559,192.75,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1144.307,1931.593,142.26,0.6,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1542.844,3752.61,97.75,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1185.084,2779.955,87.15,0.3929,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Anthropic Claude,Claude Haiku 4.5,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,,FAILED
-Q01,TECHNICAL,EASY,What is a REST API? Explain in 3 short points.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1106.572,2275.98,116.3,1.0,SUCCESS
-Q02,TECHNICAL,EASY,Explain the difference between HTTP and HTTPS.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1601.963,3599.804,113.12,1.0,SUCCESS
-Q11,APTITUDE,MEDIUM,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1472.262,1581.379,109.97,1.0,SUCCESS
-Q12,APTITUDE,MEDIUM,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1244.294,1283.199,77.11,1.0,SUCCESS
-Q19,LOGICAL_REASONING,MEDIUM,"Find the next number: 3, 9, 27, 81, ?",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1503.338,1979.377,77.72,1.0,SUCCESS
-Q20,LOGICAL_REASONING,MEDIUM,Dog is to Bark as Cat is to ? Reply with one word.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1352.381,1356.479,488.07,1.0,SUCCESS
-Q25,CODING,MEDIUM,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1364.616,2381.555,130.78,0.925,SUCCESS
-Q26,CODING,MEDIUM,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1215.372,2220.189,163.21,1.0,SUCCESS
-Q33,DEBUGGING,MEDIUM,"Find and fix the bug:
+Explain and fix.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1959.162,2167.425,211.27,1.0
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1138.65,2039.459,140.98,1.0
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,2669.652,3658.284,85.98,1.0
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1330.493,1996.711,162.11,0.6
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1790.805,3224.444,147.88,1.0
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1663.338,2372.678,180.45,1.0
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1312.748,1941.384,127.26,1.0
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1178.914,1961.214,104.82,0.8
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1143.736,3395.028,97.72,0.1429
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1431.106,3068.898,128.22,0.8333
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1039.622,3289.874,97.77,0.8333
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1184.82,3363.711,84.91,0.5714
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1077.509,3678.524,84.58,0.8333
+Q53,REALTIME_INTERVIEW,What is polymorphism?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1133.185,2674.095,142.77,1.0
+Q54,REALTIME_INTERVIEW,What is REST API?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1305.648,2460.795,190.45,1.0
+Q55,REALTIME_INTERVIEW,Explain inheritance.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1880.005,3505.346,135.36,0.6667
+Q57,REALTIME_INTERVIEW,What is an API?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q58,REALTIME_INTERVIEW,What is a database index?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q59,REALTIME_INTERVIEW,What is recursion?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q60,REALTIME_INTERVIEW,What is binary search?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q68,SHORT_ANSWER,In one sentence: what is Git?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1128.637,1143.211,1509.59,0.6
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1312.595,3039.295,101.93,1.0
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,2331.029,4491.866,94.87,1.0
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,0.0,,,,
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,3146.118,4888.05,81.52,0.8
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1.0,1626.51,3197.436,140.04,1.0
+Q01,TECHNICAL,What is a REST API? Explain in 3 short points.,Perplexity,Sonar,perplexity/sonar,1,1.0,1789.841,3485.42,80.8,1.0
+Q02,TECHNICAL,Explain the difference between HTTP and HTTPS.,Perplexity,Sonar,perplexity/sonar,1,1.0,1082.988,2585.848,133.08,1.0
+Q03,TECHNICAL,What is polymorphism in OOP? Give one short example.,Perplexity,Sonar,perplexity/sonar,1,1.0,1537.019,2402.192,117.9,0.8
+Q04,TECHNICAL,Explain inheritance in object-oriented programming.,Perplexity,Sonar,perplexity/sonar,1,1.0,1166.246,2747.805,141.63,1.0
+Q05,TECHNICAL,What is encapsulation? Why does it matter?,Perplexity,Sonar,perplexity/sonar,1,1.0,1239.021,2605.7,152.93,0.6667
+Q06,TECHNICAL,What is database normalization?,Perplexity,Sonar,perplexity/sonar,1,1.0,1390.063,2396.416,156.01,0.4
+Q07,TECHNICAL,What is indexing in SQL?,Perplexity,Sonar,perplexity/sonar,1,1.0,1131.741,2174.115,146.78,0.6
+Q08,TECHNICAL,What is an API endpoint?,Perplexity,Sonar,perplexity/sonar,1,1.0,1114.27,1698.974,201.81,0.8
+Q09,TECHNICAL,What is Docker in one short paragraph?,Perplexity,Sonar,perplexity/sonar,1,1.0,1051.645,1639.062,141.3,0.6
+Q10,TECHNICAL,What is an LLM?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q11,APTITUDE,"A train travels 120 km in 2 hours. What is its average speed in km/h? Reply with the number only, then one line of work.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q12,APTITUDE,A number is increased by 20% and then decreased by 20%. What is the net percentage change? Reply with the signed percentage (e.g. -4%).,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q13,APTITUDE,A product costs Rs.800 and is sold at a 15% profit. What is the selling price in rupees? Number only.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q14,APTITUDE,"A can complete a task in 10 days and B in 15 days. How many days will they take together? Reply with days (fraction ok, e.g. 6).",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q15,APTITUDE,"Find the next number in the series: 2, 6, 12, 20, 30, ?",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q16,APTITUDE,A bag has 3 red and 2 blue balls. Probability of drawing one red ball at random? Reply as a simplified fraction.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q17,APTITUDE,"The average of 5 numbers is 20. If one number 30 is removed, what is the new average?",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q18,APTITUDE,Simplify the ratio 36:48 to lowest terms.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q19,LOGICAL_REASONING,"Find the next number: 3, 9, 27, 81, ?",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q20,LOGICAL_REASONING,Dog is to Bark as Cat is to ? Reply with one word.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q21,LOGICAL_REASONING,A is taller than B. B is taller than C. Who is the shortest?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q22,LOGICAL_REASONING,"You face North, turn right, walk, turn right again. Which direction are you facing now?",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q23,LOGICAL_REASONING,"Pointing to a photo, a man says: 'He is the son of my mother's only son.' Who is in the photo relative to the man?",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q24,LOGICAL_REASONING,All APIs are services. All services need interfaces. Conclusion: All APIs need interfaces. Does this follow? Answer YES or NO with one reason.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q25,CODING,Write a Python function to reverse a string without using reversed(). Also state time complexity in Big-O.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q26,CODING,Write a Python function is_prime(n) that returns True if n is prime. Mention Big-O.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q27,CODING,Write a Python function that returns duplicate values from a list.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q28,CODING,Write a Python function to find the second-largest distinct number in a list.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q29,CODING,Write a Python function is_palindrome(s) ignoring spaces and case.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q30,CODING,Write a Python function that returns a frequency dict of list elements.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q31,CODING,Implement binary search in Python on a sorted list. Return index or -1. State Big-O.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q32,CODING,"Given nums containing n distinct numbers from 0..n, write Python to find the missing number. State Big-O.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q33,DEBUGGING,"Find and fix the bug:
 ```python
 numbers = [1, 2, 3, 4, 5]
 for i in range(len(numbers)):
     print(numbers[i+1])
 ```
-Explain the error and give corrected code.",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1328.312,2681.127,166.32,0.9417,SUCCESS
-Q34,DEBUGGING,MEDIUM,"Find the bug:
+Explain the error and give corrected code.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q34,DEBUGGING,"Find the bug:
 `for i in range(5) print(i)`
-Explain and fix.",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1298.565,1996.797,130.33,0.8833,SUCCESS
-Q38,SQL_DATABASE,MEDIUM,Write SQL to find the second-highest salary from employees(salary).,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1769.886,3018.171,128.98,0.9143,SUCCESS
-Q39,SQL_DATABASE,MEDIUM,What is an SQL JOIN? Name INNER vs LEFT briefly.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1246.55,2338.058,97.11,1.0,SUCCESS
-Q43,COMPUTER_SCIENCE,MEDIUM,Explain Big-O notation in 3 bullets.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1495.866,2931.444,99.61,0.8,SUCCESS
-Q44,COMPUTER_SCIENCE,MEDIUM,What is the difference between TCP and UDP?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1165.632,2719.421,122.93,1.0,SUCCESS
-Q48,SCENARIO,MEDIUM,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1740.811,3169.554,135.78,0.5357,SUCCESS
-Q49,SCENARIO,MEDIUM,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1436.21,4257.393,88.26,1.0,SUCCESS
-Q53,REALTIME_INTERVIEW,MEDIUM,What is polymorphism?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1311.825,3368.292,95.31,1.0,SUCCESS
-Q54,REALTIME_INTERVIEW,MEDIUM,What is REST API?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1201.938,3344.896,126.46,1.0,SUCCESS
-Q61,BEHAVIORAL_HR,MEDIUM,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1202.389,2807.419,100.31,0.8167,SUCCESS
-Q62,BEHAVIORAL_HR,MEDIUM,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1483.279,2638.499,113.4,0.75,SUCCESS
-Q66,SHORT_ANSWER,MEDIUM,In one sentence: what is TTFT?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1094.758,1452.973,97.71,0.75,SUCCESS
-Q67,SHORT_ANSWER,MEDIUM,In one sentence: what is RAG?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1179.267,1614.709,119.42,1.0,SUCCESS
-Q71,FOLLOW_UP,EASY,What is REST API?,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1190.283,3069.836,132.48,1.0,SUCCESS
-Q72,FOLLOW_UP,MEDIUM,Explain it with a concrete example.,Perplexity,Sonar,Sonar,perplexity/sonar,1,1.0,1363.872,3306.729,122.5,1.0,SUCCESS
+Explain and fix.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q35,DEBUGGING,"Find the bug:
+```python
+def add(a, b):
+    return a + b
+print(add(2))
+```
+Explain and fix.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q36,DEBUGGING,"Find the bug:
+```python
+data = {'a': 1}
+print(data['b'])
+```
+Explain safer access.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q37,DEBUGGING,"Find the bug:
+```python
+x = 0
+while x < 5:
+    print(x)
+```
+Explain and fix.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q38,SQL_DATABASE,Write SQL to find the second-highest salary from employees(salary).,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q39,SQL_DATABASE,What is an SQL JOIN? Name INNER vs LEFT briefly.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q40,SQL_DATABASE,"Write a SELECT that returns employees with salary > 50000 from employees(name, salary).",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q41,SQL_DATABASE,What is a primary key vs a foreign key?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q42,SQL_DATABASE,Explain ACID in databases in 4 short bullets.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q43,COMPUTER_SCIENCE,Explain Big-O notation in 3 bullets.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q44,COMPUTER_SCIENCE,What is the difference between TCP and UDP?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q45,COMPUTER_SCIENCE,What is a stack? Give push/pop and one use case.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q46,COMPUTER_SCIENCE,What is the time complexity of binary search on a sorted array?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q47,COMPUTER_SCIENCE,Explain process vs thread in one short paragraph.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q48,SCENARIO,CueAI auto-answer never fires after a final System transcript. List 4 likely causes to check.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q49,SCENARIO,Your REST API returns 429 often during demos. Give 4 practical mitigations.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q50,SCENARIO,A production DB query is slow only for one report. How do you diagnose in 5 steps?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q51,SCENARIO,Interview overlay TTFT is 3s; product goal is <800ms. List 4 concrete latency cuts.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q52,SCENARIO,Two teammates edit the same Git feature branch and conflict on merge. Outline a safe fix.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q53,REALTIME_INTERVIEW,What is polymorphism?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q54,REALTIME_INTERVIEW,What is REST API?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q55,REALTIME_INTERVIEW,Explain inheritance.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q56,REALTIME_INTERVIEW,What is SQL normalization?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q57,REALTIME_INTERVIEW,What is an API?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q58,REALTIME_INTERVIEW,What is a database index?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q59,REALTIME_INTERVIEW,What is recursion?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q60,REALTIME_INTERVIEW,What is binary search?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q61,BEHAVIORAL_HR,"An interviewer asks: ""Tell me about yourself."" Give a concise 45-second professional answer for a software/AI engineer.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q62,BEHAVIORAL_HR,"Answer: ""Tell me about a project you built using Python."" Keep it professional and concise.",Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q63,BEHAVIORAL_HR,Describe a time you resolved a conflict on a team. Use STAR briefly.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q64,BEHAVIORAL_HR,Why should we hire you for an AI/product engineering role? 4 short bullets.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q65,BEHAVIORAL_HR,Where do you see yourself in 3 years? Keep it realistic and role-aligned.,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q66,SHORT_ANSWER,In one sentence: what is TTFT?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q67,SHORT_ANSWER,In one sentence: what is RAG?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q68,SHORT_ANSWER,In one sentence: what is Git?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q69,SHORT_ANSWER,In one sentence: GET vs POST?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q70,SHORT_ANSWER,In one sentence: what is a mutex?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q71,FOLLOW_UP,You just said REST is stateless. Follow-up: how do apps keep user login state with REST?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q72,FOLLOW_UP,You mentioned indexes speed reads. Follow-up: when can an index hurt performance?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q73,FOLLOW_UP,You said binary search is O(log n). Follow-up: what precondition makes that true?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q74,FOLLOW_UP,You explained Docker containers. Follow-up: how is a container different from a VM?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,
+Q75,FOLLOW_UP,You described polymorphism. Follow-up: how does it differ from inheritance?,Perplexity,Sonar,perplexity/sonar,1,0.0,,,,

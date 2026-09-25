@@ -47,40 +47,6 @@ def _label_from_score(score: float) -> str:
     return "incorrect"
 
 
-def _instruction_following(prompt: PromptCase, text: str) -> float:
-    words = len(text.split())
-    if prompt.bullet_count:
-        bullets = len(re.findall(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+", text))
-        if bullets == 0:
-            bullets = text.count("\n- ")
-        if bullets == prompt.bullet_count:
-            return 1.0
-        return max(0.0, 1.0 - abs(bullets - prompt.bullet_count) * 0.35)
-    if prompt.word_limit:
-        if words <= prompt.word_limit:
-            return 1.0
-        overflow = words - prompt.word_limit
-        return max(0.0, 1.0 - overflow / max(prompt.word_limit, 1))
-    if words < 4:
-        return 0.3
-    if words > 400:
-        return 0.55
-    return 0.85
-
-
-def _quality_and_relevance(prompt: PromptCase, text: str, acc: float) -> tuple[float, float]:
-    hits, total = _keyword_hits(text, prompt.expected_keywords)
-    relevance = (hits / total) if total else min(1.0, acc)
-    words = len(text.split())
-    quality = acc
-    if prompt.eval_type == "behavioral":
-        quality = min(1.0, acc * 0.7 + (0.3 if words >= 25 else 0.1))
-    elif prompt.eval_type == "scenario":
-        steps = len(re.findall(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+", text))
-        quality = min(1.0, acc * 0.7 + (0.3 if steps >= 4 or words >= 40 else 0.1))
-    return round(quality, 4), round(float(relevance), 4)
-
-
 def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
     """
     Returns accuracy fields. Does not invent timing.
@@ -94,11 +60,6 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
             "syntax_ok": None,
             "logic_ok": None,
             "correctness_ok": False,
-            "edge_cases_ok": None,
-            "time_complexity_ok": None,
-            "quality": 0.0,
-            "relevance": 0.0,
-            "instruction_following": 0.0,
             "accuracy_notes": "Empty response",
         }
 
@@ -109,8 +70,6 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
     syntax_ok: Optional[bool] = None
     logic_ok: Optional[bool] = None
     correctness_ok: Optional[bool] = None
-    edge_ok: Optional[bool] = None
-    complexity_ok: Optional[bool] = None
     notes: list[str] = []
     score = 0.0
     label = "incorrect"
@@ -139,43 +98,20 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
         checks = prompt.coding_checks or ("def", "return")
         check_hits = sum(1 for c in checks if c.lower() in body)
         has_def = "def " in body or body.startswith("def")
-        has_return = "return" in body
-        has_complexity = bool(
-            re.search(r"\bo\s*\(\s*(n|log|1|n\s*\^|nlog)", body)
-            or "o(n" in body
-            or "o(log" in body
-            or "time complexity" in body
-        )
-        syntax_ok = has_def and (":" in text) and has_return
+        has_complexity = "o(" in body or "o(n" in body or "log" in body
+        syntax_ok = has_def and check_hits >= max(1, len(checks) // 2)
         logic_ok = (ratio is not None and ratio >= 0.35) or check_hits >= 2
-        edge = any(
-            k in body
-            for k in (
-                "edge",
-                "empty",
-                "none",
-                "n <",
-                "n<=",
-                "n == 0",
-                "n=0",
-                "if not",
-                "len(",
-            )
-        )
+        edge = any(k in body for k in ("edge", "empty", "none", "n <", "n<="))
         score = 0.0
-        score += 0.25 * (check_hits / max(1, len(checks)))
-        score += 0.30 * (ratio or 0.0)
-        score += 0.15 if syntax_ok else 0.0
+        score += 0.35 * (check_hits / max(1, len(checks)))
+        score += 0.35 * (ratio or 0.0)
         score += 0.15 if has_complexity else 0.0
         score += 0.15 if edge else 0.0
         score = min(1.0, score)
         label = _label_from_score(score)
         correctness_ok = label == "correct"
-        edge_ok = edge
-        complexity_ok = has_complexity
         notes.append(
-            f"coding_checks={check_hits}/{len(checks)}; syntax={syntax_ok}; "
-            f"complexity={has_complexity}; edge={edge}"
+            f"coding_checks={check_hits}/{len(checks)}; complexity={has_complexity}; edge={edge}"
         )
 
     elif prompt.eval_type == "debugging":
@@ -206,17 +142,14 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
         correctness_ok = label == "correct"
         notes.append(f"keywords={hits}/{total}; select={has_select}")
 
-    elif prompt.eval_type in {"behavioral", "scenario"}:
+    elif prompt.eval_type == "behavioral":
         if total == 0:
             score = 0.6 if len(text.split()) >= 20 else 0.3
         else:
             score = ratio or 0.0
+        # Prefer substance over buzzwords alone
         if len(text.split()) >= 25:
             score = min(1.0, score + 0.15)
-        if prompt.eval_type == "scenario":
-            steps = len(re.findall(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+", text))
-            if steps >= 4:
-                score = min(1.0, score + 0.1)
         label = _label_from_score(score)
         correctness_ok = label == "correct"
         notes.append(f"keywords={hits}/{total}; words={len(text.split())}")
@@ -252,11 +185,6 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
                 "syntax_ok": None,
                 "logic_ok": None,
                 "correctness_ok": None,
-                "edge_cases_ok": None,
-                "time_complexity_ok": None,
-                "quality": None,
-                "relevance": None,
-                "instruction_following": _instruction_following(prompt, text),
                 "accuracy_notes": "No expected keywords configured",
             }
         else:
@@ -265,19 +193,12 @@ def evaluate_response(prompt: PromptCase, response: str) -> dict[str, Any]:
             correctness_ok = label == "correct"
             notes.append(f"keywords={hits}/{total}")
 
-    instr = _instruction_following(prompt, text)
-    quality, relevance = _quality_and_relevance(prompt, text, float(score))
     return {
         "accuracy_label": label,
         "accuracy_score": round(float(score), 4),
         "syntax_ok": syntax_ok,
         "logic_ok": logic_ok,
         "correctness_ok": correctness_ok,
-        "edge_cases_ok": edge_ok,
-        "time_complexity_ok": complexity_ok,
-        "quality": quality,
-        "relevance": relevance,
-        "instruction_following": round(instr, 4),
         "accuracy_notes": "; ".join(notes),
     }
 

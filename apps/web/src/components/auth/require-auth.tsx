@@ -37,7 +37,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (!AUTH_BYPASS && !session) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
-        Redirecting to sign up…
+        Redirecting to sign in…
       </div>
     );
   }

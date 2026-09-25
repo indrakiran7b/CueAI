@@ -7,7 +7,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 
 const SIZE = 1024;
-const out = path.resolve("apps/desktop-mac/build/icon.png");
+const out = path.resolve("apps/desktop/macos/build/icon.png");
 
 function crc32(buf) {
   let c = ~0;
