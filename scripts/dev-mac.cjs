@@ -5,7 +5,7 @@
  * Starts the Next.js workspace on 127.0.0.1:3002 (unless CUEAI_WEB_URL is set
  * or an existing CueAI server is already there), waits for an HTTP response,
  * then starts Electron. Keep this port in sync with
- * apps/desktop-mac/electron/services/web-server.ts DEV_WEB_ORIGIN.
+ * apps/desktop/macos/electron/services/web-server.ts DEV_WEB_ORIGIN.
  */
 "use strict";
 
@@ -151,7 +151,7 @@ function spawnElectron(origin) {
       ? path.join(ROOT, "node_modules", "electron", "dist", "electron.exe")
       : path.join(ROOT, "node_modules", ".bin", "electron");
   const child = spawn(electronBin, [".", "--no-sandbox"], {
-    cwd: path.join(ROOT, "apps", "desktop-mac"),
+    cwd: path.join(ROOT, "apps", "desktop", "macos"),
     env: { ...process.env, CUEAI_WEB_URL: origin },
     stdio: "inherit",
     windowsHide: process.platform === "win32",
@@ -220,23 +220,10 @@ async function main() {
     const parsed = new URL(origin);
     logWeb("Starting web server");
     logWeb(`Binding ${parsed.hostname}:${parsed.port || "3002"}`);
-    webChild = spawnNpm(
-      [
-        "run",
-        "dev:mac",
-        "-w",
-        "@cueai/web",
-        "--",
-        "--port",
-        parsed.port || "3002",
-        "--hostname",
-        parsed.hostname || "127.0.0.1",
-      ],
-      {
-        PORT: parsed.port || "3002",
-        HOSTNAME: parsed.hostname || "127.0.0.1",
-      }
-    );
+    webChild = spawnNpm(["run", "dev:web:mac"], {
+      PORT: parsed.port || "3002",
+      HOSTNAME: parsed.hostname || "127.0.0.1",
+    });
     webChild.on("exit", (code, signal) => {
       if (shuttingDown) return;
       console.error(`[WEB] npm run dev:web:mac exited with code ${code ?? signal ?? 1}`);

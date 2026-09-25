@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server/api-auth";
-import { finalizeMeeting, getMeetingForUser, publicMeeting } from "@/lib/server/meetings";
+import {
+  canAccessMeeting,
+  deleteMeeting,
+  finalizeMeeting,
+  getMeeting,
+  isLiveMeeting,
+  publicMeeting,
+} from "@/lib/server/meetings";
 import type { DbMeetingLine } from "@/lib/server/db";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PATCH, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -15,14 +22,24 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { error, session } = await requireAuth(req);
-  if (error || !session) return error;
+  if (error || !session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
+  }
 
   const { id } = await ctx.params;
-  const stored = await getMeetingForUser(id, session.userId);
-  if (!stored) {
+  const stored = await getMeeting(id);
+  if (!stored || !canAccessMeeting(stored, session)) {
     return NextResponse.json(
       { error: "Meeting not found" },
       { status: 404, headers: CORS_HEADERS },
+    );
+  }
+
+  // History detail is for completed meetings only — never reopen live via this route.
+  if (isLiveMeeting(stored)) {
+    return NextResponse.json(
+      { error: "This meeting is still live. Use New live session / companion." },
+      { status: 409, headers: CORS_HEADERS },
     );
   }
 
@@ -34,11 +51,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { error, session } = await requireAuth(req);
-  if (error || !session) return error;
+  if (error || !session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
+  }
 
   const { id } = await ctx.params;
-  const meeting = await getMeetingForUser(id, session.userId);
-  if (!meeting) {
+  const meeting = await getMeeting(id);
+  if (!meeting || !canAccessMeeting(meeting, session)) {
     return NextResponse.json(
       { error: "Meeting not found." },
       { status: 404, headers: CORS_HEADERS },
@@ -57,9 +76,36 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
   }
 
-  const fresh = await getMeetingForUser(id, session.userId);
+  const fresh = await getMeeting(id);
   return NextResponse.json(
     { meeting: fresh ? publicMeeting(fresh, true) : null },
     { headers: CORS_HEADERS },
   );
+}
+
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { error, session } = await requireAuth(req);
+  if (error || !session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
+  }
+
+  const { id } = await ctx.params;
+  const existing = await getMeeting(id);
+  if (!existing || !canAccessMeeting(existing, session)) {
+    return NextResponse.json(
+      { error: "Meeting not found." },
+      { status: 404, headers: CORS_HEADERS },
+    );
+  }
+  // Only the owner (or admin) deletes; never delete by index.
+  if (
+    existing.userId &&
+    existing.userId !== session.userId &&
+    session.role !== "Admin" &&
+    session.role !== "Manager"
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: CORS_HEADERS });
+  }
+  await deleteMeeting(id);
+  return NextResponse.json({ ok: true, id }, { headers: CORS_HEADERS });
 }

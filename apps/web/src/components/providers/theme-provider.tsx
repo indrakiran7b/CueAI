@@ -35,12 +35,16 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("cueai-theme");
     const initial = stored === "light" || stored === "dark" ? stored : readDocumentTheme();
-    setThemeState(initial);
     applyTheme(initial);
+    queueMicrotask(() => {
+      setThemeState(initial);
+      setHydrated(true);
+    });
   }, []);
 
   const setTheme = useCallback((next: Theme) => {
@@ -57,7 +61,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme: hydrated ? theme : "dark", setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

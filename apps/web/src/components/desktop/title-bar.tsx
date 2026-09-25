@@ -16,7 +16,9 @@ export function DesktopTitleBar() {
       setMac(macApp);
       setVisible(isDesktopApp() || macApp);
     });
-    if (!desktop) return () => window.cancelAnimationFrame(id);
+    if (!desktop?.isMaximized || !desktop.onMaximizedChange) {
+      return () => window.cancelAnimationFrame(id);
+    }
     void desktop.isMaximized().then(setMaximized);
     const unsub = desktop.onMaximizedChange(setMaximized);
     return () => {

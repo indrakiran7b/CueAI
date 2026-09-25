@@ -10,7 +10,6 @@ import {
   LogOut,
   Video,
   FileText,
-  BookOpen,
   Settings,
   Check,
   User,
@@ -45,7 +44,7 @@ type WorkspaceRow = {
 const COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
-  { label: "Knowledge Base", href: "/knowledge", icon: BookOpen },
+  { label: "Desktop Companion", href: "/companion", icon: Video },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -162,7 +161,17 @@ export function Topbar() {
         if (!cancelled) setMeetingHits([]);
       });
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setCommandOpen(false);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        closeMenus();
+        setCommandOpen(true);
+        setCommandQuery("");
+        return;
+      }
+      if (e.key === "Escape") {
+        setCommandOpen(false);
+        closeMenus();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -375,7 +384,9 @@ export function Topbar() {
               {notifError ? (
                 <p className="px-3 py-4 text-center text-sm text-muted">{notifError}</p>
               ) : notifs.length === 0 ? (
-                <p className="px-3 py-4 text-center text-sm text-muted">No new notifications</p>
+                <p className="px-3 py-4 text-center text-sm text-muted">
+                  No notifications yet.
+                </p>
               ) : (
                 notifs.map((n) => (
                   <button

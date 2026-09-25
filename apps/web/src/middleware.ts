@@ -5,33 +5,56 @@ import {
   verifySessionEdge,
 } from "@/lib/server/session-edge";
 
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/license",
+  "/api/auth",
+  "/api/license",
+  "/_next",
+  "/favicon",
+  "/icons",
+];
+
+function isPublicPath(pathname: string) {
+  if (pathname === "/") return true;
+  return PUBLIC_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
 /**
- * Middleware only verifies authentication for Admin routes.
- * Role/permission checks MUST happen in API handlers (requirePermission)
- * and RequireAdmin, which read the live role from the workspace store.
- *
- * Trusting JWT role here caused invited Admins to stay blocked when their
- * cookie still had role=User after the DB membership was upgraded.
+ * Protect app pages and authenticated APIs. Role checks for Admin still happen
+ * in requirePermission / RequireAdmin (live role from store).
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
-  const isAdminPage = pathname === "/admin" || pathname.startsWith("/admin/");
-  const isAdminApi = pathname.startsWith("/api/admin");
-
-  if (!isAdminPage && !isAdminApi) {
-    return NextResponse.next();
-  }
 
   if (AUTH_BYPASS) {
     return NextResponse.next();
   }
 
+  // Live desktop helpers stay reachable without a browser cookie (local Electron).
+  // Meeting history APIs still require auth via route handlers.
+  if (
+    pathname.startsWith("/api/live/") ||
+    pathname.startsWith("/api/transcribe") ||
+    pathname.startsWith("/api/health")
+  ) {
+    return NextResponse.next();
+  }
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  const isApi = pathname.startsWith("/api/");
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionEdge(token);
 
   if (!session) {
-    if (isAdminApi) {
+    if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const login = new URL("/login", req.url);
@@ -43,5 +66,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/api/admin/:path*"],
+  matcher: [
+    "/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

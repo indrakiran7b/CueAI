@@ -81,8 +81,8 @@ export default function ConversationFeedPage() {
               <MessageSquare className="mr-1 h-3 w-3" />
               Conversation feed
             </Badge>
-            <Badge variant={meeting.status === "live" ? "success" : "info"}>
-              {meeting.status === "live" ? "Live" : "Recorded"}
+            <Badge variant="info">
+              Completed
             </Badge>
           </div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">

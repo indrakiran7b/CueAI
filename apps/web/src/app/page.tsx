@@ -315,6 +315,33 @@ export default function LandingPage() {
         >
           <LiveMock />
         </motion.div>
+
+        <section className="mx-auto mt-16 grid max-w-[920px] gap-4 px-5 sm:grid-cols-2">
+          <div className="lp-card p-6 text-left">
+            <h2 className="lp-display text-2xl text-white">Resume Tailor</h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--lp-ink-muted)]">
+              Customize your resume for any job description using AI.
+            </p>
+            <div className="mt-6">
+              <Pill href="/resume">
+                Open Resume Tailor
+                <ArrowRight className="h-4 w-4" />
+              </Pill>
+            </div>
+          </div>
+          <div className="lp-card p-6 text-left">
+            <h2 className="lp-display text-2xl text-white">CUE AI</h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--lp-ink-muted)]">
+              AI meeting assistance, interview preparation and productivity.
+            </p>
+            <div className="mt-6">
+              <Pill href="/login">
+                Open CUE AI
+                <ArrowRight className="h-4 w-4" />
+              </Pill>
+            </div>
+          </div>
+        </section>
       </section>
 
       {/* Infinite marquee */}

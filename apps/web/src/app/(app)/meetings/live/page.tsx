@@ -29,7 +29,17 @@ import {
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import Link from "next/link";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import "./live-session.css";
+
+type TranscriptLine = {
+  id: number;
+  speaker: string;
+  role: string;
+  text: string;
+  time: string;
+  confidence: number;
+};
 
 type Suggestion = {
   id: string;
@@ -41,13 +51,16 @@ type Suggestion = {
 
 export default function LiveMeetingPage() {
   const [session, setSession] = useState<LiveSessionConfig | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const meetingIdRef = useRef<string | null>(null);
   meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
+  const setupAbortRef = useRef(false);
 
   useEffect(() => {
     setHydrated(true);
+    persistDesktopQuery();
   }, []);
 
   useEffect(() => {
@@ -58,7 +71,23 @@ export default function LiveMeetingPage() {
     return () => window.removeEventListener("cueai:end-session", onEndFromOverlay);
   }, []);
 
+  function cancelSetup() {
+    setupAbortRef.current = true;
+    clearLiveSessionConfig();
+    setMeetingId(null);
+    setSession(null);
+    setSetupOpen(false);
+    void startDesktopMeetingSession({
+      active: false,
+      screenSharing: false,
+      cueAiMode: "inactive",
+      hideCompanion: true,
+    });
+    void hideCompanionOverlay();
+  }
+
   async function beginSession(config: LiveSessionConfig) {
+    setupAbortRef.current = false;
     const title = sessionTitle(config);
     saveLiveSessionConfig(config);
     let createdId: string | null = null;
@@ -99,9 +128,21 @@ export default function LiveMeetingPage() {
     } catch {
       // Overlay still works if persistence fails.
     }
+    if (setupAbortRef.current) {
+      if (createdId) {
+        void fetch(`/api/meetings/${createdId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ end: true, durationSec: 0, transcript: [] }),
+        });
+      }
+      clearLiveSessionConfig();
+      return;
+    }
     const next = { ...config, meetingId: createdId || config.meetingId };
     saveLiveSessionConfig(next);
     setMeetingId(next.meetingId || null);
+    setSetupOpen(false);
     void openCompanionOverlay();
     void startDesktopMeetingSession({
       active: true,
@@ -125,11 +166,12 @@ export default function LiveMeetingPage() {
           durationSec,
           transcript: spoken.map((l) => ({ who: l.who, text: l.text })),
         }),
-      });
+      }).catch(() => undefined);
     }
     clearLiveSessionConfig();
     setMeetingId(null);
     setSession(null);
+    setSetupOpen(false);
     void startDesktopMeetingSession({
       active: false,
       screenSharing: false,
@@ -148,10 +190,35 @@ export default function LiveMeetingPage() {
     );
   }
 
+  if (!session && !setupOpen) {
+    return (
+      <div data-live className="mx-auto max-w-xl space-y-6 py-16 text-center animate-fade-up">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Live Session</h1>
+          <p className="mt-2 text-sm text-muted">
+            Start a live session to open Create Session. Cancel returns here without creating a meeting.
+          </p>
+        </div>
+        <Button
+          variant="gradient"
+          onClick={() => {
+            setupAbortRef.current = false;
+            setSetupOpen(true);
+          }}
+        >
+          Start Live Session
+        </Button>
+      </div>
+    );
+  }
+
   if (!session) {
     return (
       <div data-live>
-        <CreateSessionWizard onComplete={(config) => void beginSession(config)} />
+        <CreateSessionWizard
+          onCancel={cancelSetup}
+          onComplete={(config) => void beginSession(config)}
+        />
         <p className="mt-4 text-center text-xs text-subtle">
           Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
           CueAI Desktop running for the pop-out window.
@@ -180,9 +247,7 @@ function ActiveLiveSession({
   const title = sessionTitle(config);
   const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [lines, setLines] = useState<
-    { id: number; speaker: string; role: string; text: string; time: string; confidence: number }[]
-  >([]);
+  const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [sharing, setSharing] = useState(false);
   const [cueAiMode, setCueAiMode] = useState<CueAiMode>(config.startMode);
   const [cueAiProcessing, setCueAiProcessing] = useState<CueAiProcessing>("initializing");
@@ -249,6 +314,12 @@ function ActiveLiveSession({
     return () => clearInterval(t);
   }, [paused]);
 
+  // Real transcript comes from Desktop Companion / live capture — no simulated lines.
+  useEffect(() => {
+    if (cueAiMode !== "live") {
+      setLines([]);
+    }
+  }, [cueAiMode]);
   useEffect(() => {
     if (cueAiMode === "inactive") {
       setLines([]);
@@ -405,7 +476,11 @@ function ActiveLiveSession({
             {paused ? "Resume" : "Pause"}
           </Button>
           <Link
-            href={meetingId ? `/meetings/${meetingId}/summary` : "/meetings"}
+            href={
+              meetingId
+                ? withDesktopParam(`/meetings/${meetingId}/summary`)
+                : withDesktopParam("/meetings")
+            }
             onClick={() =>
               onEnd(
                 seconds,
@@ -503,10 +578,10 @@ function ActiveLiveSession({
             )}
             {cueAiMode === "live" && lines.length === 0 && (
               <div className="ls-empty">
-                <p className="text-sm font-medium">No transcript yet</p>
+                <p className="text-sm font-medium">Waiting for a question…</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Spoken audio from the companion will appear here. CueAI does not invent meeting
-                  dialogue.
+                  Live transcript appears here when Desktop Companion captures speech. CueAI does
+                  not invent meeting dialogue.
                 </p>
               </div>
             )}

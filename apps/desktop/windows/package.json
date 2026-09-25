@@ -1,0 +1,74 @@
+{
+  "name": "@cueai/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CueAI Windows Desktop Application",
+  "author": "CueAI",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.node.json --noEmit && vite build && tsc -p tsconfig.electron.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.28.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "37.10.3",
+    "electron-builder": "^26.0.12",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^7.0.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.cueai.desktop",
+    "productName": "CueAI",
+    "electronVersion": "37.10.3",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../shared/build-resources/web",
+        "to": "web"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "CueAI-${version}-portable.${ext}",
+      "signAndEditExecutable": false
+    },
+    "protocols": [
+      {
+        "name": "CueAI",
+        "schemes": ["cueai"]
+      }
+    ]
+  }
+}

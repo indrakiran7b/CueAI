@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/web",
+    "apps/desktop/windows",
+    "apps/desktop/macos"
   ],
   "scripts": {
     "dev": "npm run dev -w @cueai/web",
     "dev:web": "npm run dev -w @cueai/web",
+    "dev:web:desktop": "npm run dev:desktop -w @cueai/web",
     "dev:web:mac": "npm run dev:mac -w @cueai/web",
-    "dev:desktop": "npm run dev -w @cueai/desktop",
+    "dev:desktop": "node scripts/dev-windows.cjs",
+    "dev:desktop:electron": "npm run dev -w @cueai/desktop",
     "dev:desktop:mac": "npm run dev -w @cueai/desktop-mac",
     "dev:mac": "node scripts/dev-mac.cjs",
     "dev:vision": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\server.py",
@@ -25,6 +29,15 @@
     "start": "npm run start -w @cueai/web",
     "lint": "npm run lint -w @cueai/web",
     "test:e2e": "playwright test",
+    "test:e2e:ai-providers": "playwright test tests/web/e2e/ai-providers.spec.ts tests/web/e2e/ai-providers-visual.spec.ts",
+    "test:e2e:license": "playwright test tests/web/e2e/license.spec.ts tests/web/e2e/license-api.spec.ts",
+    "test:licenses": "node --test tests/licenses/licenses.test.mjs",
+    "generate:license-keys": "node scripts/generate-license-keys.mjs",
+    "generate:license": "node scripts/generate-license.mjs",
+    "client:server": "node scripts/start-remote-licensing.cjs",
+    "client:package": "node scripts/prepare-desktop-web.cjs && npm run dist:desktop",
+    "client:deploy-bundle": "node scripts/prepare-cloud-deploy.cjs",
+    "client:handoff": "node scripts/prepare-client-handoff.cjs",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:desktop": "node scripts/e2e-desktop-bridge.mjs"
   },

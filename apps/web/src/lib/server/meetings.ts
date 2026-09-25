@@ -1,12 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { readStore, updateStore, type DbMeeting, type DbMeetingLine } from "@/lib/server/db";
+import {
+  readStore,
+  updateStore,
+  type DbMeeting,
+  type DbMeetingLine,
+} from "@/lib/server/db";
+import type { SessionPayload } from "@/lib/server/session";
+import { normalizeRole } from "@/lib/roles";
+
+/** Meetings that belong in the Meetings history page. */
+export function isCompletedMeeting(m: DbMeeting): boolean {
+  return m.status === "completed" || m.status === "summary";
+}
+
+export function isLiveMeeting(m: DbMeeting): boolean {
+  return m.status === "live";
+}
+
+export function publicMeetingStatus(m: DbMeeting): "live" | "completed" | "incomplete" {
+  if (m.status === "live") return "live";
+  if (m.status === "incomplete") return "incomplete";
+  return "completed";
+}
 
 export function publicMeeting(m: DbMeeting, includePrivate = false) {
   return {
     id: m.id,
     title: m.title,
     kind: m.kind,
-    status: m.status,
+    status: publicMeetingStatus(m),
     startedAt: m.startedAt,
     endedAt: m.endedAt || null,
     durationSec: m.durationSec,
@@ -19,10 +41,29 @@ export function publicMeeting(m: DbMeeting, includePrivate = false) {
     transcript: m.transcript,
     answers: m.answers,
     summary: m.summary || null,
+    questionCount: m.answers.length,
+    answerCount: m.answers.filter((a) => Boolean(a.answer?.trim())).length,
     ...(includePrivate
       ? { jobDescription: m.jobDescription || null, resumeText: m.resumeText || null }
       : {}),
   };
+}
+
+/** User-owned history; Admins/Managers can see workspace meetings without an owner. */
+export function canAccessMeeting(
+  meeting: DbMeeting,
+  session: SessionPayload,
+): boolean {
+  if (meeting.workspaceId && meeting.workspaceId !== session.workspaceId) {
+    return false;
+  }
+  if (meeting.userId) {
+    if (meeting.userId === session.userId) return true;
+    const role = normalizeRole(session.role);
+    return role === "Admin" || role === "Manager";
+  }
+  const role = normalizeRole(session.role);
+  return role === "Admin" || role === "Manager";
 }
 
 export async function listMeetings() {
@@ -33,6 +74,49 @@ export async function listMeetings() {
 export async function listMeetingsForUser(userId: string) {
   const all = await listMeetings();
   return all.filter((m) => m.userId === userId);
+}
+
+/** Completed history for the authenticated user (never includes live sessions). */
+export async function listCompletedMeetingsForUser(session: SessionPayload) {
+  const all = await listMeetings();
+  return all.filter(
+    (m) =>
+      isCompletedMeeting(m) &&
+      m.workspaceId === session.workspaceId &&
+      m.userId === session.userId,
+  );
+}
+
+export function buildMeetingSummary(meeting: DbMeeting): string {
+  if (meeting.summary?.trim()) return meeting.summary.trim().slice(0, 4000);
+  const qa = meeting.answers.filter((a) => a.prompt.trim());
+  const answered = qa.filter((a) => a.answer.trim());
+  const lines: string[] = [];
+  lines.push(
+    `${meeting.kind === "interview" ? "Interview" : "Meeting"}: ${meeting.title}.`,
+  );
+  if (meeting.company) lines.push(`Company: ${meeting.company}.`);
+  if (meeting.resumeName) lines.push(`Resume: ${meeting.resumeName}.`);
+  lines.push(
+    `Recorded ${qa.length} question${qa.length === 1 ? "" : "s"} with ${answered.length} CueAI answer${answered.length === 1 ? "" : "s"}.`,
+  );
+  if (answered.length) {
+    lines.push("Key Q&A:");
+    for (const row of answered.slice(0, 8)) {
+      lines.push(`Q: ${row.prompt.slice(0, 200)}`);
+      lines.push(`A: ${row.answer.slice(0, 320)}`);
+    }
+  } else if (meeting.transcript.length) {
+    const speakers = meeting.transcript
+      .filter((t) => t.who !== "CueAI")
+      .slice(0, 6)
+      .map((t) => `${t.who}: ${t.text.slice(0, 160)}`);
+    if (speakers.length) {
+      lines.push("Transcript highlights:");
+      lines.push(...speakers);
+    }
+  }
+  return lines.join("\n").slice(0, 4000);
 }
 
 export async function getMeeting(id: string) {
@@ -50,7 +134,7 @@ export async function getActiveMeeting() {
   const store = await readStore();
   if (store.activeMeetingId) {
     const found = (store.meetings || []).find((m) => m.id === store.activeMeetingId);
-    if (found) return found;
+    if (found && found.status === "live") return found;
   }
   return (store.meetings || []).find((m) => m.status === "live") || null;
 }
@@ -143,6 +227,14 @@ export async function createMeeting(input: {
 
   await updateStore(async (s) => {
     if (!s.meetings) s.meetings = [];
+    // Only one live session — mark prior live as incomplete (not shown in history).
+    for (const prev of s.meetings) {
+      if (prev.status === "live" && prev.id !== meeting.id) {
+        prev.status = "incomplete";
+        prev.endedAt = prev.endedAt || now;
+        if (s.activeMeetingId === prev.id) s.activeMeetingId = null;
+      }
+    }
     meeting.workspaceId = s.workspace.id;
     s.meetings.unshift(meeting);
     s.meetings = s.meetings.slice(0, 200);
@@ -171,27 +263,113 @@ export async function appendMeetingExchange(
   meetingId: string,
   prompt: string,
   answer: string,
+  meta?: {
+    provider?: string;
+    model?: string;
+    latencyMs?: number;
+    source?: "auto" | "manual" | "screen";
+    questionWho?: string;
+    status?: "ok" | "failed";
+  },
 ) {
   const now = new Date().toISOString();
-  const clippedPrompt = prompt.slice(0, 2000);
-  const clippedAnswer = answer.slice(0, 4000);
+  const who = meta?.questionWho || "Interviewer";
   await updateStore(async (s) => {
     const meeting = (s.meetings || []).find((m) => m.id === meetingId);
-    if (!meeting) return;
-    const duplicate = meeting.answers.some(
-      (row) =>
-        row.prompt === clippedPrompt &&
-        row.answer === clippedAnswer &&
-        Math.abs(Date.parse(row.at) - Date.parse(now)) < 8000,
-    );
-    if (duplicate) return;
+    if (!meeting || meeting.status !== "live") return;
     meeting.answers.unshift({
-      prompt: clippedPrompt,
-      answer: clippedAnswer,
+      prompt: prompt.slice(0, 2000),
+      answer: answer.slice(0, 4000),
       at: now,
+      provider: meta?.provider,
+      model: meta?.model,
+      latencyMs: meta?.latencyMs,
+      source: meta?.source || "auto",
+      status: meta?.status || "ok",
+      questionWho: who,
     });
     meeting.answers = meeting.answers.slice(0, 80);
+    meeting.transcript.push({
+      who,
+      text: prompt.slice(0, 1000),
+      at: now,
+      source: who === "You" ? "microphone" : "system",
+    });
+    if (answer.trim()) {
+      meeting.transcript.push({
+        who: "CueAI",
+        text: answer.slice(0, 2000),
+        at: now,
+        source: "cueai",
+      });
+    }
+    meeting.transcript = meeting.transcript.slice(-200);
   });
+  console.log("[MEETING] Answer saved", { meetingId, provider: meta?.provider });
+}
+
+export async function appendMeetingTranscript(
+  meetingId: string,
+  lines: { who: string; text: string; source?: DbMeetingLine["source"] }[],
+) {
+  if (!lines.length) return;
+  const now = new Date().toISOString();
+  await updateStore(async (s) => {
+    const meeting = (s.meetings || []).find((m) => m.id === meetingId);
+    if (!meeting || meeting.status !== "live") return;
+    for (const line of lines) {
+      const text = line.text.trim().slice(0, 1000);
+      if (!text) continue;
+      meeting.transcript.push({
+        who: line.who.slice(0, 40) || "Speaker",
+        text,
+        at: now,
+        source: line.source,
+      });
+    }
+    meeting.transcript = meeting.transcript.slice(-200);
+  });
+  console.log("[MEETING] Transcript event saved", { meetingId, n: lines.length });
+}
+
+export async function appendMeetingQuestionOnly(
+  meetingId: string,
+  question: string,
+  questionWho = "Interviewer",
+) {
+  const now = new Date().toISOString();
+  await updateStore(async (s) => {
+    const meeting = (s.meetings || []).find((m) => m.id === meetingId);
+    if (!meeting || meeting.status !== "live") return;
+    meeting.answers.unshift({
+      prompt: question.slice(0, 2000),
+      answer: "",
+      at: now,
+      status: "failed",
+      source: "auto",
+      questionWho,
+    });
+    meeting.answers = meeting.answers.slice(0, 80);
+    meeting.transcript.push({
+      who: questionWho,
+      text: question.slice(0, 1000),
+      at: now,
+      source: "system",
+    });
+    meeting.transcript = meeting.transcript.slice(-200);
+  });
+  console.log("[MEETING] Question saved", { meetingId });
+}
+
+export async function deleteMeeting(meetingId: string): Promise<boolean> {
+  let deleted = false;
+  await updateStore(async (s) => {
+    const before = (s.meetings || []).length;
+    s.meetings = (s.meetings || []).filter((m) => m.id !== meetingId);
+    deleted = s.meetings.length < before;
+    if (s.activeMeetingId === meetingId) s.activeMeetingId = null;
+  });
+  return deleted;
 }
 
 export async function finalizeMeeting(
@@ -205,9 +383,6 @@ export async function finalizeMeeting(
   await updateStore(async (s) => {
     const meeting = (s.meetings || []).find((m) => m.id === meetingId);
     if (!meeting) return;
-    meeting.status = "summary";
-    meeting.endedAt = new Date().toISOString();
-    if (typeof patch.durationSec === "number") meeting.durationSec = Math.max(0, patch.durationSec);
     if (patch.transcript?.length) {
       const seen = new Set(meeting.transcript.map(transcriptEventKey));
       for (const line of patch.transcript) {
@@ -218,7 +393,17 @@ export async function finalizeMeeting(
       }
       meeting.transcript = meeting.transcript.slice(-200);
     }
-    if (patch.summary) meeting.summary = patch.summary.slice(0, 4000);
+    if (typeof patch.durationSec === "number") {
+      meeting.durationSec = Math.max(0, patch.durationSec);
+    } else if (!meeting.durationSec && meeting.startedAt) {
+      meeting.durationSec = Math.max(
+        0,
+        Math.round((Date.now() - new Date(meeting.startedAt).getTime()) / 1000),
+      );
+    }
+    meeting.endedAt = new Date().toISOString();
+    meeting.summary = (patch.summary?.trim() || buildMeetingSummary(meeting)).slice(0, 4000);
+    meeting.status = "completed";
     if (s.activeMeetingId === meetingId) s.activeMeetingId = null;
   });
 }

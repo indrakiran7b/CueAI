@@ -29,25 +29,6 @@ def _round(v: Optional[float], nd: int = 3) -> Optional[float]:
     return round(v, nd) if v is not None else None
 
 
-def _cost_sum(ok: pd.DataFrame) -> str:
-    if "total_cost" not in ok.columns:
-        return "UNKNOWN"
-    vals: list[float] = []
-    for v in ok["total_cost"].tolist():
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            continue
-        text = str(v).strip()
-        if not text or text.upper() == "UNKNOWN":
-            continue
-        try:
-            vals.append(float(text))
-        except ValueError:
-            continue
-    if not vals:
-        return "UNKNOWN"
-    return f"{sum(vals):.8f}"
-
-
 def summarize_models(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
@@ -113,38 +94,10 @@ def summarize_models(df: pd.DataFrame) -> pd.DataFrame:
                     1,
                 ),
                 "Accuracy": _round(_mean(acc_scores), 4),
-                "Avg Quality": _round(
-                    _mean(
-                        [float(x) for x in ok["quality"].dropna().tolist()]
-                        if "quality" in ok
-                        else []
-                    ),
-                    4,
-                ),
-                "Avg Relevance": _round(
-                    _mean(
-                        [float(x) for x in ok["relevance"].dropna().tolist()]
-                        if "relevance" in ok
-                        else []
-                    ),
-                    4,
-                ),
-                "Avg Instruction Following": _round(
-                    _mean(
-                        [
-                            float(x)
-                            for x in ok["instruction_following"].dropna().tolist()
-                        ]
-                        if "instruction_following" in ok
-                        else []
-                    ),
-                    4,
-                ),
                 "Error Rate": _round((n_fail / n_total) if n_total else 0.0, 4),
                 "Timeout Rate": _round((n_timeout / n_total) if n_total else 0.0, 4),
                 "Errors": n_fail,
                 "Timeouts": n_timeout,
-                "Total Cost": _cost_sum(ok) if "total_cost" in group.columns else "UNKNOWN",
             }
         )
     return pd.DataFrame(rows)
@@ -176,12 +129,8 @@ def summarize_questions(df: pd.DataFrame) -> pd.DataFrame:
             {
                 "question_id": qid,
                 "category": category,
-                "difficulty": (
-                    str(group["difficulty"].iloc[0]) if "difficulty" in group else ""
-                ),
                 "question": question,
                 "provider": provider,
-                "model": model_name,
                 "model_name": model_name,
                 "model_id": model_id,
                 "runs": n_total,
@@ -190,7 +139,6 @@ def summarize_questions(df: pd.DataFrame) -> pd.DataFrame:
                 "avg_total_latency_ms": _round(_mean(totals)),
                 "avg_tokens_per_sec": _round(_mean(tps), 2),
                 "accuracy": _round(_mean(acc_scores), 4),
-                "status": "SUCCESS" if n_ok == n_total else ("MIXED" if n_ok else "FAILED"),
             }
         )
     return pd.DataFrame(rows)
@@ -204,9 +152,8 @@ def summarize_categories(df: pd.DataFrame) -> pd.DataFrame:
     for keys, group in df.groupby(["category", "provider", "model_name", "model_id"], sort=False):
         category, provider, model_name, model_id = keys
         ok = group[group["status"] == "SUCCESS"]
-        ttfts = sorted(float(x) for x in ok["ttft_ms"].dropna().tolist())
-        totals = sorted(float(x) for x in ok["total_latency_ms"].dropna().tolist())
-        tps = [float(x) for x in ok["tokens_per_second"].dropna().tolist()]
+        ttfts = [float(x) for x in ok["ttft_ms"].dropna().tolist()]
+        totals = [float(x) for x in ok["total_latency_ms"].dropna().tolist()]
         acc_scores: list[float] = []
         for _, r in ok.iterrows():
             v = accuracy_numeric(
@@ -221,26 +168,14 @@ def summarize_categories(df: pd.DataFrame) -> pd.DataFrame:
             {
                 "category": category,
                 "provider": provider,
-                "model": model_name,
+                "model_name": model_name,
                 "model_id": model_id,
                 "questions": int(group["question_id"].nunique()) if "question_id" in group else n_total,
                 "requests": n_total,
                 "success_rate": _round((n_ok / n_total) if n_total else 0.0, 4),
-                "average_ttft_ms": _round(_mean(ttfts)),
-                "median_ttft_ms": _round(_percentile(ttfts, 50)),
-                "p90_ttft_ms": _round(_percentile(ttfts, 90)),
-                "average_total_latency_ms": _round(_mean(totals)),
-                "p90_total_latency_ms": _round(_percentile(totals, 90)),
-                "average_tokens_per_sec": _round(_mean(tps), 2),
+                "avg_ttft_ms": _round(_mean(ttfts)),
+                "avg_total_latency_ms": _round(_mean(totals)),
                 "accuracy": _round(_mean(acc_scores), 4),
-                "quality": _round(
-                    _mean(
-                        [float(x) for x in ok["quality"].dropna().tolist()]
-                        if "quality" in ok
-                        else []
-                    ),
-                    4,
-                ),
             }
         )
     return pd.DataFrame(rows)

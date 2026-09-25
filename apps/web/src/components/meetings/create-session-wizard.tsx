@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Briefcase,
@@ -171,9 +170,9 @@ export function CreateSessionWizard({
               onClick={() => {
                 patch({
                   kind: "interview",
-                  company: "Mock Company",
+                  company: "",
                   jobDescription:
-                    "Practice behavioral and system design questions for a senior software engineer role.",
+                    "Practice interview — answer behavioral and system design questions for a software engineer role. (No specific company selected.)",
                 });
                 setStep(1);
               }}
@@ -337,11 +336,7 @@ export function CreateSessionWizard({
                       ) : null}
                       {resumes.length === 0 && (
                         <p className="text-xs text-subtle">
-                          Upload here or on{" "}
-                          <Link href="/resume" className="text-primary hover:underline">
-                            Resume Tailor
-                          </Link>
-                          .
+                          Upload a PDF here so CueAI can use it for this session.
                         </p>
                       )}
                     </div>

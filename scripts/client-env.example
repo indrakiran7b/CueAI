@@ -1,0 +1,14 @@
+# CueAI remote client configuration
+# Save this file as workspace-data/.env inside the client's app data folder.
+#
+# Windows app data (replace YOUR_USER):
+#   C:\Users\YOUR_USER\AppData\Roaming\cueai-desktop\workspace-data\.env
+#
+# Or place next to the portable exe and use scripts/launch-client-desktop.ps1
+# which sets these vars automatically.
+#
+# Get CUEAI_WEB_URL and LICENSE_SIGNING_PUBLIC_KEY from your CueAI admin.
+
+CUEAI_WEB_URL=https://YOUR-SUBDOMAIN.ngrok-free.app
+LICENSE_SIGNING_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nPASTE_YOUR_PUBLIC_KEY_HERE\n-----END PUBLIC KEY-----"
+LICENSE_ENFORCEMENT=true

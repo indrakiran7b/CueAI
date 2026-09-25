@@ -18,7 +18,9 @@ export type AdminPermission =
   | "retention.write"
   | "audit.read"
   | "devices.read"
-  | "devices.write";
+  | "devices.write"
+  | "licenses.read"
+  | "licenses.write";
 
 const MATRIX: Record<WorkspaceRole, AdminPermission[]> = {
   Admin: [
@@ -40,6 +42,8 @@ const MATRIX: Record<WorkspaceRole, AdminPermission[]> = {
     "audit.read",
     "devices.read",
     "devices.write",
+    "licenses.read",
+    "licenses.write",
   ],
   Manager: [
     "admin.access",
@@ -51,6 +55,7 @@ const MATRIX: Record<WorkspaceRole, AdminPermission[]> = {
     "privacy.read",
     "audit.read",
     "devices.read",
+    "licenses.read",
   ],
   User: [],
 };
@@ -97,6 +102,8 @@ export const ALL_ADMIN_PERMISSIONS: AdminPermission[] = [
   "audit.read",
   "devices.read",
   "devices.write",
+  "licenses.read",
+  "licenses.write",
 ];
 
 export function can(role: string | null | undefined, permission: AdminPermission): boolean {

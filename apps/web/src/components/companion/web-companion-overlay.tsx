@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { getDesktop, type MeetingSession } from "@/lib/desktop";
 import { CompanionAI } from "./companion-services";
 import { useWebCompanion } from "./web-companion-provider";
+import { WEB_COMPANION_ANSWER_EVENT } from "./web-companion-provider";
 
 type Pos = { x: number; y: number };
 
@@ -39,11 +40,6 @@ function overlaySize(
     height: boardOpen ? Math.min(540, maxH) : menuOpen ? Math.min(340, maxH) : 76,
   };
 }
-
-const transcriptSeed = [
-  { who: "Sarah", text: "Can we ship before the board meeting?" },
-  { who: "Alex", text: "If QA finishes by Thursday, yes." },
-];
 
 function answerLines(text: string) {
   const bullets = text
@@ -112,6 +108,20 @@ export function WebCompanionOverlay() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    function onAnswer(e: Event) {
+      const detail = (e as CustomEvent<{ answer?: string; question?: string }>).detail;
+      const next = detail?.answer?.trim();
+      if (!next) return;
+      setQuestion(detail?.question?.trim() || "Screen context");
+      setAnswer(next);
+      setStreaming(false);
+      setNotice(null);
+    }
+    window.addEventListener(WEB_COMPANION_ANSWER_EVENT, onAnswer);
+    return () => window.removeEventListener(WEB_COMPANION_ANSWER_EVENT, onAnswer);
   }, []);
 
   useEffect(() => {
@@ -226,7 +236,7 @@ export function WebCompanionOverlay() {
     if (!image) rememberQuestion(q);
     setStreaming(true);
     try {
-      const result = await CompanionAI.ask(q, transcriptSeed, image);
+      const result = await CompanionAI.ask(q, [], image);
       setAnswer(result.answer);
       setNotice(result.notice ?? null);
     } finally {

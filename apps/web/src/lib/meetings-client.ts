@@ -5,7 +5,7 @@ export type StoredMeeting = {
   id: string;
   title: string;
   kind: "interview" | "regular";
-  status: "live" | "summary";
+  status: "live" | "summary" | "completed" | "incomplete";
   startedAt: string;
   endedAt?: string | null;
   durationSec: number;
@@ -17,6 +17,8 @@ export type StoredMeeting = {
   transcript: { who: string; text: string; at?: string }[];
   answers: { prompt: string; answer: string; at: string }[];
   summary?: string | null;
+  questionCount?: number;
+  answerCount?: number;
 };
 
 export function formatMeetingWhen(iso: string) {

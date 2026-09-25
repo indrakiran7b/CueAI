@@ -21,6 +21,7 @@ export type CueSession = {
   workspace: string;
   workspaceId?: string;
   role?: WorkspaceRole;
+  plan?: "free" | "premium";
   /** False until the post-signup questionnaire is submitted or skipped. */
   onboardingCompleted?: boolean;
 };
@@ -32,6 +33,7 @@ type ApiUser = {
   workspace: string;
   workspaceId?: string;
   role?: WorkspaceRole;
+  plan?: "free" | "premium";
   onboardingCompleted?: boolean;
 };
 
@@ -122,6 +124,7 @@ function sessionFromApiUser(user: ApiUser): CueSession {
     workspace: user.workspace,
     workspaceId: user.workspaceId,
     role: normalizeRole(user.role),
+    plan: user.plan === "premium" ? "premium" : "free",
     onboardingCompleted: Boolean(user.onboardingCompleted),
   });
 }

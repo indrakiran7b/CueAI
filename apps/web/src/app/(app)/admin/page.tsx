@@ -15,6 +15,7 @@ import {
   FilePenLine,
   KeyRound,
   Laptop,
+  Ticket,
   Lock,
   Mail,
   Plus,
@@ -37,6 +38,7 @@ import {
 } from "recharts";
 import { RequireAdmin } from "@/components/auth/require-admin";
 import { AdminDevicesPanel } from "@/components/admin/admin-devices-panel";
+import { AdminLicensesPanel } from "@/components/admin/admin-licenses-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +70,7 @@ type NavId =
   | "retention"
   | "audit"
   | "devices"
+  | "licenses"
   | "settings";
 
 const NAV: Array<{
@@ -81,16 +84,15 @@ const NAV: Array<{
   { id: "users", label: "Users", icon: Users, permission: "users.read" },
   { id: "invitations", label: "Invitations", icon: Mail, permission: "users.read" },
   { id: "roles", label: "Roles", icon: Shield, permission: "users.read" },
-  { id: "knowledge", label: "Knowledge", icon: BookOpen, permission: "knowledge.read" },
   { id: "providers", label: "AI Providers", icon: KeyRound, permission: "ai.read" },
   { id: "models", label: "AI Models", icon: Bot, permission: "ai.read" },
   { id: "tokens", label: "Token Usage", icon: Cpu, permission: "usage.read" },
   { id: "meetings", label: "Meeting Minutes", icon: Clock3, permission: "usage.read" },
-  { id: "resume", label: "Resume Rewrite", icon: FilePenLine, permission: "usage.read" },
   { id: "privacy", label: "Privacy", icon: Lock, permission: "privacy.read" },
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
   { id: "audit", label: "Activity Log", icon: ScrollText, permission: "audit.read" },
   { id: "devices", label: "Mac devices", icon: Laptop, permission: "devices.read" },
+  { id: "licenses", label: "Licenses", icon: Ticket, permission: "licenses.read" },
   { id: "settings", label: "Settings", icon: Settings, permission: "workspace.read" },
 ];
 
@@ -436,6 +438,12 @@ function AdminPortalInner() {
     () => NAV.filter((item) => can(role, item.permission)),
     [role],
   );
+
+  useEffect(() => {
+    if (!visibleNav.some((item) => item.id === tab)) {
+      setTab("overview");
+    }
+  }, [visibleNav, tab]);
   const permissions = useMemo(() => rolePermissionMatrix(), []);
 
   const fail = (cause: unknown, fallback: string) => {
@@ -466,13 +474,6 @@ function AdminPortalInner() {
           api<{ users: User[] }>("/api/admin/users").then((data) => setUsers(data.users)),
           api<{ invites: Invite[] }>("/api/admin/invites").then((data) =>
             setInvites(data.invites),
-          ),
-        );
-      }
-      if (can(role, "knowledge.read")) {
-        requests.push(
-          api<{ items: KnowledgeItem[] }>("/api/admin/knowledge").then((data) =>
-            setKnowledge(data.items),
           ),
         );
       }
@@ -678,33 +679,25 @@ function AdminPortalInner() {
             {tab === "overview" && overview && (
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {overview.metrics.activeUsers > 0 && (
-                    <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
-                  )}
-                  {overview.metrics.pendingInvites > 0 && (
-                    <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
-                  )}
-                  {overview.metrics.knowledgeItems > 0 && (
-                    <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
-                  )}
-                  {overview.metrics.periodTokenUsage > 0 && (
-                    <Metric icon={Cpu} label="Tokens this period" value={overview.metrics.periodTokenUsage.toLocaleString()} />
-                  )}
-                  {overview.metrics.periodMeetingSessions > 0 && (
-                    <Metric icon={Clock3} label="Meetings processed" value={overview.metrics.periodMeetingSessions} />
-                  )}
-                  {overview.metrics.periodResumeRewrites > 0 && (
-                    <Metric icon={FilePenLine} label="Resume rewrites" value={overview.metrics.periodResumeRewrites} />
-                  )}
+                  <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
+                  <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
+                  <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
+                  <Metric
+                    icon={Cpu}
+                    label="Tokens this period"
+                    value={overview.metrics.periodTokenUsage.toLocaleString()}
+                  />
+                  <Metric
+                    icon={Clock3}
+                    label="Meetings processed"
+                    value={overview.metrics.periodMeetingSessions}
+                  />
+                  <Metric
+                    icon={FilePenLine}
+                    label="Resume rewrites"
+                    value={overview.metrics.periodResumeRewrites}
+                  />
                 </div>
-                {!overview.metrics.activeUsers &&
-                  !overview.metrics.pendingInvites &&
-                  !overview.metrics.knowledgeItems &&
-                  !overview.metrics.periodTokenUsage &&
-                  !overview.metrics.periodMeetingSessions &&
-                  !overview.metrics.periodResumeRewrites && (
-                    <Card><Empty>No workspace activity yet.</Empty></Card>
-                  )}
                 <Card className="p-5">
                   <SectionTitle
                     icon={Activity}
@@ -1416,11 +1409,20 @@ function AdminPortalInner() {
                                       onClick={() =>
                                         void mutate(
                                           `test-${provider.id}`,
-                                          () =>
-                                            api<{ ok: boolean; message?: string }>("/api/admin/ai", {
+                                          async () => {
+                                            const result = await api<{
+                                              ok: boolean;
+                                              message?: string;
+                                              error?: string;
+                                            }>("/api/admin/ai", {
                                               method: "POST",
                                               body: JSON.stringify({ providerId: provider.id }),
-                                            }),
+                                            });
+                                            if (!result.ok) {
+                                              throw new Error(result.error || "Connection failed.");
+                                            }
+                                            return result;
+                                          },
                                           "Connection successful.",
                                         )
                                       }
@@ -1536,6 +1538,7 @@ function AdminPortalInner() {
                             <th className="py-2 pr-3">Provider</th>
                             <th className="py-2 pr-3">Capability</th>
                             <th className="py-2 pr-3">Status</th>
+                            <th className="py-2 pr-3">Default</th>
                             <th className="py-2">Actions</th>
                           </tr>
                         </thead>
@@ -1554,6 +1557,9 @@ function AdminPortalInner() {
                                 <Badge variant={model.enabled ? "success" : "warning"}>
                                   {model.enabled ? "Enabled" : "Disabled"}
                                 </Badge>
+                              </td>
+                              <td className="py-3 pr-3">
+                                {model.isDefault ? <Badge variant="info">Default</Badge> : "—"}
                               </td>
                               <td className="py-3">
                                 {can(role, "ai.write") && (
@@ -1902,6 +1908,8 @@ function AdminPortalInner() {
             )}
 
             {tab === "devices" && <AdminDevicesPanel />}
+
+            {tab === "licenses" && <AdminLicensesPanel />}
 
             {tab === "settings" && (
               <Card className="p-5">

@@ -32,6 +32,14 @@ export type ScreenshotResult = {
   savedPath?: string | null;
   error?: string;
   displayId?: number;
+  meta?: {
+    width: number;
+    height: number;
+    bytes: number;
+    displayId: number;
+    displayLabel?: string;
+    sourceName?: string;
+  };
 };
 
 export type MacPermissionState =
@@ -52,14 +60,17 @@ export type MacPermissionsSnapshot = {
   systemAudio: MacPermissionStatus;
 };
 
-export type MacDisplayInfo = {
+export type CaptureDisplay = {
   id: number;
   label: string;
   bounds: { x: number; y: number; width: number; height: number };
+  workArea?: { x: number; y: number; width: number; height: number };
   scaleFactor: number;
   primary: boolean;
-  internal: boolean;
+  internal?: boolean;
 };
+
+export type MacDisplayInfo = CaptureDisplay;
 
 export type CueDesktopAPI = {
   isDesktop: true;
@@ -98,9 +109,17 @@ export type CueDesktopAPI = {
   endSession?: () => Promise<MeetingSession>;
   onCaptureStatus?: (cb: (status: CaptureStatus) => void) => () => void;
   onListenSources?: (cb: (sources: { mic: boolean; systemAudio: boolean }) => void) => () => void;
-  captureScreenshot?: (opts?: { save?: boolean; displayId?: number }) => Promise<ScreenshotResult>;
-  listDisplays?: () => Promise<MacDisplayInfo[]>;
+  captureScreenshot?: (opts?: {
+    save?: boolean;
+    displayId?: number | null;
+  }) => Promise<ScreenshotResult>;
+  listDisplays?: () => Promise<CaptureDisplay[]>;
   listWindows?: () => Promise<{ id: string; name: string; displayId?: string }[]>;
+  pushCompanionAnswer?: (payload: {
+    answer: string;
+    question?: string;
+    status?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   getPermissions?: () => Promise<MacPermissionsSnapshot>;
   requestPermission?: (
     kind: "microphone" | "screen" | "systemAudio"
@@ -135,6 +154,40 @@ export type CueDesktopAPI = {
     cleared: boolean;
     identityPreserved: boolean;
   }>;
+  getLicenseDevice?: () => Promise<{
+    deviceId: string;
+    maskedId: string;
+    deviceName: string;
+    platform: "windows" | "macos";
+    appVersion: string;
+    secureStorageAvailable: boolean;
+  }>;
+  getLicenseStatus?: () => Promise<LicenseStatusPayload>;
+  activateLicense?: (licenseKey: string) => Promise<LicenseStatusPayload>;
+  validateLicense?: () => Promise<LicenseStatusPayload>;
+  deactivateLicense?: () => Promise<LicenseStatusPayload>;
+};
+
+export type LicenseStatusPayload = {
+  ok: boolean;
+  state:
+    | "ACTIVE"
+    | "EXPIRED"
+    | "REVOKED"
+    | "INVALID"
+    | "DEVICE_LIMIT_REACHED"
+    | "NOT_ACTIVATED"
+    | "NETWORK_ERROR";
+  authorized: boolean;
+  message?: string;
+  clientName?: string;
+  licenseType?: string;
+  expiresAt?: string;
+  devicesActive?: number;
+  maxDevices?: number;
+  licenseId?: string;
+  deviceId?: string;
+  platform?: "windows" | "macos";
 };
 
 declare global {
@@ -423,4 +476,107 @@ export async function startDesktopMeetingSession(
   if (session.showCompanion === true) dispatchWebCompanion("open");
   if (session.hideCompanion === true) dispatchWebCompanion("close");
   return session;
+}
+
+export type CompanionAnswerPayload = {
+  answer: string;
+  question?: string;
+  status?: string;
+};
+
+/**
+ * Push a Screen Context answer into the Desktop Companion (primary UI).
+ * Falls back to the in-page web companion when Desktop is unavailable.
+ */
+export async function pushCompanionAnswer(
+  payload: CompanionAnswerPayload
+): Promise<"native" | "web" | "failed"> {
+  const answer = payload.answer?.trim();
+  if (!answer) return "failed";
+  const body = {
+    answer,
+    question: payload.question?.trim() || undefined,
+    status: payload.status || "ready",
+  };
+
+  const desktop = getDesktop();
+  if (desktop?.pushCompanionAnswer) {
+    await desktop.showCompanion();
+    const result = await desktop.pushCompanionAnswer(body);
+    return result?.ok ? "native" : "failed";
+  }
+
+  if (
+    await bridgeFetch("/companion/answer", {
+      method: "POST",
+      body: JSON.stringify(body),
+    })
+  ) {
+    return "native";
+  }
+
+  const { dispatchWebCompanion, dispatchWebCompanionAnswer } = await import(
+    "@/components/companion/web-companion-provider"
+  );
+  dispatchWebCompanion("open");
+  dispatchWebCompanionAnswer(body);
+  return "web";
+}
+
+/** List physical monitors from CueAI Desktop (IPC or loopback bridge). */
+export async function listDesktopDisplays(): Promise<CaptureDisplay[]> {
+  const desktop = getDesktop();
+  if (desktop?.listDisplays) {
+    try {
+      const displays = await desktop.listDisplays();
+      if (Array.isArray(displays) && displays.length) return displays;
+    } catch {
+      /* fall through to bridge */
+    }
+  }
+
+  const payload = await bridgeFetchJson<{ ok?: boolean; displays?: CaptureDisplay[] }>(
+    "/displays",
+    { method: "GET" }
+  );
+  return Array.isArray(payload?.displays) ? payload.displays : [];
+}
+
+/**
+ * Capture a physical display via CueAI Desktop native capture.
+ * Never uses getDisplayMedia / html2canvas / BrowserWindow capture.
+ */
+export async function captureDesktopScreenshot(opts?: {
+  displayId?: number | null;
+}): Promise<ScreenshotResult> {
+  const desktop = getDesktop();
+  if (desktop?.captureScreenshot) {
+    return desktop.captureScreenshot({
+      save: false,
+      displayId: opts?.displayId ?? null,
+    });
+  }
+
+  const payload = await bridgeFetchJson<ScreenshotResult & { ok?: boolean }>(
+    "/screenshot",
+    {
+      method: "POST",
+      body: JSON.stringify({ displayId: opts?.displayId ?? null }),
+    }
+  );
+
+  if (!payload) {
+    return {
+      ok: false,
+      error:
+        "CueAI Desktop is required to capture your screen. Open CueAI Desktop and try again.",
+    };
+  }
+
+  return {
+    ok: Boolean(payload.ok && payload.dataUrl),
+    dataUrl: payload.dataUrl,
+    error: payload.error,
+    meta: payload.meta,
+  };
 }

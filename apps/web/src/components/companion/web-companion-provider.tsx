@@ -14,6 +14,7 @@ import { WebCompanionOverlay } from "./web-companion-overlay";
 
 export const WEB_COMPANION_EVENT = "cueai:web-companion";
 export const WEB_COMPANION_SESSION_EVENT = "cueai:web-companion-session";
+export const WEB_COMPANION_ANSWER_EVENT = "cueai:web-companion-answer";
 const STORAGE_KEY = "cueai-web-companion-open";
 
 export type WebCompanionAction = "open" | "close" | "toggle";
@@ -82,6 +83,18 @@ export function dispatchWebCompanionSession(session: Partial<MeetingSession>) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(WEB_COMPANION_SESSION_EVENT, { detail: { session } })
+  );
+}
+
+/** Push an AI answer into the in-page companion (browser fallback). */
+export function dispatchWebCompanionAnswer(payload: {
+  answer: string;
+  question?: string;
+  status?: string;
+}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(WEB_COMPANION_ANSWER_EVENT, { detail: payload })
   );
 }
 
