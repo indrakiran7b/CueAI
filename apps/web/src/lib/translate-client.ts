@@ -50,8 +50,9 @@ async function requestTranslations(
   targetLanguage: TranslateLang,
   sourceLanguage: string,
   signal?: AbortSignal,
+  endpoint = "/api/translate",
 ): Promise<string[]> {
-  const res = await fetch("/api/translate", {
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ texts, targetLanguage, sourceLanguage }),
@@ -78,7 +79,7 @@ async function requestTranslations(
 export async function translateTexts(
   texts: string[],
   targetLanguage: TranslateLang,
-  opts?: { sourceLanguage?: string; signal?: AbortSignal },
+  opts?: { sourceLanguage?: string; signal?: AbortSignal; endpoint?: string },
 ): Promise<TranslateResult[]> {
   const sourceOpt = opts?.sourceLanguage || "auto";
   const results: TranslateResult[] = texts.map(() => ({ text: "", status: "ok" }));
@@ -131,6 +132,7 @@ export async function translateTexts(
       targetLanguage,
       sourceOpt,
       opts?.signal,
+      opts?.endpoint,
     );
     needFetchKeys.forEach((key, i) => {
       const promise = batchPromise

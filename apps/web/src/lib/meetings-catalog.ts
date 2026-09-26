@@ -51,6 +51,7 @@ export type MeetingRecord = {
   risks: Array<{ type: "risk" | "question"; text: string }>;
   actionItems: MeetingActionItem[];
   transcript: TranscriptLine[];
+  transcriptLineCount?: number;
   aiAnswers: MeetingAiAnswer[];
   emailSubject: string;
   emailBody: string;

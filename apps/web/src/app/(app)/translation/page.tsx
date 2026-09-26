@@ -207,7 +207,7 @@ function TranslationContent() {
     void translateTexts(
       jobs.map((job) => job.text),
       target,
-      { signal: controller.signal },
+      { signal: controller.signal, endpoint: "/api/admin/translate" },
     )
       .then((results) => {
         if (cancelled) return;

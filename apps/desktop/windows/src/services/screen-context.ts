@@ -3,6 +3,7 @@
  * Never holds API keys in the renderer.
  */
 
+import { pollJobUntilDone } from "../../../shared/poll-job";
 import { createLatencyTracker, pipelineLog } from "./pipeline-log";
 
 export type ScreenContextAnswer = {
@@ -60,6 +61,7 @@ export async function requestScreenContext(input: {
   }
 
   const data = (await res.json().catch(() => ({}))) as {
+    jobId?: string;
     ok?: boolean;
     answer?: string;
     confidence?: number;
@@ -68,7 +70,32 @@ export async function requestScreenContext(input: {
     error?: string;
   };
 
-  if (!res.ok || !data.answer?.trim()) {
+  if (!res.ok) {
+    throw new ScreenContextUnavailable(
+      data.error || "Unable to analyze the screen. Please try again.",
+    );
+  }
+
+  let answer = data.answer?.trim() || "";
+  let confidence = typeof data.confidence === "number" ? data.confidence : 0.75;
+  let model = data.model || "gemini";
+  let provider = data.provider || "gemini";
+
+  if (data.jobId && !answer) {
+    input.onProgress?.("analyzing");
+    const job = await pollJobUntilDone({
+      apiBase,
+      jobId: data.jobId,
+      signal: input.signal,
+    });
+    const result = job.result;
+    answer = result?.answer?.trim() || "";
+    confidence = typeof result?.confidence === "number" ? result.confidence : 0.75;
+    model = result?.model || "gemini";
+    provider = result?.provider || "gemini";
+  }
+
+  if (!answer) {
     throw new ScreenContextUnavailable(
       data.error || "Unable to analyze the screen. Please try again.",
     );
@@ -78,14 +105,14 @@ export async function requestScreenContext(input: {
   latency.mark("answerVisible");
   latency.report("screen_context");
   pipelineLog("overlay", "[SCREEN-AI] First response received", {
-    provider: data.provider || "gemini",
-    chars: data.answer.length,
+    provider,
+    chars: answer.length,
   });
 
   return {
-    answer: data.answer.trim(),
-    confidence: typeof data.confidence === "number" ? data.confidence : 0.75,
-    model: data.model || "gemini",
-    provider: data.provider || "gemini",
+    answer,
+    confidence,
+    model,
+    provider,
   };
 }

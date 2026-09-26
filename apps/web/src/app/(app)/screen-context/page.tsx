@@ -150,12 +150,13 @@ export default function ScreenContextPage() {
       });
 
       const payload = (await res.json().catch(() => ({}))) as {
+        jobId?: string;
         ok?: boolean;
         answer?: string;
         error?: string;
       };
 
-      if (!res.ok || !payload.answer?.trim()) {
+      if (!res.ok) {
         console.error("[SCREEN-AI] Vision failed", payload.error);
         setAiStatus("error");
         setStatusLabel(
@@ -167,8 +168,25 @@ export default function ScreenContextPage() {
         return;
       }
 
+      let answer = payload.answer?.trim() || "";
+      if (payload.jobId && !answer) {
+        const { pollJobUntilDone } = await import("@/lib/poll-job");
+        const job = await pollJobUntilDone({ jobId: payload.jobId });
+        answer = job.result?.answer?.trim() || "";
+        if (job.status === "failed" || !answer) {
+          throw new Error(job.error || "Screen analysis failed");
+        }
+      }
+
+      if (!answer) {
+        console.error("[SCREEN-AI] Vision failed", payload.error);
+        setAiStatus("error");
+        setStatusLabel("Unable to analyze the screen. Please try again.");
+        setAiAnswer(null);
+        return;
+      }
+
       console.log("[SCREEN-AI] First response received");
-      const answer = payload.answer.trim();
       setAiAnswer(answer);
       setAiStatus("ready");
       setStatusLabel("Answer ready");

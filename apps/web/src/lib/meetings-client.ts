@@ -15,6 +15,8 @@ export type StoredMeeting = {
   resumeName?: string | null;
   description?: string | null;
   transcript: { who: string; text: string; at?: string }[];
+  transcriptLocked?: boolean;
+  transcriptLineCount?: number;
   answers: { prompt: string; answer: string; at: string }[];
   summary?: string | null;
   questionCount?: number;
@@ -113,6 +115,7 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
     keyDecisions: [],
     risks: [],
     actionItems: [],
+    transcriptLineCount: meeting.transcriptLineCount ?? meeting.transcript.length,
     transcript: transcript.map((line, index) => ({
       id: `${meeting.id}-t-${line.at || "na"}-${index}`,
       speaker: line.who,

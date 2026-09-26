@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import { requireAuth } from "@/lib/server/api-auth";
 import { readStore } from "@/lib/server/db";
 
 export async function GET(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/workspaces");
+  if (proxied) return proxied;
+
   const { error, session } = await requireAuth(req);
   if (error || !session) return error;
   const store = await readStore();
@@ -20,6 +24,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/workspaces");
+  if (proxied) return proxied;
+
   const { error, session } = await requireAuth(req);
   if (error || !session) return error;
   const body = (await req.json().catch(() => null)) as { workspaceId?: string } | null;

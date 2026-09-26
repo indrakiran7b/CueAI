@@ -10,6 +10,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  FileText,
   PanelLeft,
   AppWindow,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/meetings", label: "Meetings", icon: Video },
   { href: "/meetings/live", label: "Live Session", icon: Sparkles },
+  { href: "/resume", label: "Resume Tailor", icon: FileText, adminExtra: true as const },
   { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
   { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
   { href: "/companion", label: "Desktop Companion", icon: AppWindow },

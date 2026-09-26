@@ -75,6 +75,11 @@ apps/desktop/shared/build-resources/
 # Local Qwen2.5-VL weights
 .models/
 tools/qwen-vl/.venv/
+apps/api/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+apps/api/uvicorn-*.txt
 
 # Local leftovers — never commit binaries or backup trees
 /desktop/

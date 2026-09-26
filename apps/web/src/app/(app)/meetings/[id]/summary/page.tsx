@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/auth-provider";
 import { isAdminUser } from "@/lib/app-access";
-import { canViewFullMeetingQa, FREE_MEETING_QA_LIMIT } from "@/lib/entitlements";
+import { canViewFullMeetingQa, canViewFullTranscript, FREE_MEETING_QA_LIMIT } from "@/lib/entitlements";
 import { fetchMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ export default function MeetingSummaryPage() {
   const { session } = useAuth();
   const admin = isAdminUser(session?.role);
   const fullQa = canViewFullMeetingQa({ role: session?.role, plan: session?.plan });
+  const fullTranscript = canViewFullTranscript({ role: session?.role, plan: session?.plan });
 
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -234,7 +235,7 @@ export default function MeetingSummaryPage() {
           </Card>
         )}
 
-        {admin && meeting.transcript.length > 0 && (
+        {fullTranscript && meeting.transcript.length > 0 && (
           <Card className="p-5">
             <CardHeader>
               <CardTitle>Transcript</CardTitle>
@@ -247,6 +248,18 @@ export default function MeetingSummaryPage() {
                 </li>
               ))}
             </ul>
+          </Card>
+        )}
+
+        {!fullTranscript && (meeting.transcriptLineCount ?? 0) > 0 && (
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Transcript</CardTitle>
+              <Badge>Premium</Badge>
+            </CardHeader>
+            <p className="text-sm text-muted">
+              The full transcript is a premium feature. Your meeting summary stays available.
+            </p>
           </Card>
         )}
       </div>

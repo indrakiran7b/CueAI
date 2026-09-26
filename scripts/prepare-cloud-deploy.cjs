@@ -23,20 +23,6 @@ function copyDir(src, dest) {
   fs.cpSync(src, dest, { recursive: true, force: true });
 }
 
-function loadEnvLocal() {
-  const file = path.join(WEB, ".env.local");
-  if (!fs.existsSync(file)) return {};
-  const out = {};
-  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq === -1) continue;
-    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-  }
-  return out;
-}
-
 console.log("\n=== Prepare cloud server bundle ===\n");
 run("npm run build:web");
 
@@ -59,7 +45,7 @@ if (fs.existsSync(path.join(WEB, "public"))) {
   copyDir(path.join(WEB, "public"), path.join(OUT, "public"));
 }
 
-const envLocal = loadEnvLocal();
+// Never copy values from apps/web/.env.local — dist/ may be zipped and shared.
 const exampleEnv = `# Production env for dist/cueai-server — set on your cloud host
 PORT=3000
 HOSTNAME=0.0.0.0
@@ -70,19 +56,19 @@ AUTH_URL=https://cueai.yourdomain.com
 NEXT_PUBLIC_APP_URL=https://cueai.yourdomain.com
 
 # Required — generate: npm run generate:license-keys
-AUTH_SECRET=${envLocal.AUTH_SECRET || "CHANGE_ME_USE_openssl_rand_base64_32"}
-LICENSE_SIGNING_PRIVATE_KEY="${envLocal.LICENSE_SIGNING_PRIVATE_KEY || ""}"
-LICENSE_SIGNING_PUBLIC_KEY="${envLocal.LICENSE_SIGNING_PUBLIC_KEY || ""}"
+AUTH_SECRET=CHANGE_ME_USE_openssl_rand_base64_32
+LICENSE_SIGNING_PRIVATE_KEY=
+LICENSE_SIGNING_PUBLIC_KEY=
 LICENSE_OFFLINE_GRACE_HOURS=72
 
 # Persistent data (mount a volume here in production)
 CUEAI_DATA_DIR=/var/cueai/data
 
 # AI keys (server-side only)
-GROQ_API_KEY=${envLocal.GROQ_API_KEY || ""}
-GEMINI_API_KEY=${envLocal.GEMINI_API_KEY || ""}
-GEMINI_MODEL=${envLocal.GEMINI_MODEL || "gemini-2.5-flash"}
-GROQ_MODEL=${envLocal.GROQ_MODEL || "openai/gpt-oss-20b"}
+GROQ_API_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+GROQ_MODEL=openai/gpt-oss-20b
 `;
 
 fs.writeFileSync(path.join(OUT, ".env.production.example"), exampleEnv, "utf8");

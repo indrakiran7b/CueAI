@@ -24,7 +24,7 @@ function meetingFeedRedirect(pathname: string): string | null {
 
 /**
  * Authenticated CueAI route policy.
- * Resume Tailor stays a public/web product; it is blocked only inside the macOS app.
+ * Resume Tailor, Translation, and Knowledge are admin-portal capabilities.
  */
 export function restrictedCueAiPath(
   pathname: string,
@@ -34,7 +34,8 @@ export function restrictedCueAiPath(
   const path = pathname.split("?")[0] || "/";
 
   if (path === "/resume" || path.startsWith("/resume/")) {
-    return opts?.macDesktop ? "/dashboard" : null;
+    if (opts?.macDesktop || isNormalUser(role)) return "/dashboard";
+    return null;
   }
 
   if (path === "/knowledge" || path.startsWith("/knowledge/")) {

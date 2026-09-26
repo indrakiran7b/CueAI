@@ -23,7 +23,11 @@ export function publicMeetingStatus(m: DbMeeting): "live" | "completed" | "incom
   return "completed";
 }
 
-export function publicMeeting(m: DbMeeting, includePrivate = false) {
+export function publicMeeting(
+  m: DbMeeting,
+  includePrivate = false,
+  includeTranscript = false,
+) {
   return {
     id: m.id,
     title: m.title,
@@ -38,7 +42,9 @@ export function publicMeeting(m: DbMeeting, includePrivate = false) {
     jobLink: m.jobLink || null,
     resumeName: m.resumeName || null,
     description: m.description || null,
-    transcript: m.transcript,
+    transcript: includeTranscript ? m.transcript : [],
+    transcriptLocked: !includeTranscript,
+    transcriptLineCount: m.transcript.length,
     answers: m.answers,
     summary: m.summary || null,
     questionCount: m.answers.length,

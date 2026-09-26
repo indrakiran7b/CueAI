@@ -24,7 +24,6 @@ export function normalizeLicenseKey(raw: string): string {
 }
 
 export function formatLicenseKey(normalized: string): string {
-  const body = normalized.replace(/^CUEAI/i, "").replace(/CLIENT/i, "CLIENT");
   const parts = normalized.match(/^CUEAI(CLIENT)?([A-Z0-9]{4,})$/i);
   if (!parts) return normalized;
   const suffix = parts[2] || "";

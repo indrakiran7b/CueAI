@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import { getSessionFromRequest } from "@/lib/server/api-auth";
 import { publicUser, readStore } from "@/lib/server/db";
 import { normalizeRole, permissionsFor } from "@/lib/roles";
@@ -12,7 +13,10 @@ import {
  * Returns live membership from the store (source of truth) and refreshes
  * the signed session cookie so JWT role cannot stay stale after role changes.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/auth/me");
+  if (proxied) return proxied;
+
   const session = await getSessionFromRequest();
   if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 401 });

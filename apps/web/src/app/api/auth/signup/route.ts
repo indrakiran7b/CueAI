@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import { randomUUID } from "node:crypto";
 import { normalizeRole } from "@/lib/roles";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
@@ -15,7 +16,10 @@ import {
  * Signup. If email was pre-invited (status Invited), activate that membership
  * and keep the invited role + workspace — no accept step.
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/auth/signup");
+  if (proxied) return proxied;
+
   const body = (await req.json().catch(() => null)) as
     | { email?: string; password?: string; name?: string; workspace?: string }
     | null;
