@@ -336,7 +336,7 @@ export function CreateSessionWizard({
                       ) : null}
                       {resumes.length === 0 && (
                         <p className="text-xs text-subtle">
-                          Upload a resume PDF here so CueAI can use it for answers.
+                          Upload a PDF here so CueAI can use it for this session.
                         </p>
                       )}
                     </div>

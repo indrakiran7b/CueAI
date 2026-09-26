@@ -1,12 +1,6 @@
-/**
- * CueAI application access — normal users vs admins.
- * Resume Tailor lives at /resume as a separate product (outside CueAI chrome).
- */
-
 import { canAccessAdmin } from "@/lib/roles";
 
-/** Core CueAI modules for every authenticated normal user (web + Windows). */
-export const CUEAI_USER_NAV_HREFS = [
+export const CUEAI_USER_NAV = [
   "/dashboard",
   "/meetings",
   "/meetings/live",
@@ -14,38 +8,56 @@ export const CUEAI_USER_NAV_HREFS = [
   "/settings",
 ] as const;
 
-/**
- * Paths blocked for normal users inside authenticated CueAI.
- * Admins may still open these.
- */
-export const USER_BLOCKED_PATH_PREFIXES = [
-  "/admin",
-  "/knowledge",
-  "/translation",
-  "/screen-context",
-] as const;
-
-export function isCueaiUserNavHref(href: string): boolean {
-  return (CUEAI_USER_NAV_HREFS as readonly string[]).includes(href);
+export function isAdminUser(role?: string | null): boolean {
+  return canAccessAdmin(role);
 }
 
-export function isUserBlockedPath(pathname: string): boolean {
-  return USER_BLOCKED_PATH_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+export function isNormalUser(role?: string | null): boolean {
+  return !canAccessAdmin(role);
+}
+
+function meetingFeedRedirect(pathname: string): string | null {
+  const match = pathname.match(/^\/meetings\/([^/]+)\/feed\/?$/);
+  if (!match?.[1]) return null;
+  return `/meetings/${match[1]}/summary`;
 }
 
 /**
- * Whether the current role may open a CueAI in-app path.
- * Non-admins cannot open admin / knowledge / translation / screen-context.
+ * Authenticated CueAI route policy.
+ * Resume Tailor, Translation, and Knowledge are admin-portal capabilities.
  */
-export function canAccessCueaiPath(
+export function restrictedCueAiPath(
   pathname: string,
   role?: string | null,
-): boolean {
-  if (canAccessAdmin(role)) return true;
-  return !isUserBlockedPath(pathname);
+  opts?: { macDesktop?: boolean },
+): string | null {
+  const path = pathname.split("?")[0] || "/";
+
+  if (path === "/resume" || path.startsWith("/resume/")) {
+    if (opts?.macDesktop || isNormalUser(role)) return "/dashboard";
+    return null;
+  }
+
+  if (path === "/knowledge" || path.startsWith("/knowledge/")) {
+    return "/dashboard";
+  }
+
+  if ((path === "/admin" || path.startsWith("/admin/")) && isNormalUser(role)) {
+    return "/dashboard";
+  }
+
+  if (isNormalUser(role)) {
+    if (path === "/translation" || path.startsWith("/translation/")) return "/dashboard";
+    if (path === "/screen-context" || path.startsWith("/screen-context/")) return "/dashboard";
+    const feed = meetingFeedRedirect(path);
+    if (feed) return feed;
+  }
+
+  return null;
 }
 
-/** Free-tier Q&A cap for meeting summaries (admins + premium bypass). */
-export const FREE_MEETING_QA_LIMIT = 5;
+export function isCueAiUserNavHref(href: string): boolean {
+  if (href === "/meetings/live") return true;
+  if (href === "/meetings") return true;
+  return (CUEAI_USER_NAV as readonly string[]).includes(href);
+}

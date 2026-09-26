@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server/api-auth";
 import {
   createMeeting,
@@ -17,8 +17,8 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function GET() {
-  const { error, session } = await requireAuth();
+export async function GET(req: NextRequest) {
+  const { error, session } = await requireAuth(req);
   if (error || !session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
@@ -29,8 +29,8 @@ export async function GET() {
   return NextResponse.json({ meetings: stored }, { headers: CORS_HEADERS });
 }
 
-export async function POST(req: Request) {
-  const { error, session } = await requireAuth();
+export async function POST(req: NextRequest) {
+  const { error, session } = await requireAuth(req);
   if (error || !session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }

@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
+import Apple from "next-auth/providers/apple";
 
 function isRealSecret(value?: string) {
   if (!value) return false;
@@ -22,6 +23,9 @@ const googleConfigured =
 const githubConfigured =
   isRealSecret(process.env.AUTH_GITHUB_ID) &&
   isRealSecret(process.env.AUTH_GITHUB_SECRET);
+const appleConfigured =
+  isRealSecret(process.env.AUTH_APPLE_ID) &&
+  isRealSecret(process.env.AUTH_APPLE_SECRET);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -39,6 +43,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           GitHub({
             clientId: process.env.AUTH_GITHUB_ID!,
             clientSecret: process.env.AUTH_GITHUB_SECRET!,
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
+    ...(appleConfigured
+      ? [
+          Apple({
+            clientId: process.env.AUTH_APPLE_ID!,
+            clientSecret: process.env.AUTH_APPLE_SECRET!,
             allowDangerousEmailAccountLinking: true,
           }),
         ]
@@ -75,4 +88,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 export const oauthProviders = {
   google: googleConfigured,
   github: githubConfigured,
+  apple: appleConfigured,
 };

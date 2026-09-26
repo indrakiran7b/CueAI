@@ -1,0 +1,258 @@
+html[data-desktop="mac"],
+html[data-desktop="mac"][data-theme="dark"] {
+  --mac-glass: rgba(255, 255, 255, 0.08);
+  --mac-glass-strong: rgba(255, 255, 255, 0.14);
+  --mac-glass-pressed: rgba(255, 255, 255, 0.05);
+  --mac-glass-border: rgba(255, 255, 255, 0.16);
+  --mac-glass-highlight: rgba(255, 255, 255, 0.28);
+  --mac-glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --mac-glass-blur: blur(22px) saturate(160%);
+}
+
+html[data-desktop="mac"][data-theme="light"] {
+  --mac-glass: rgba(255, 255, 255, 0.72);
+  --mac-glass-strong: rgba(255, 255, 255, 0.9);
+  --mac-glass-pressed: rgba(255, 255, 255, 0.55);
+  --mac-glass-border: rgba(0, 0, 0, 0.08);
+  --mac-glass-highlight: rgba(255, 255, 255, 0.95);
+  --mac-glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --mac-glass-blur: blur(22px) saturate(180%);
+}
+
+html[data-desktop="mac"] .mac-glass,
+html[data-desktop="mac"] .mac-glass-btn,
+html[data-desktop="mac"] .mac-glass-icon-btn,
+html[data-desktop="mac"] .mac-glass-input,
+html[data-desktop="mac"] .mac-glass-select,
+html[data-desktop="mac"] .mac-glass-card,
+html[data-desktop="mac"] .mac-segmented {
+  background: var(--mac-glass);
+  border: 1px solid var(--mac-glass-border);
+  box-shadow:
+    var(--mac-glass-shadow),
+    inset 0 1px 0 var(--mac-glass-highlight);
+  backdrop-filter: var(--mac-glass-blur);
+  -webkit-backdrop-filter: var(--mac-glass-blur);
+  color: var(--foreground);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 140ms ease,
+    opacity 160ms ease;
+}
+
+html[data-desktop="mac"] .mac-glass-btn,
+html[data-desktop="mac"] .mac-glass-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  cursor: default;
+}
+
+html[data-desktop="mac"] .mac-glass-icon-btn {
+  width: 36px;
+  padding: 0;
+}
+
+html[data-desktop="mac"] .mac-glass-btn:hover,
+html[data-desktop="mac"] .mac-glass-icon-btn:hover,
+html[data-desktop="mac"] .mac-glass-input:hover,
+html[data-desktop="mac"] .mac-glass-select:hover {
+  background: var(--mac-glass-strong);
+}
+
+html[data-desktop="mac"] .mac-glass-btn:active,
+html[data-desktop="mac"] .mac-glass-icon-btn:active {
+  background: var(--mac-glass-pressed);
+  transform: scale(0.98);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-desktop="mac"] .mac-glass-btn.is-accent {
+  background: rgba(0, 153, 255, 0.22);
+  border-color: rgba(0, 153, 255, 0.32);
+}
+
+html[data-desktop="mac"] .mac-glass-btn.is-accent:hover {
+  background: rgba(0, 153, 255, 0.3);
+}
+
+html[data-desktop="mac"] .mac-glass-btn:disabled,
+html[data-desktop="mac"] .mac-glass-btn.is-loading,
+html[data-desktop="mac"] .mac-glass-icon-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+html[data-desktop="mac"] .mac-glass-card {
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 var(--mac-glass-highlight);
+}
+
+html[data-desktop="mac"] .mac-glass-input,
+html[data-desktop="mac"] .mac-glass-select {
+  height: 36px;
+  width: 100%;
+  border-radius: 980px;
+  padding: 0 14px;
+  font-size: 13px;
+  outline: none;
+}
+
+html[data-desktop="mac"] .mac-segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 980px;
+  gap: 2px;
+}
+
+html[data-desktop="mac"] .mac-segmented button {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 980px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+html[data-desktop="mac"] .mac-segmented button.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--foreground);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+html[data-desktop="mac"] .mac-glass-toggle {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  border-radius: 980px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--mac-glass-border);
+  transition: background 160ms ease;
+}
+
+html[data-desktop="mac"] .mac-glass-toggle.is-on {
+  background: rgba(0, 153, 255, 0.7);
+}
+
+html[data-desktop="mac"] .mac-glass-toggle span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  transition: transform 160ms ease;
+}
+
+html[data-desktop="mac"] .mac-glass-toggle.is-on span {
+  transform: translateX(16px);
+}
+
+html[data-desktop="mac"] .mac-glass-panel {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px 28px 24px;
+  border-radius: 22px;
+  background: var(--mac-glass);
+  border: 1px solid var(--mac-glass-border);
+  box-shadow:
+    var(--mac-glass-shadow),
+    inset 0 1px 0 var(--mac-glass-highlight);
+  backdrop-filter: var(--mac-glass-blur);
+  -webkit-backdrop-filter: var(--mac-glass-blur);
+}
+
+html[data-desktop="mac"][data-theme="light"] {
+  --mac-glass: rgba(255, 255, 255, 0.62);
+  --mac-glass-strong: rgba(255, 255, 255, 0.78);
+  --mac-glass-pressed: rgba(255, 255, 255, 0.5);
+  --mac-glass-border: rgba(0, 0, 0, 0.08);
+  --mac-glass-highlight: rgba(255, 255, 255, 0.9);
+  --mac-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.12);
+}
+
+html[data-desktop="mac"] .mac-auth-shell,
+html[data-desktop="mac"] .mac-auth-shell *,
+html[data-desktop="mac"] .mac-glass-panel {
+  -webkit-app-region: no-drag;
+}
+
+html[data-desktop="mac"] .mac-auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 24px 40px;
+  background:
+    radial-gradient(920px 520px at 18% -12%, rgba(0, 153, 255, 0.2), transparent 58%),
+    radial-gradient(720px 420px at 92% 108%, rgba(255, 255, 255, 0.05), transparent 52%),
+    var(--background-elevated);
+}
+
+html[data-desktop="mac"] .mac-auth-shell .mac-glass-panel {
+  width: min(420px, calc(100vw - 48px));
+  padding: 28px 28px 24px;
+  border-radius: 18px;
+}
+
+html[data-desktop="mac"] .mac-auth-kicker {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--foreground-subtle);
+}
+
+html[data-desktop="mac"] .mac-auth-title {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.04em;
+  font-weight: 650;
+}
+
+html[data-desktop="mac"] .mac-auth-copy {
+  margin: 8px 0 22px;
+  font-size: 14px;
+  color: var(--foreground-muted);
+  line-height: 1.45;
+}
+
+html[data-desktop="mac"] .mac-device-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+html[data-desktop="mac"] .mac-device-row span {
+  color: var(--foreground-muted);
+}
+
+html[data-desktop="mac"] .mac-device-row strong {
+  font-weight: 600;
+  text-align: right;
+}
+

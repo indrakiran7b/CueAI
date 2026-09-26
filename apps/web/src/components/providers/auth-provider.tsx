@@ -53,13 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (status === "loading") return;
+    console.log("[AUTH] Startup");
+    if (status === "loading") {
+      console.log("[AUTH] Session check started");
+      return;
+    }
 
     // Server session cookie is source of truth for role.
+    console.log("[AUTH] Session check started");
     void syncSessionFromServer().then(async (s) => {
       if (s) {
         setLocalSession(s);
         setReady(true);
+        console.log("[AUTH] Session check complete");
         return;
       }
       // OAuth authenticated but no CueAI cookie yet — link membership by verified email.
@@ -68,13 +74,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (linked) {
           setLocalSession(linked);
           setReady(true);
+          console.log("[AUTH] Session check complete");
           return;
         }
       }
       setLocalSession(null);
       setReady(true);
+      console.log("[AUTH] Session check complete");
     });
-  }, [nextSession, status]);
+  }, [nextSession?.user?.email, status]);
 
   const logout = useCallback(async () => {
     if (AUTH_BYPASS) {

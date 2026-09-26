@@ -23,7 +23,11 @@ export function publicMeetingStatus(m: DbMeeting): "live" | "completed" | "incom
   return "completed";
 }
 
-export function publicMeeting(m: DbMeeting, includePrivate = false) {
+export function publicMeeting(
+  m: DbMeeting,
+  includePrivate = false,
+  includeTranscript = false,
+) {
   return {
     id: m.id,
     title: m.title,
@@ -38,7 +42,9 @@ export function publicMeeting(m: DbMeeting, includePrivate = false) {
     jobLink: m.jobLink || null,
     resumeName: m.resumeName || null,
     description: m.description || null,
-    transcript: m.transcript,
+    transcript: includeTranscript ? m.transcript : [],
+    transcriptLocked: !includeTranscript,
+    transcriptLineCount: m.transcript.length,
     answers: m.answers,
     summary: m.summary || null,
     questionCount: m.answers.length,
@@ -69,6 +75,11 @@ export function canAccessMeeting(
 export async function listMeetings() {
   const store = await readStore();
   return (store.meetings || []).slice().sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+export async function listMeetingsForUser(userId: string) {
+  const all = await listMeetings();
+  return all.filter((m) => m.userId === userId);
 }
 
 /** Completed history for the authenticated user (never includes live sessions). */
@@ -117,6 +128,12 @@ export function buildMeetingSummary(meeting: DbMeeting): string {
 export async function getMeeting(id: string) {
   const store = await readStore();
   return (store.meetings || []).find((m) => m.id === id) || null;
+}
+
+export async function getMeetingForUser(id: string, userId: string) {
+  const meeting = await getMeeting(id);
+  if (!meeting || meeting.userId !== userId) return null;
+  return meeting;
 }
 
 export async function getActiveMeeting() {
@@ -244,6 +261,10 @@ export async function createMeeting(input: {
   return meeting;
 }
 
+function transcriptEventKey(line: { who: string; text: string; at?: string }) {
+  return `${line.who}\0${line.text}\0${line.at || ""}`;
+}
+
 export async function appendMeetingExchange(
   meetingId: string,
   prompt: string,
@@ -369,7 +390,14 @@ export async function finalizeMeeting(
     const meeting = (s.meetings || []).find((m) => m.id === meetingId);
     if (!meeting) return;
     if (patch.transcript?.length) {
-      meeting.transcript = [...meeting.transcript, ...patch.transcript].slice(-200);
+      const seen = new Set(meeting.transcript.map(transcriptEventKey));
+      for (const line of patch.transcript) {
+        const key = transcriptEventKey(line);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        meeting.transcript.push(line);
+      }
+      meeting.transcript = meeting.transcript.slice(-200);
     }
     if (typeof patch.durationSec === "number") {
       meeting.durationSec = Math.max(0, patch.durationSec);

@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { canViewFullTranscript } from "@/lib/entitlements";
 import { requireAuth } from "@/lib/server/api-auth";
+import { readStore } from "@/lib/server/db";
 import {
   canAccessMeeting,
   deleteMeeting,
@@ -20,8 +22,8 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { error, session } = await requireAuth();
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { error, session } = await requireAuth(req);
   if (error || !session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
@@ -43,14 +45,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
+  const store = await readStore();
+  const user = store.users.find((u) => u.id === session.userId);
+  const includeTranscript = canViewFullTranscript({
+    role: session.role,
+    plan: user?.plan,
+  });
+
   return NextResponse.json(
-    { meeting: publicMeeting(stored, true) },
+    { meeting: publicMeeting(stored, true, includeTranscript) },
     { headers: CORS_HEADERS },
   );
 }
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { error, session } = await requireAuth();
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { error, session } = await requireAuth(req);
   if (error || !session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
@@ -77,14 +86,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const fresh = await getMeeting(id);
+  const store = await readStore();
+  const user = store.users.find((u) => u.id === session.userId);
+  const includeTranscript = canViewFullTranscript({
+    role: session.role,
+    plan: user?.plan,
+  });
   return NextResponse.json(
-    { meeting: fresh ? publicMeeting(fresh, true) : null },
+    { meeting: fresh ? publicMeeting(fresh, true, includeTranscript) : null },
     { headers: CORS_HEADERS },
   );
 }
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { error, session } = await requireAuth();
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { error, session } = await requireAuth(req);
   if (error || !session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }

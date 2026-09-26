@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 
 function isRealSecret(value?: string) {
   if (!value) return false;
@@ -14,7 +15,10 @@ function isRealSecret(value?: string) {
   return !placeholders.includes(v);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/auth/providers");
+  if (proxied) return proxied;
+
   return NextResponse.json({
     google:
       isRealSecret(process.env.AUTH_GOOGLE_ID) &&
@@ -22,5 +26,8 @@ export async function GET() {
     github:
       isRealSecret(process.env.AUTH_GITHUB_ID) &&
       isRealSecret(process.env.AUTH_GITHUB_SECRET),
+    apple:
+      isRealSecret(process.env.AUTH_APPLE_ID) &&
+      isRealSecret(process.env.AUTH_APPLE_SECRET),
   });
 }

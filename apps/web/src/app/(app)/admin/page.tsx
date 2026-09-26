@@ -12,6 +12,8 @@ import {
   Cpu,
   Database,
   KeyRound,
+  Laptop,
+  Ticket,
   Lock,
   Mail,
   Plus,
@@ -33,6 +35,8 @@ import {
   YAxis,
 } from "recharts";
 import { RequireAdmin } from "@/components/auth/require-admin";
+import { AdminDevicesPanel } from "@/components/admin/admin-devices-panel";
+import { AdminLicensesPanel } from "@/components/admin/admin-licenses-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +65,8 @@ type NavId =
   | "privacy"
   | "retention"
   | "audit"
+  | "devices"
+  | "licenses"
   | "settings";
 
 const NAV: Array<{
@@ -81,6 +87,8 @@ const NAV: Array<{
   { id: "privacy", label: "Privacy", icon: Lock, permission: "privacy.read" },
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
   { id: "audit", label: "Activity Log", icon: ScrollText, permission: "audit.read" },
+  { id: "devices", label: "Mac devices", icon: Laptop, permission: "devices.read" },
+  { id: "licenses", label: "Licenses", icon: Ticket, permission: "licenses.read" },
   { id: "settings", label: "Settings", icon: Settings, permission: "workspace.read" },
 ];
 
@@ -391,6 +399,12 @@ function AdminPortalInner() {
     () => NAV.filter((item) => can(role, item.permission)),
     [role],
   );
+
+  useEffect(() => {
+    if (!visibleNav.some((item) => item.id === tab)) {
+      setTab("overview");
+    }
+  }, [visibleNav, tab]);
   const permissions = useMemo(() => rolePermissionMatrix(), []);
 
   const fail = (cause: unknown, fallback: string) => {
@@ -1198,11 +1212,20 @@ function AdminPortalInner() {
                                       onClick={() =>
                                         void mutate(
                                           `test-${provider.id}`,
-                                          () =>
-                                            api<{ ok: boolean; message?: string }>("/api/admin/ai", {
+                                          async () => {
+                                            const result = await api<{
+                                              ok: boolean;
+                                              message?: string;
+                                              error?: string;
+                                            }>("/api/admin/ai", {
                                               method: "POST",
                                               body: JSON.stringify({ providerId: provider.id }),
-                                            }),
+                                            });
+                                            if (!result.ok) {
+                                              throw new Error(result.error || "Connection failed.");
+                                            }
+                                            return result;
+                                          },
                                           "Connection successful.",
                                         )
                                       }
@@ -1318,6 +1341,7 @@ function AdminPortalInner() {
                             <th className="py-2 pr-3">Provider</th>
                             <th className="py-2 pr-3">Capability</th>
                             <th className="py-2 pr-3">Status</th>
+                            <th className="py-2 pr-3">Default</th>
                             <th className="py-2">Actions</th>
                           </tr>
                         </thead>
@@ -1336,6 +1360,9 @@ function AdminPortalInner() {
                                 <Badge variant={model.enabled ? "success" : "warning"}>
                                   {model.enabled ? "Enabled" : "Disabled"}
                                 </Badge>
+                              </td>
+                              <td className="py-3 pr-3">
+                                {model.isDefault ? <Badge variant="info">Default</Badge> : "—"}
                               </td>
                               <td className="py-3">
                                 {can(role, "ai.write") && (
@@ -1646,6 +1673,10 @@ function AdminPortalInner() {
                 )}
               </Card>
             )}
+
+            {tab === "devices" && <AdminDevicesPanel />}
+
+            {tab === "licenses" && <AdminLicensesPanel />}
 
             {tab === "settings" && (
               <Card className="p-5">

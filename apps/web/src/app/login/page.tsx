@@ -10,8 +10,11 @@ import { Mail, Lock, ArrowRight, Sparkles, Shield, Eye, EyeOff } from "lucide-re
 import { loginWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
-import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
+import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
 import { canAccessAdmin } from "@/lib/roles";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { isMacDesktopApp } from "@/lib/desktop";
+import { MacAuthShell, MacLoginForm } from "@/components/mac/mac-auth-screen";
 
 function AuthShell({
   title,
@@ -38,7 +41,7 @@ function AuthShell({
             Welcome back to your workspace.
           </h2>
           <p className="mt-4 text-muted">
-            Sign in with Google, GitHub, or the email you registered with.
+            Continue with Google or Apple, or use email.
           </p>
         </div>
         <p className="relative z-10 text-xs text-subtle">OAuth + email sign-in supported</p>
@@ -65,34 +68,43 @@ function LoginForm() {
   const { refresh, session, ready } = useAuth();
   const [loading, setLoading] = useState<"user" | "admin" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [mac, setMac] = useState(searchParams.get("desktop") === "mac");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const safeNext = (() => {
-    const next = searchParams.get("next");
-    return next && next.startsWith("/") ? next : "/dashboard";
-  })();
+  useEffect(() => {
+    setMounted(true);
+    persistDesktopQuery();
+    setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
+  }, [searchParams]);
 
   useEffect(() => {
     if (AUTH_BYPASS) {
       void refresh();
-      router.replace(safeNext);
+      router.replace(withDesktopParam("/dashboard"));
     }
-  }, [router, refresh, safeNext]);
+  }, [router, refresh]);
 
-  // Already signed in — honor `next` (e.g. /resume or /dashboard), do not force CueAI.
   useEffect(() => {
-    if (AUTH_BYPASS || !ready || !session) return;
-    router.replace(safeNext);
-  }, [AUTH_BYPASS, ready, session, router, safeNext]);
+    if (ready && session && !AUTH_BYPASS) {
+      router.replace(mac ? "/dashboard?desktop=mac" : withDesktopParam("/dashboard"));
+    }
+  }, [ready, session, router, mac]);
 
   useEffect(() => {
     const authError = searchParams.get("error");
     if (!authError) return;
     if (authError === "Configuration") {
       setError(
-        "OAuth is not configured. Add Google/GitHub keys to .env.local and restart the server."
+        "OAuth is not configured on the server. Add the Google or Apple keys and restart CueAI."
       );
+    } else if (authError === "AccessDenied" || authError === "OAuthCallbackError") {
+      setError("Sign-in was cancelled.");
+    } else if (authError === "OAuthAccountNotLinked") {
+      setError("An account already exists with this email. Sign in with email, then use the same verified address.");
+    } else if (authError === "Callback" || authError === "OAuthCallback") {
+      setError("OAuth failed. Check your connection and try again.");
     } else {
       setError("Sign-in failed. Please try again or use email.");
     }
@@ -100,6 +112,10 @@ function LoginForm() {
 
   if (AUTH_BYPASS) {
     return <div className="min-h-screen bg-background" />;
+  }
+
+  if (!mounted) {
+    return <div className="mac-auth-shell min-h-screen bg-background" />;
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -112,64 +128,114 @@ function LoginForm() {
     setLoading(destination);
 
     const form = document.getElementById("login-form") as HTMLFormElement | null;
-    // Credentials are stubbed in test builds, so an empty form still signs in.
     if (!CREDENTIALS_BYPASS && !form?.reportValidity()) {
       setLoading(null);
       return;
     }
     const data = new FormData(form ?? undefined);
-    const result = await loginWithEmailApi({
-      email: String(data.get("email") || ""),
-      password: String(data.get("password") || ""),
-    });
+    try {
+      const result = await loginWithEmailApi({
+        email: String(data.get("email") || ""),
+        password: String(data.get("password") || ""),
+      });
 
-    if (!result.ok) {
-      setError(result.error);
-      setLoading(null);
-      return;
-    }
-
-    // Await so the app gate sees the fresh session before we navigate.
-    await refresh();
-
-    if (rememberMe) {
-      localStorage.setItem("cueai-remember-email", String(data.get("email") || ""));
-    } else {
-      localStorage.removeItem("cueai-remember-email");
-    }
-
-    if (destination === "admin") {
-      if (!canAccessAdmin(result.session.role)) {
-        setError("This account does not have Admin Portal access.");
+      if (!result.ok) {
+        setError(result.error);
         setLoading(null);
-        router.push("/dashboard");
         return;
       }
-      router.push("/admin");
-      return;
-    }
 
-    const next = searchParams.get("next");
-    router.push(next && next.startsWith("/") ? next : "/dashboard");
+      // Await so the app gate sees the fresh session before we navigate.
+      await refresh();
+
+      if (rememberMe) {
+        localStorage.setItem("cueai-remember-email", String(data.get("email") || ""));
+      } else {
+        localStorage.removeItem("cueai-remember-email");
+      }
+
+      if (destination === "admin") {
+        if (!canAccessAdmin(result.session.role)) {
+          setError("This account does not have Admin Portal access.");
+          setLoading(null);
+          router.push(withDesktopParam("/dashboard"));
+          return;
+        }
+        router.push(withDesktopParam("/admin"));
+        return;
+      }
+
+      const next = searchParams.get("next");
+      const dest = next && next.startsWith("/") ? next : "/dashboard";
+      router.push(withDesktopParam(dest));
+    } catch {
+      setError("Unable to reach auth server.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  if (mac) {
+    return (
+      <MacAuthShell
+        title="Welcome back"
+        copy="Sign in to continue to CueAI."
+        footer={
+          <>
+            Don&apos;t have an account?{" "}
+            <Link href={mac ? "/signup?desktop=mac" : withDesktopParam("/signup")} className="font-medium text-foreground hover:underline">
+              Create your account
+            </Link>
+          </>
+        }
+      >
+        <MacLoginForm
+          error={error}
+          loading={loading !== null}
+          onSubmit={async ({ email, password }) => {
+            setError(null);
+            setLoading("user");
+            try {
+              const result = await loginWithEmailApi({ email, password });
+              if (!result.ok) {
+                setError(result.error);
+                return;
+              }
+              await refresh();
+              const next = searchParams.get("next");
+              const dest = next && next.startsWith("/") ? next : "/dashboard";
+              router.push(withDesktopParam(dest));
+            } catch {
+              setError("Unable to reach auth server.");
+            } finally {
+              setLoading(null);
+            }
+          }}
+        />
+        <MacAuthDivider />
+        <SocialAuthButtons
+          appearance="mac"
+          callbackUrl="/dashboard?desktop=mac"
+          providers={["google", "apple"]}
+        />
+      </MacAuthShell>
+    );
   }
 
   return (
     <AuthShell
       title="Sign in to your account"
-      subtitle="Continue with Google or GitHub, or use email."
+      subtitle="Continue with Google or Apple, or use email."
       footer={
         <>
           Don&apos;t have an account?{" "}
-          <Link href="/signup" className="font-medium text-primary hover:underline">
+          <Link href={withDesktopParam("/signup")} className="font-medium text-primary hover:underline">
             Create your account
           </Link>
         </>
       }
     >
-      <SocialAuthButtons
-        callbackUrl={safeNext}
-        onBypass={CREDENTIALS_BYPASS ? () => signIn("user") : undefined}
-      />
+      <SocialAuthButtons callbackUrl="/dashboard" providers={["google", "apple"]} />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
@@ -225,9 +291,11 @@ function LoginForm() {
             />
             Remember me
           </label>
+          {!mac && (
           <Link href="/forgot-password" className="text-primary hover:underline">
             Forgot password?
           </Link>
+          )}
         </div>
         {error && (
           <p className="text-sm text-[var(--cue-danger)]" role="alert">

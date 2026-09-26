@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,10 @@ import { Mail, Lock, User, ArrowRight, Sparkles, Eye, EyeOff } from "lucide-reac
 import { signupWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
-import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
+import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { isMacDesktopApp } from "@/lib/desktop";
+import { MacAuthShell, MacSignupForm } from "@/components/mac/mac-auth-screen";
 
 function AuthShell({
   title,
@@ -36,7 +39,7 @@ function AuthShell({
             Create your own CueAI workspace.
           </h2>
           <p className="mt-4 text-muted">
-            Sign up with Google, GitHub, or email — your real account, not a demo.
+            Continue with Google or Apple, or use email.
           </p>
         </div>
         <p className="relative z-10 text-xs text-subtle">OAuth + email signup supported</p>
@@ -57,17 +60,34 @@ function AuthShell({
 }
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { refresh } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [mac, setMac] = useState(searchParams.get("desktop") === "mac");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    persistDesktopQuery();
+    setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
+  }, [searchParams]);
+
+  useEffect(() => {
     if (AUTH_BYPASS) {
       void refresh();
-      router.replace("/dashboard");
+      router.replace(withDesktopParam("/dashboard"));
     }
   }, [router, refresh]);
 
@@ -75,21 +95,47 @@ export default function SignupPage() {
     return <div className="min-h-screen bg-background" />;
   }
 
+  if (!mounted) {
+    return <div className="mac-auth-shell min-h-screen bg-background" />;
+  }
+
   async function createAccount(fields: { name: string; email: string; password: string }) {
     setError(null);
     setLoading(true);
 
-    const result = await signupWithEmailApi(fields);
+    try {
+      const result = await signupWithEmailApi(fields);
 
-    if (!result.ok) {
-      setError(result.error);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      await refresh();
+      router.push(mac ? "/onboarding?desktop=mac" : withDesktopParam("/onboarding"));
+    } catch {
+      setError("Unable to reach auth server.");
+    } finally {
       setLoading(false);
-      return;
     }
+  }
 
-    // Await so /onboarding sees the new session instead of bouncing to /login.
-    await refresh();
-    router.push("/onboarding");
+  if (mac) {
+    return (
+      <MacAuthShell
+        title="Create your account"
+        copy="Create your CueAI account to continue."
+        footer={null}
+      >
+        <MacSignupForm error={error} loading={loading} onSubmit={createAccount} />
+        <MacAuthDivider />
+        <SocialAuthButtons
+          appearance="mac"
+          callbackUrl="/onboarding?desktop=mac"
+          providers={["google", "apple"]}
+        />
+      </MacAuthShell>
+    );
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -111,24 +157,17 @@ export default function SignupPage() {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Continue with Google or GitHub, or use email."
+      subtitle="Continue with Google or Apple, or use email."
       footer={
         <>
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-primary hover:underline">
+          <Link href={withDesktopParam("/login")} className="font-medium text-primary hover:underline">
             Sign in
           </Link>
         </>
       }
     >
-      <SocialAuthButtons
-        callbackUrl="/onboarding"
-        onBypass={
-          CREDENTIALS_BYPASS
-            ? () => createAccount({ name: "", email: "", password: "" })
-            : undefined
-        }
-      />
+      <SocialAuthButtons callbackUrl="/onboarding" providers={["google", "apple"]} />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">

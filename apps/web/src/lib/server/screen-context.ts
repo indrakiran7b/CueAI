@@ -63,7 +63,7 @@ export type ScreenContextResult = {
   answer: string;
   confidence: number;
   model: string;
-  provider: "groq" | "gemini" | "qwen";
+  provider: "groq" | "gemini";
   inputTokens: number;
   outputTokens: number;
 };
@@ -177,8 +177,8 @@ async function analyzeWithGroqVision(input: {
 }
 
 /**
- * Analyze an in-memory screenshot.
- * Order: Groq vision (primary) → Gemini (fallback) → optional local Qwen last-chance.
+ * Legacy in-process screen analysis (Next.js route proxies to FastAPI; kept for tests/tools).
+ * Order: Groq vision (primary) → Gemini (fallback).
  */
 export async function analyzeScreenContext(input: {
   imageDataUrl: string;
@@ -232,29 +232,6 @@ export async function analyzeScreenContext(input: {
         outputTokens: result.outputTokens,
       };
     }
-  }
-
-  // 3) Optional local Qwen — never required
-  try {
-    const { analyzeScreenWithQwen } = await import("@/lib/server/qwen-vl");
-    const local = await analyzeScreenWithQwen({
-      image: input.imageDataUrl,
-      prompt: input.prompt || SCREEN_CONTEXT_SYSTEM,
-      sessionContext: input.recentContext || "",
-    });
-    if (local?.answer?.trim()) {
-      return {
-        answer: local.answer.trim(),
-        confidence: local.confidence,
-        model: local.model,
-        provider: "qwen",
-        inputTokens: 0,
-        outputTokens: 0,
-      };
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "qwen unavailable";
-    console.error("screen_context_qwen_skip", message.slice(0, 200));
   }
 
   throw new GeminiError(

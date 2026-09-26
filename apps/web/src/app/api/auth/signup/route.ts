@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import { randomUUID } from "node:crypto";
 import { normalizeRole } from "@/lib/roles";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
@@ -15,7 +16,10 @@ import {
  * Signup. If email was pre-invited (status Invited), activate that membership
  * and keep the invited role + workspace — no accept step.
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/auth/signup");
+  if (proxied) return proxied;
+
   const body = (await req.json().catch(() => null)) as
     | { email?: string; password?: string; name?: string; workspace?: string }
     | null;
@@ -55,8 +59,8 @@ export async function POST(req: Request) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Enter a valid email." }, { status: 400 });
   }
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
+  if (password.length < 8) {
+    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
 
   const store = await readStore();
@@ -118,10 +122,6 @@ export async function POST(req: Request) {
     if (role === "Admin") {
       s.workspace.name = workspaceName;
       workspaceLabel = workspaceName;
-      const bootstrap = s.users.find((u) => u.email === "admin@cueai.local");
-      if (bootstrap && bootstrap.name === "Workspace Admin") {
-        bootstrap.status = "Deactivated";
-      }
     }
 
     s.users.push({

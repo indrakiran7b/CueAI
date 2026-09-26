@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { MacGlassButton } from "@/components/mac";
 
-type ProviderStatus = { google: boolean; github: boolean };
+type ProviderId = "google" | "github" | "apple";
+type ProviderStatus = { google: boolean; github: boolean; apple: boolean };
 
 function GoogleIcon() {
   return (
@@ -12,18 +14,6 @@ function GoogleIcon() {
       <path
         fill="#EA4335"
         d="M12 10.2v3.6h5.1c-.2 1.2-1.5 3.6-5.1 3.6-3.1 0-5.6-2.5-5.6-5.6S8.9 6.2 12 6.2c1.8 0 3 .7 3.7 1.4l2.5-2.4C16.7 3.7 14.5 2.7 12 2.7 6.9 2.7 2.7 6.9 2.7 12S6.9 21.3 12 21.3c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"
-      />
-      <path
-        fill="#34A853"
-        d="M3.9 7.3l3 2.2C7.7 7.5 9.7 6.2 12 6.2c1.8 0 3 .7 3.7 1.4l2.5-2.4C16.7 3.7 14.5 2.7 12 2.7 8.5 2.7 5.5 4.7 3.9 7.3z"
-      />
-      <path
-        fill="#4A90E2"
-        d="M12 21.3c2.4 0 4.5-.8 6-2.2l-2.9-2.2c-.8.6-1.9 1-3.1 1-2.4 0-4.4-1.6-5.1-3.8l-3 2.3c1.6 3.1 4.8 4.9 8.1 4.9z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M6.9 14.1c-.2-.6-.3-1.2-.3-1.9s.1-1.3.3-1.9l-3-2.3C3.3 9.4 3 10.6 3 12.2c0 1.6.3 2.8.9 4l3-2.1z"
       />
     </svg>
   );
@@ -37,94 +27,145 @@ function GitHubIcon() {
   );
 }
 
-/**
- * `onBypass` replaces the OAuth redirect while credentials are stubbed, so the
- * provider buttons behave like the email form instead of erroring on missing keys.
- */
+function AppleIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M16.7 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.5.8s-1.8-.8-3-.8c-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.3 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7 2-.1 2.9-2.3c1.1-1.2 1.5-2.4 1.5-2.5-.1 0-2.8-1.1-2.8-4.1zM14.6 6.3c.6-.8 1.1-1.8.9-2.9-1 .1-2.1.6-2.8 1.4-.6.7-1.2 1.8-1 2.8 1.1.1 2.2-.5 2.9-1.3z" />
+    </svg>
+  );
+}
+
+const missingKeyMessage: Record<ProviderId, string> = {
+  google: "Google sign-in is not configured. Add AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET on the server, then restart CueAI.",
+  github: "GitHub sign-in is not configured. Add AUTH_GITHUB_ID and AUTH_GITHUB_SECRET on the server, then restart CueAI.",
+  apple: "Apple sign-in is not configured. Add AUTH_APPLE_ID and AUTH_APPLE_SECRET on the server, then restart CueAI.",
+};
+
+const loadingLabel: Record<ProviderId, string> = {
+  google: "Signing in with Google…",
+  github: "Signing in with GitHub…",
+  apple: "Signing in with Apple…",
+};
+
 export function SocialAuthButtons({
   callbackUrl = "/dashboard",
-  onBypass,
+  appearance = "default",
+  providers: visibleProviders = ["google", "apple"],
 }: {
   callbackUrl?: string;
-  onBypass?: () => void | Promise<void>;
+  appearance?: "default" | "mac";
+  providers?: ProviderId[];
 }) {
-  const [providers, setProviders] = useState<ProviderStatus>({ google: false, github: false });
-  const [loading, setLoading] = useState<"google" | "github" | null>(null);
+  const [providers, setProviders] = useState<ProviderStatus>({
+    google: false,
+    github: false,
+    apple: false,
+  });
+  const [loading, setLoading] = useState<ProviderId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (onBypass) return;
     fetch("/api/auth/providers")
       .then((r) => r.json())
-      .then((data: ProviderStatus) => setProviders(data))
-      .catch(() => setProviders({ google: false, github: false }));
-  }, [onBypass]);
+      .then((data: ProviderStatus) =>
+        setProviders({
+          google: Boolean(data.google),
+          github: Boolean(data.github),
+          apple: Boolean(data.apple),
+        }),
+      )
+      .catch(() => setProviders({ google: false, github: false, apple: false }));
+  }, []);
 
-  async function handleOAuth(provider: "google" | "github") {
-    setError(null);
-
-    if (onBypass) {
-      setLoading(provider);
-      await onBypass();
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => {
       setLoading(null);
-      return;
-    }
+      setError("Sign-in timed out. Try again, or cancel and return to this screen.");
+    }, 45000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
+  async function handleOAuth(provider: ProviderId) {
+    setError(null);
     if (!providers[provider]) {
-      setError(
-        provider === "google"
-          ? "Add AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET to .env.local, then restart the server."
-          : "Add AUTH_GITHUB_ID and AUTH_GITHUB_SECRET to .env.local, then restart the server."
-      );
+      setError(missingKeyMessage[provider]);
       return;
     }
 
     setLoading(provider);
     try {
-      await signIn(provider, { callbackUrl });
+      await signIn(provider, { callbackUrl, redirect: true });
     } catch {
-      setError(`Could not start ${provider} sign-in. Check your OAuth credentials.`);
+      setError(`Could not start ${provider} sign-in. Check your connection and try again.`);
       setLoading(null);
     }
   }
 
+  const buttons = visibleProviders.map((provider) => {
+    const label =
+      provider === "google"
+        ? "Continue with Google"
+        : provider === "apple"
+          ? "Continue with Apple"
+          : "Continue with GitHub";
+    const icon = provider === "google" ? <GoogleIcon /> : provider === "apple" ? <AppleIcon /> : <GitHubIcon />;
+    if (appearance === "mac") {
+      return (
+        <MacGlassButton
+          key={provider}
+          className="w-full"
+          icon={icon}
+          loading={loading === provider}
+          loadingLabel={loadingLabel[provider]}
+          disabled={loading !== null}
+          onClick={() => void handleOAuth(provider)}
+        >
+          {label}
+        </MacGlassButton>
+      );
+    }
+    return (
+      <Button
+        key={provider}
+        variant="secondary"
+        type="button"
+        className="w-full"
+        loading={loading === provider}
+        disabled={loading !== null}
+        onClick={() => void handleOAuth(provider)}
+      >
+        {icon}
+        {loading === provider ? loadingLabel[provider] : label}
+      </Button>
+    );
+  });
+
   return (
     <div className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Button
-          variant="secondary"
-          type="button"
-          className="w-full"
-          loading={loading === "google"}
-          disabled={loading !== null}
-          onClick={() => handleOAuth("google")}
-        >
-          <GoogleIcon />
-          Continue with Google
-        </Button>
-        <Button
-          variant="secondary"
-          type="button"
-          className="w-full"
-          loading={loading === "github"}
-          disabled={loading !== null}
-          onClick={() => handleOAuth("github")}
-        >
-          <GitHubIcon />
-          Continue with GitHub
-        </Button>
-      </div>
+      {appearance === "mac" ? (
+        <div className="flex flex-col gap-2">{buttons}</div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">{buttons}</div>
+      )}
       {error && (
         <p className="text-xs leading-relaxed text-amber-400" role="alert">
           {error}
         </p>
       )}
-      {!onBypass && !providers.google && !providers.github && (
-        <p className="text-xs text-subtle">
-          OAuth keys are empty in <code className="text-muted">.env.local</code>. Add Google /
-          GitHub client IDs to enable these buttons. See README.
-        </p>
-      )}
+    </div>
+  );
+}
+
+export function MacAuthDivider() {
+  return (
+    <div className="relative my-4">
+      <div className="absolute inset-0 flex items-center">
+        <div className="w-full border-t border-[var(--border)]" />
+      </div>
+      <div className="relative flex justify-center text-[11px] uppercase tracking-wider">
+        <span className="bg-[var(--background-elevated)] px-3 text-subtle">OR</span>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import { appendAudit, publicUser, readStore, updateStore } from "@/lib/server/db";
 import { normalizeRole } from "@/lib/roles";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
@@ -10,7 +11,10 @@ import {
   verifyPassword,
 } from "@/lib/server/session";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/auth/login");
+  if (proxied) return proxied;
+
   const body = (await req.json().catch(() => null)) as
     | { email?: string; password?: string }
     | null;

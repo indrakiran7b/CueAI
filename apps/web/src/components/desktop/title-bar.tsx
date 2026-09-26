@@ -1,63 +1,138 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Minus, Square, Copy, X } from "lucide-react";
-import { BrandMark } from "@/components/ui/logo";
-import { getDesktop, isDesktopApp } from "@/lib/desktop";
-import { cn } from "@/lib/utils";
+import { getDesktop, isDesktopApp, isMacDesktopApp } from "@/lib/desktop";
 
-/** Frameless window chrome — only rendered inside Electron. Top-right: min / max / close. */
+/** Frameless window chrome — only rendered inside Electron. */
 export function DesktopTitleBar() {
-  const visible = isDesktopApp();
+  const [visible, setVisible] = useState(false);
+  const [mac, setMac] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
     const desktop = getDesktop();
-    if (!desktop) return;
-    let active = true;
-    void desktop.isMaximized().then((value) => {
-      if (active) setMaximized(value);
+    const macApp = isMacDesktopApp();
+    const id = window.requestAnimationFrame(() => {
+      setMac(macApp);
+      setVisible(isDesktopApp() || macApp);
     });
-    return desktop.onMaximizedChange(setMaximized);
-  }, [visible]);
+    if (!desktop?.isMaximized || !desktop.onMaximizedChange) {
+      return () => window.cancelAnimationFrame(id);
+    }
+    void desktop.isMaximized().then(setMaximized);
+    const unsub = desktop.onMaximizedChange(setMaximized);
+    return () => {
+      window.cancelAnimationFrame(id);
+      unsub();
+    };
+  }, []);
 
   if (!visible) return null;
 
   const desktop = getDesktop();
 
+  function onDoubleClick() {
+    void desktop?.maximize();
+  }
+
+  if (mac) {
+    return (
+      <header
+        className="mac-titlebar"
+        onDoubleClick={onDoubleClick}
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <span className="mac-titlebar-title">CueAI</span>
+        <div
+          className="mac-titlebar-controls"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <TrafficLight
+            kind="min"
+            glyph="−"
+            label="Minimize"
+            onClick={() => void desktop?.minimize()}
+          />
+          <TrafficLight
+            kind="max"
+            glyph={maximized ? "❐" : "□"}
+            label={maximized ? "Restore" : "Maximize"}
+            onClick={() => void desktop?.maximize()}
+          />
+          <TrafficLight
+            kind="close"
+            glyph="×"
+            label="Close"
+            onClick={() => void desktop?.close()}
+          />
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header
-      className="flex h-10 shrink-0 items-center border-b border-[var(--border)] bg-[var(--background-elevated)]/90 px-2 backdrop-blur-xl"
+      className="flex h-10 shrink-0 items-center border-b border-[var(--border)] bg-[var(--background-elevated)]/90 px-3 backdrop-blur-xl"
+      onDoubleClick={onDoubleClick}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      <div className="flex items-center gap-2 pl-1">
-        <BrandMark size="sm" className="h-5 w-5" />
+      <div className="flex items-center gap-2">
         <span className="text-xs font-semibold tracking-tight">CueAI</span>
+        <span className="rounded-md border border-teal-500/20 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-300">
+          Desktop
+        </span>
       </div>
 
       <div
-        className="ml-auto flex h-full items-stretch"
+        className="ml-auto flex items-center gap-0.5"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        <WinBtn label="Minimize" onClick={() => void desktop?.minimize()}>
-          <Minus className="h-3.5 w-3.5" />
-        </WinBtn>
-        <WinBtn
-          label={maximized ? "Restore" : "Maximize"}
-          onClick={() => void desktop?.maximize()}
+        <button
+          type="button"
+          aria-label="Open companion"
+          className="rounded-lg px-2 py-1.5 text-[11px] text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
+          onClick={() => void desktop?.toggleCompanion()}
         >
-          {maximized ? <Copy className="h-3 w-3" /> : <Square className="h-3 w-3" />}
-        </WinBtn>
-        <WinBtn label="Close" danger onClick={() => void desktop?.close()}>
-          <X className="h-3.5 w-3.5" />
-        </WinBtn>
+          Companion
+        </button>
+        <WinChromeBtn label="Minimize" onClick={() => void desktop?.minimize()}>
+          −
+        </WinChromeBtn>
+        <WinChromeBtn label={maximized ? "Restore" : "Maximize"} onClick={() => void desktop?.maximize()}>
+          {maximized ? "❐" : "□"}
+        </WinChromeBtn>
+        <WinChromeBtn label="Close" danger onClick={() => void desktop?.close()}>
+          ×
+        </WinChromeBtn>
       </div>
     </header>
   );
 }
 
-function WinBtn({
+function TrafficLight({
+  kind,
+  glyph,
+  label,
+  onClick,
+}: {
+  kind: "min" | "max" | "close";
+  glyph: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={`mac-traffic ${kind}`}
+      onClick={onClick}
+    >
+      <span aria-hidden>{glyph}</span>
+    </button>
+  );
+}
+
+function WinChromeBtn({
   children,
   onClick,
   label,
@@ -73,12 +148,11 @@ function WinBtn({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={cn(
-        "flex h-full w-11 items-center justify-center text-muted transition",
+      className={
         danger
-          ? "hover:bg-[#e81123] hover:text-white"
-          : "hover:bg-[var(--surface-hover)] hover:text-foreground",
-      )}
+          ? "rounded-lg px-2 py-1.5 text-muted transition hover:bg-red-500/20 hover:text-red-400"
+          : "rounded-lg px-2 py-1.5 text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
+      }
     >
       {children}
     </button>

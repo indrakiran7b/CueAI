@@ -3,21 +3,46 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/web",
+    "apps/desktop/windows",
+    "apps/desktop/macos"
   ],
   "scripts": {
     "dev": "npm run dev -w @cueai/web",
     "dev:web": "npm run dev -w @cueai/web",
-    "dev:desktop": "npm run dev -w @cueai/desktop",
+    "dev:web:desktop": "npm run dev:desktop -w @cueai/web",
+    "dev:web:mac": "npm run dev:mac -w @cueai/web",
+    "dev:desktop": "node scripts/dev-windows.cjs",
+    "dev:desktop:electron": "npm run dev -w @cueai/desktop",
+    "dev:desktop:mac": "npm run dev -w @cueai/desktop-mac",
+    "dev:mac": "node scripts/dev-mac.cjs",
     "dev:vision": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\server.py",
     "download:qwen-vl": "tools\\qwen-vl\\.venv\\Scripts\\python.exe tools\\qwen-vl\\download.py",
     "build": "npm run build -w @cueai/web",
     "build:web": "npm run build -w @cueai/web",
     "build:desktop": "npm run build -w @cueai/desktop",
+    "build:desktop:mac": "npm run build -w @cueai/desktop-mac",
+    "build:mac": "npm run build -w @cueai/desktop-mac",
     "dist:desktop": "node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop",
+    "dist:desktop:mac": "node scripts/assert-macos-packaging.cjs && node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop-mac",
+    "dist:mac": "node scripts/generate-mac-icon.mjs && node scripts/assert-macos-packaging.cjs && node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop-mac",
     "start": "npm run start -w @cueai/web",
     "lint": "npm run lint -w @cueai/web",
     "test:e2e": "playwright test",
+    "test:e2e:ai-providers": "playwright test tests/web/e2e/ai-providers.spec.ts tests/web/e2e/ai-providers-visual.spec.ts",
+    "test:e2e:license": "playwright test tests/web/e2e/license.spec.ts tests/web/e2e/license-api.spec.ts",
+    "test:licenses": "node --test tests/licenses/licenses.test.mjs",
+    "test:api": "node scripts/test-api.cjs",
+    "db:postgres": "docker compose up postgres -d",
+    "db:redis": "docker compose up redis -d",
+    "worker:celery": "node scripts/run-celery-worker.cjs",
+    "celery:verify": "node scripts/verify-celery-task.cjs",
+    "generate:license-keys": "node scripts/generate-license-keys.mjs",
+    "generate:license": "node scripts/generate-license.mjs",
+    "client:server": "node scripts/start-remote-licensing.cjs",
+    "client:package": "node scripts/prepare-desktop-web.cjs && npm run dist:desktop",
+    "client:deploy-bundle": "node scripts/prepare-cloud-deploy.cjs",
+    "client:handoff": "node scripts/prepare-client-handoff.cjs",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:desktop": "node scripts/e2e-desktop-bridge.mjs"
   },
@@ -30,5 +55,13 @@
   "allowScripts": {
     "electron@37.10.3": true,
     "esbuild@0.28.1": true
+  },
+  "optionalDependencies": {
+    "@next/swc-darwin-arm64": "16.3.0",
+    "@next/swc-darwin-x64": "16.3.0",
+    "@tailwindcss/oxide-darwin-arm64": "4.3.3",
+    "@tailwindcss/oxide-darwin-x64": "4.3.3",
+    "lightningcss-darwin-arm64": "1.32.0",
+    "lightningcss-darwin-x64": "1.32.0"
   }
 }

@@ -17,26 +17,30 @@ type ThemeContextValue = {
   toggleTheme: () => void;
 };
 
+function readDocumentTheme(): Theme {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function applyTheme(next: Theme) {
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("cueai-theme", next);
+}
+
 const ThemeContext = createContext<ThemeContextValue>({
   theme: "dark",
   setTheme: () => {},
   toggleTheme: () => {},
 });
 
-function readStoredTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
-  const stored = localStorage.getItem("cueai-theme");
-  return stored === "light" || stored === "dark" ? stored : "dark";
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const initial = readStoredTheme();
-    // Sync DOM attribute first; state update is intentional after mount for hydration safety.
-    document.documentElement.setAttribute("data-theme", initial);
+    const stored = localStorage.getItem("cueai-theme");
+    const initial = stored === "light" || stored === "dark" ? stored : readDocumentTheme();
+    applyTheme(initial);
     queueMicrotask(() => {
       setThemeState(initial);
       setHydrated(true);
@@ -45,13 +49,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("cueai-theme", next);
+    applyTheme(next);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }, [setTheme, theme]);
+    setThemeState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      applyTheme(next);
+      return next;
+    });
+  }, []);
 
   return (
     <ThemeContext.Provider value={{ theme: hydrated ? theme : "dark", setTheme, toggleTheme }}>

@@ -8,7 +8,6 @@ import {
   Pin,
   Play,
   RefreshCw,
-  Sparkles,
   Square,
   Volume2,
 } from "lucide-react";
@@ -30,6 +29,7 @@ import {
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import Link from "next/link";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import "./live-session.css";
 
 type TranscriptLine = {
@@ -51,19 +51,16 @@ type Suggestion = {
 
 export default function LiveMeetingPage() {
   const [session, setSession] = useState<LiveSessionConfig | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const meetingIdRef = useRef<string | null>(null);
   meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
-  const [wizardKey, setWizardKey] = useState(0);
-  const [starting, setStarting] = useState(false);
-  /** Idle = Start Live Session screen; setup = Create Session wizard. */
-  const [phase, setPhase] = useState<"idle" | "setup">("idle");
-  const startAbortRef = useRef<AbortController | null>(null);
-  const startingLockRef = useRef(false);
+  const setupAbortRef = useRef(false);
 
   useEffect(() => {
     setHydrated(true);
+    persistDesktopQuery();
   }, []);
 
   useEffect(() => {
@@ -75,13 +72,11 @@ export default function LiveMeetingPage() {
   }, []);
 
   function cancelSetup() {
-    startAbortRef.current?.abort();
-    startAbortRef.current = null;
-    startingLockRef.current = false;
-    setStarting(false);
+    setupAbortRef.current = true;
     clearLiveSessionConfig();
     setMeetingId(null);
     setSession(null);
+    setSetupOpen(false);
     void startDesktopMeetingSession({
       active: false,
       screenSharing: false,
@@ -89,17 +84,10 @@ export default function LiveMeetingPage() {
       hideCompanion: true,
     });
     void hideCompanionOverlay();
-    setWizardKey((k) => k + 1);
-    setPhase("idle");
   }
 
   async function beginSession(config: LiveSessionConfig) {
-    if (startingLockRef.current) return;
-    startingLockRef.current = true;
-    const ac = new AbortController();
-    startAbortRef.current = ac;
-    setStarting(true);
-
+    setupAbortRef.current = false;
     const title = sessionTitle(config);
     saveLiveSessionConfig(config);
     let createdId: string | null = null;
@@ -116,15 +104,9 @@ export default function LiveMeetingPage() {
           resumeText: config.resumeText,
           description: config.description,
         }),
-        signal: ac.signal,
       });
     } catch {
       // Briefing write is best-effort; meeting create still tries.
-    }
-    if (ac.signal.aborted) {
-      startingLockRef.current = false;
-      setStarting(false);
-      return;
     }
     try {
       const res = await fetch("/api/meetings", {
@@ -140,28 +122,27 @@ export default function LiveMeetingPage() {
           resumeText: config.resumeText,
           description: config.description,
         }),
-        signal: ac.signal,
       });
       const data = (await res.json().catch(() => ({}))) as { meeting?: { id?: string } };
       createdId = data.meeting?.id || null;
     } catch {
       // Overlay still works if persistence fails.
     }
-    if (ac.signal.aborted) {
-      // Drop orphaned live meeting if we created one then cancelled.
+    if (setupAbortRef.current) {
       if (createdId) {
-        void fetch(`/api/meetings/${encodeURIComponent(createdId)}`, {
-          method: "DELETE",
-        }).catch(() => undefined);
+        void fetch(`/api/meetings/${createdId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ end: true, durationSec: 0, transcript: [] }),
+        });
       }
       clearLiveSessionConfig();
-      startingLockRef.current = false;
-      setStarting(false);
       return;
     }
     const next = { ...config, meetingId: createdId || config.meetingId };
     saveLiveSessionConfig(next);
     setMeetingId(next.meetingId || null);
+    setSetupOpen(false);
     void openCompanionOverlay();
     void startDesktopMeetingSession({
       active: true,
@@ -172,9 +153,6 @@ export default function LiveMeetingPage() {
       showCompanion: true,
     });
     setSession(next);
-    startingLockRef.current = false;
-    setStarting(false);
-    startAbortRef.current = null;
   }
 
   function endSession(durationSec = 0, spoken: { who: string; text: string }[] = []) {
@@ -193,6 +171,7 @@ export default function LiveMeetingPage() {
     clearLiveSessionConfig();
     setMeetingId(null);
     setSession(null);
+    setSetupOpen(false);
     void startDesktopMeetingSession({
       active: false,
       screenSharing: false,
@@ -211,46 +190,39 @@ export default function LiveMeetingPage() {
     );
   }
 
+  if (!session && !setupOpen) {
+    return (
+      <div data-live className="mx-auto max-w-xl space-y-6 py-16 text-center animate-fade-up">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Live Session</h1>
+          <p className="mt-2 text-sm text-muted">
+            Start a live session to open Create Session. Cancel returns here without creating a meeting.
+          </p>
+        </div>
+        <Button
+          variant="gradient"
+          onClick={() => {
+            setupAbortRef.current = false;
+            setSetupOpen(true);
+          }}
+        >
+          Start Live Session
+        </Button>
+      </div>
+    );
+  }
+
   if (!session) {
     return (
       <div data-live>
-        {starting ? (
-          <div className="mx-auto flex max-w-lg flex-col items-center gap-4 py-16 text-center">
-            <p className="text-sm text-muted">Starting live session…</p>
-            <Button type="button" variant="secondary" onClick={cancelSetup}>
-              Cancel
-            </Button>
-          </div>
-        ) : phase === "idle" ? (
-          <div className="mx-auto flex max-w-lg flex-col items-center gap-5 py-20 text-center animate-fade-up">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-300">
-              <Sparkles className="h-7 w-7" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
-                Live Session
-              </h1>
-              <p className="mt-2 text-sm text-muted">
-                Start a live CueAI session for real-time transcription and AI answers.
-              </p>
-            </div>
-            <Button type="button" variant="gradient" onClick={() => setPhase("setup")}>
-              Start Live Session
-            </Button>
-          </div>
-        ) : (
-          <>
-            <CreateSessionWizard
-              key={wizardKey}
-              onCancel={cancelSetup}
-              onComplete={(config) => void beginSession(config)}
-            />
-            <p className="mt-4 text-center text-xs text-subtle">
-              Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
-              CueAI Desktop running for the pop-out window.
-            </p>
-          </>
-        )}
+        <CreateSessionWizard
+          onCancel={cancelSetup}
+          onComplete={(config) => void beginSession(config)}
+        />
+        <p className="mt-4 text-center text-xs text-subtle">
+          Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
+          CueAI Desktop running for the pop-out window.
+        </p>
       </div>
     );
   }
@@ -287,7 +259,7 @@ function ActiveLiveSession({
   const [asking, setAsking] = useState(false);
   const [askReply, setAskReply] = useState<string | null>(null);
   const [askNotice, setAskNotice] = useState<string | null>(null);
-  const [playheadPct, setPlayheadPct] = useState(62);
+  const [playheadPct, setPlayheadPct] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cueAiModeRef = useRef<CueAiMode>("private");
 
@@ -504,7 +476,11 @@ function ActiveLiveSession({
             {paused ? "Resume" : "Pause"}
           </Button>
           <Link
-            href={meetingId ? `/meetings/${meetingId}/summary` : "/meetings"}
+            href={
+              meetingId
+                ? withDesktopParam(`/meetings/${meetingId}/summary`)
+                : withDesktopParam("/meetings")
+            }
             onClick={() =>
               onEnd(
                 seconds,
@@ -601,10 +577,11 @@ function ActiveLiveSession({
               </div>
             )}
             {cueAiMode === "live" && lines.length === 0 && (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+              <div className="ls-empty">
                 <p className="text-sm font-medium">Waiting for a question…</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Live transcript appears here when Desktop Companion captures speech.
+                  Live transcript appears here when Desktop Companion captures speech. CueAI does
+                  not invent meeting dialogue.
                 </p>
               </div>
             )}
@@ -742,6 +719,11 @@ function ActiveLiveSession({
                 )}
               </div>
             )}
+            {cueAiMode === "live" &&
+              cueAiProcessing === "listening" &&
+              suggestions.length === 0 && (
+                <p className="px-1 py-6 text-sm text-muted">No AI answers yet.</p>
+              )}
             {cueAiMode === "live" &&
               cueAiProcessing === "listening" &&
               suggestions.map((a) => (

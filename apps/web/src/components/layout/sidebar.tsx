@@ -5,13 +5,12 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Video,
-  FileText,
-  Library,
   Languages,
   Monitor,
   Settings,
   Shield,
   Sparkles,
+  FileText,
   PanelLeft,
   AppWindow,
 } from "lucide-react";
@@ -19,33 +18,35 @@ import { BrandMark, Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { canAccessAdmin } from "@/lib/roles";
-import { isCueaiUserNavHref } from "@/lib/app-access";
+import { isAdminUser, isCueAiUserNavHref } from "@/lib/app-access";
+import { isMacDesktopApp } from "@/lib/desktop";
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: typeof Video;
-  adminOnly?: boolean;
-  /** Hidden from everyone in authenticated CueAI nav (product lives elsewhere or UI retired). */
-  hideFromNav?: boolean;
-  /** Extra CueAI modules — admins only (not normal users). */
-  adminExtra?: boolean;
-};
-
-const FULL_NAV: NavItem[] = [
+const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/meetings", label: "Meetings", icon: Video },
   { href: "/meetings/live", label: "Live Session", icon: Sparkles },
-  { href: "/resume", label: "Resume Tailor", icon: FileText, hideFromNav: true },
-  // Knowledge stays out of all CueAI nav (Admin Portal + sidebar); backend APIs retained.
-  { href: "/knowledge", label: "Knowledge Base", icon: Library, hideFromNav: true },
-  { href: "/translation", label: "Translation", icon: Languages, adminExtra: true },
-  { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true },
+  { href: "/resume", label: "Resume Tailor", icon: FileText, adminExtra: true as const },
+  { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
+  { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
   { href: "/companion", label: "Desktop Companion", icon: AppWindow },
-  { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true },
+  { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true as const },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+const MAC_SECTIONS = [
+  {
+    title: "CUE AI",
+    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/companion"],
+  },
+  {
+    title: "Workspace",
+    hrefs: ["/translation", "/screen-context", "/admin"],
+  },
+  {
+    title: "Settings",
+    hrefs: ["/settings"],
+  },
+] as const;
 
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") {
@@ -67,38 +68,68 @@ function isNavActive(pathname: string, href: string): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mac] = useState(() => isMacDesktopApp());
   const { session } = useAuth();
-  const admin = canAccessAdmin(session?.role);
+  const admin = isAdminUser(session?.role);
 
-  const nav = FULL_NAV.filter((item) => {
-    if (item.hideFromNav) return false;
-    if (item.adminOnly) return admin;
-    if (item.adminExtra) return admin;
-    if (!admin) return isCueaiUserNavHref(item.href);
-    return true;
+  const items = nav.filter((item) => {
+    if ("adminOnly" in item && item.adminOnly) return admin;
+    if ("adminExtra" in item && item.adminExtra) return admin;
+    return isCueAiUserNavHref(item.href);
   });
+
+  function renderLink(item: (typeof nav)[number], hudLabel = false) {
+    const active = isNavActive(pathname, item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={collapsed ? item.label : undefined}
+        className={cn(
+          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 mac-nav-item",
+          active
+            ? "mac-nav-active bg-[var(--surface-active)] text-foreground"
+            : "text-muted hover:bg-[var(--surface-hover)] hover:text-foreground",
+          collapsed && "justify-center px-2"
+        )}
+      >
+        <Icon
+          className={cn(
+            "h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105",
+            active && "text-foreground"
+          )}
+        />
+        {!collapsed && (
+          <span className="truncate">
+            {item.label === "Desktop Companion" && hudLabel ? "Meeting HUD" : item.label}
+          </span>
+        )}
+        {!collapsed && active && (
+          <span className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground not-mac" />
+        )}
+      </Link>
+    );
+  }
 
   return (
     <aside
       className={cn(
-        "sticky top-0 z-30 flex h-screen flex-col border-r border-[var(--border)] bg-[var(--background-elevated)] transition-all duration-300",
-        collapsed ? "w-[72px]" : "w-[var(--sidebar-width)]"
+        "mac-sidebar sticky top-0 z-30 flex h-screen flex-col border-r border-[var(--border)] bg-[var(--background-elevated)] transition-all duration-300",
+        collapsed && !mac ? "w-[72px]" : "w-[var(--sidebar-width)]"
       )}
     >
+      <div className="mac-only mac-sidebar-brand">
+        <span>CueAI</span>
+      </div>
       <div
         className={cn(
-          "flex items-center border-b border-[var(--border)]",
-          collapsed
-            ? "flex-col gap-1 px-2 py-3"
-            : "h-14 justify-between px-3"
+          "not-mac flex items-center border-b border-[var(--border)]",
+          collapsed ? "flex-col gap-1 px-2 py-3" : "h-14 justify-between px-3"
         )}
       >
         {collapsed ? (
-          <Link
-            href="/dashboard"
-            aria-label="CueAI"
-            className="flex h-8 w-8 items-center justify-center"
-          >
+          <Link href="/dashboard" aria-label="CueAI" className="flex h-8 w-8 items-center justify-center">
             <BrandMark size="sm" />
           </Link>
         ) : (
@@ -115,40 +146,21 @@ export function Sidebar() {
       </div>
 
       <nav className="cue-scroll flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {!collapsed && (
-          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-subtle">
-            {admin ? "CueAI" : "CueAI"}
-          </p>
-        )}
-        {nav.map((item) => {
-          const active = isNavActive(pathname, item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                active
-                  ? "bg-[var(--surface-active)] text-foreground"
-                  : "text-muted hover:bg-[var(--surface-hover)] hover:text-foreground",
-                collapsed && "justify-center px-2"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105",
-                  active && "text-foreground"
-                )}
-              />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-              {!collapsed && active && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground" />
-              )}
-            </Link>
-          );
-        })}
+        <div className="mac-only">
+          {MAC_SECTIONS.map((section) => {
+            const sectionItems = items.filter((item) =>
+              (section.hrefs as readonly string[]).includes(item.href)
+            );
+            if (sectionItems.length === 0) return null;
+            return (
+              <div key={section.title} className="mac-nav-section">
+                <p>{section.title}</p>
+                {sectionItems.map((item) => renderLink(item))}
+              </div>
+            );
+          })}
+        </div>
+        <div className="not-mac space-y-0.5">{items.map((item) => renderLink(item))}</div>
       </nav>
     </aside>
   );

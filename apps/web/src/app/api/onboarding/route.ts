@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { proxyToFastApi } from "@/lib/server/fastapi-proxy";
 import {
   isOnboardingAnswered,
   sanitizeOnboardingAnswers,
@@ -8,7 +9,10 @@ import { requireAuth } from "@/lib/server/api-auth";
 import { appendAudit, readStore, updateStore } from "@/lib/server/db";
 
 /** Current user's questionnaire answers, so the wizard can prefill on re-entry. */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/onboarding");
+  if (proxied) return proxied;
+
   const { error, session } = await requireAuth();
   if (error || !session) return error || NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -23,7 +27,10 @@ export async function GET() {
 }
 
 /** Save answers. `skipped: true` marks onboarding done without requiring answers. */
-export async function PUT(req: Request) {
+export async function PUT(req: NextRequest) {
+  const proxied = await proxyToFastApi(req, "/v1/onboarding");
+  if (proxied) return proxied;
+
   const { error, session } = await requireAuth();
   if (error || !session) return error || NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

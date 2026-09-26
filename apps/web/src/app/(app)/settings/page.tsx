@@ -21,8 +21,10 @@ import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
+import { LicensePanel } from "@/components/desktop/license-panel";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
-import { deleteAccountLocal, updateSessionProfile, workspaceFromName } from "@/lib/auth";
+import { deleteAccountLocal, updateSessionProfile } from "@/lib/auth";
+import { isAdminUser } from "@/lib/app-access";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -32,6 +34,7 @@ const sections = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
   { id: "desktop", label: "Desktop Preferences", icon: Monitor },
+  { id: "license", label: "License", icon: KeyRound },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "workspace", label: "Workspace", icon: Building2 },
   { id: "billing", label: "Billing", icon: CreditCard },
@@ -43,6 +46,8 @@ export default function SettingsPage() {
   const [section, setSection] = useState("profile");
   const { theme, setTheme } = useTheme();
   const { session, refresh, logout } = useAuth();
+  const admin = isAdminUser(session?.role);
+  const visibleSections = sections.filter((item) => admin || item.id !== "workspace");
   const [name, setName] = useState(session?.name || "");
   const [email, setEmail] = useState(session?.email || "");
   const [role, setRole] = useState(() =>
@@ -70,22 +75,41 @@ export default function SettingsPage() {
     setWorkspace(session?.workspace || "");
   }, [session]);
 
+  useEffect(() => {
+    if (!admin && section === "workspace") setSection("profile");
+  }, [admin, section]);
+
   function saveProfile() {
-    const next = updateSessionProfile({ name, email });
+    updateSessionProfile({ name, email });
     if (role.trim()) localStorage.setItem("cueai-role", role.trim());
-    if (next && !workspace.trim()) {
-      updateSessionProfile({ workspace: workspaceFromName(next.name) });
-    }
     void refresh();
     setSaveMsg("Profile saved.");
   }
 
-  function saveWorkspace() {
-    const nextName = workspace.trim() || workspaceFromName(name || "My");
-    updateSessionProfile({ workspace: nextName });
-    void refresh();
-    setWorkspace(nextName);
-    setSaveMsg("Workspace updated.");
+  async function saveWorkspace() {
+    const nextName = workspace.trim();
+    if (!nextName) {
+      setSaveMsg("Workspace name is required.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/admin/workspace", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nextName }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; workspace?: { name?: string } };
+      if (!res.ok) {
+        setSaveMsg(data.error || "Unable to update workspace.");
+        return;
+      }
+      await refresh();
+      setWorkspace(data.workspace?.name || nextName);
+      setSaveMsg("Workspace updated.");
+    } catch {
+      setSaveMsg("Unable to update workspace.");
+    }
   }
 
   async function onDeleteAccount() {
@@ -102,7 +126,7 @@ export default function SettingsPage() {
           Settings
         </h1>
         <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
-          {sections.map((s) => (
+          {visibleSections.map((s) => (
             <button
               key={s.id}
               onClick={() => setSection(s.id)}
@@ -239,9 +263,11 @@ export default function SettingsPage() {
             <div className="space-y-2">
               {[
                 ["Toggle Companion", "⌘⇧Space"],
-                ["Start / pause session", "⌘⇧L"],
-                ["Pin last answer", "⌘⇧P"],
+                ["Settings", "⌘,"],
                 ["Command palette", "⌘K"],
+                ["Close window", "⌘W"],
+                ["Minimize", "⌘M"],
+                ["Ask / primary action", "⌘↩"],
               ].map(([action, keys]) => (
                 <div
                   key={action}
@@ -258,6 +284,8 @@ export default function SettingsPage() {
         )}
 
         {section === "desktop" && <DesktopPreferencesPanel />}
+
+        {section === "license" && <LicensePanel />}
 
         {section === "notifications" && (
           <Card className="space-y-3 p-6">
@@ -308,7 +336,7 @@ export default function SettingsPage() {
                 .replace(/^-|-$/g, "") || "workspace"}
               readOnly
             />
-            <Button variant="primary" onClick={saveWorkspace}>
+            <Button variant="primary" onClick={() => void saveWorkspace()}>
               Update workspace
             </Button>
             {saveMsg && section === "workspace" && (

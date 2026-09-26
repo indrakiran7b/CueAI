@@ -31,6 +31,7 @@ export type ScreenshotResult = {
   dataUrl?: string;
   savedPath?: string | null;
   error?: string;
+  displayId?: number;
   meta?: {
     width: number;
     height: number;
@@ -41,6 +42,24 @@ export type ScreenshotResult = {
   };
 };
 
+export type MacPermissionState =
+  | "granted"
+  | "denied"
+  | "not-determined"
+  | "restricted"
+  | "unknown";
+
+export type MacPermissionStatus = {
+  state: MacPermissionState;
+  message: string;
+};
+
+export type MacPermissionsSnapshot = {
+  microphone: MacPermissionStatus;
+  screenRecording: MacPermissionStatus;
+  systemAudio: MacPermissionStatus;
+};
+
 export type CaptureDisplay = {
   id: number;
   label: string;
@@ -48,10 +67,14 @@ export type CaptureDisplay = {
   workArea?: { x: number; y: number; width: number; height: number };
   scaleFactor: number;
   primary: boolean;
+  internal?: boolean;
 };
+
+export type MacDisplayInfo = CaptureDisplay;
 
 export type CueDesktopAPI = {
   isDesktop: true;
+  isMac?: boolean;
   minimize: () => Promise<void>;
   maximize: () => Promise<boolean>;
   close: () => Promise<void>;
@@ -60,7 +83,7 @@ export type CueDesktopAPI = {
   onNavigate: (cb: (path: string) => void) => () => void;
   onShortcut: (cb: (name: string) => void) => () => void;
   toggleCompanion: () => Promise<void>;
-  showCompanion: () => Promise<void>;
+  showCompanion: () => Promise<CompanionOpenResult | CompanionBridgeStatus | void>;
   hideCompanion: () => Promise<void>;
   getStatus: () => Promise<DesktopStatus>;
   getVersion: () => Promise<string>;
@@ -78,16 +101,93 @@ export type CueDesktopAPI = {
   getMeetingSession: () => Promise<MeetingSession>;
   getCaptureStatus: () => Promise<CaptureStatus>;
   setExcludeCapture?: (enabled: boolean) => Promise<CaptureStatus>;
-  listDisplays?: () => Promise<CaptureDisplay[]>;
+  getListenSources?: () => Promise<{ mic: boolean; systemAudio: boolean }>;
+  setListenSources?: (sources: Partial<{ mic: boolean; systemAudio: boolean }>) => Promise<{
+    mic: boolean;
+    systemAudio: boolean;
+  }>;
+  endSession?: () => Promise<MeetingSession>;
+  onCaptureStatus?: (cb: (status: CaptureStatus) => void) => () => void;
+  onListenSources?: (cb: (sources: { mic: boolean; systemAudio: boolean }) => void) => () => void;
   captureScreenshot?: (opts?: {
     save?: boolean;
     displayId?: number | null;
   }) => Promise<ScreenshotResult>;
+  listDisplays?: () => Promise<CaptureDisplay[]>;
+  listWindows?: () => Promise<{ id: string; name: string; displayId?: string }[]>;
   pushCompanionAnswer?: (payload: {
     answer: string;
     question?: string;
     status?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  getPermissions?: () => Promise<MacPermissionsSnapshot>;
+  requestPermission?: (
+    kind: "microphone" | "screen" | "systemAudio"
+  ) => Promise<MacPermissionStatus>;
+  openPrivacySettings?: (
+    pane?: "microphone" | "screen" | "systemAudio" | "privacy"
+  ) => Promise<boolean>;
+  getMacDevice?: () => Promise<{
+    deviceId: string;
+    maskedId: string;
+    deviceName: string;
+    platform: "macos";
+    appVersion: string;
+    keychainAvailable: boolean;
+    hasCredential?: boolean;
+  }>;
+  registerMacDevice?: () => Promise<{
+    ok: boolean;
+    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
+    authorized: boolean;
+    httpStatus?: number;
+    message?: string;
+  }>;
+  verifyMacDevice?: () => Promise<{
+    ok: boolean;
+    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
+    authorized: boolean;
+    httpStatus?: number;
+    message?: string;
+  }>;
+  clearMacDeviceSession?: () => Promise<{
+    cleared: boolean;
+    identityPreserved: boolean;
+  }>;
+  getLicenseDevice?: () => Promise<{
+    deviceId: string;
+    maskedId: string;
+    deviceName: string;
+    platform: "windows" | "macos";
+    appVersion: string;
+    secureStorageAvailable: boolean;
+  }>;
+  getLicenseStatus?: () => Promise<LicenseStatusPayload>;
+  activateLicense?: (licenseKey: string) => Promise<LicenseStatusPayload>;
+  validateLicense?: () => Promise<LicenseStatusPayload>;
+  deactivateLicense?: () => Promise<LicenseStatusPayload>;
+};
+
+export type LicenseStatusPayload = {
+  ok: boolean;
+  state:
+    | "ACTIVE"
+    | "EXPIRED"
+    | "REVOKED"
+    | "INVALID"
+    | "DEVICE_LIMIT_REACHED"
+    | "NOT_ACTIVATED"
+    | "NETWORK_ERROR";
+  authorized: boolean;
+  message?: string;
+  clientName?: string;
+  licenseType?: string;
+  expiresAt?: string;
+  devicesActive?: number;
+  maxDevices?: number;
+  licenseId?: string;
+  deviceId?: string;
+  platform?: "windows" | "macos";
 };
 
 declare global {
@@ -112,6 +212,13 @@ export type CompanionOpenResult = {
 
 export function isDesktopApp() {
   return typeof window !== "undefined" && Boolean(window.cueDesktop?.isDesktop);
+}
+
+export function isMacDesktopApp() {
+  if (typeof window === "undefined") return false;
+  if (window.cueDesktop?.isMac) return true;
+  if (document.documentElement.dataset.desktop === "mac") return true;
+  return new URLSearchParams(window.location.search).get("desktop") === "mac";
 }
 
 export function getDesktop() {
@@ -212,14 +319,39 @@ export function tryLaunchDesktopApp(path = "companion"): boolean {
  * Open the companion overlay — prefers native Desktop (always-on-top + capture exclude).
  * Falls back to the in-page web companion when Desktop is unavailable.
  */
+function nativeResultFromBridge(status: CompanionBridgeStatus | null): CompanionOpenResult | null {
+  if (!status) return null;
+  if (status.visible) {
+    return status.loadError
+      ? { mode: "native", issue: "load_error", loadError: status.loadError }
+      : { mode: "native" };
+  }
+  if (status.loadError) {
+    return { mode: "native", issue: "load_error", loadError: status.loadError };
+  }
+  return null;
+}
+
 export async function openCompanionOverlay(): Promise<CompanionOpenResult> {
   const desktop = getDesktop();
   if (desktop) {
-    await desktop.showCompanion();
-    for (let i = 0; i < 8; i++) {
-      const status = await desktop.getStatus();
-      if (status.companionVisible) return { mode: "native" };
-      await sleep(150);
+    try {
+      const shown = (await desktop.showCompanion()) as CompanionBridgeStatus | void;
+      const immediate = nativeResultFromBridge(shown || null);
+      if (immediate) return immediate;
+
+      for (let i = 0; i < 20; i++) {
+        const status = await desktop.getStatus();
+        if (status.companionVisible) return { mode: "native" };
+        await sleep(150);
+      }
+      // Never talk to :39291 from inside Electron — another app may own that port.
+    } catch (err) {
+      return {
+        mode: "native",
+        issue: "load_error",
+        loadError: err instanceof Error ? err.message : "Companion IPC failed",
+      };
     }
     return { mode: "native", issue: "not_visible" };
   }

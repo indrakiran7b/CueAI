@@ -1,7 +1,69 @@
 category,provider,model,model_id,questions,requests,success_rate,average_ttft_ms,median_ttft_ms,p90_ttft_ms,average_total_latency_ms,p90_total_latency_ms,average_tokens_per_sec,accuracy,quality
-TECHNICAL,OpenAI,GPT-4o mini,openai/gpt-4o-mini,1,1,0.0,,,,,,,,
-TECHNICAL,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,1,1,0.0,,,,,,,,
-TECHNICAL,xAI Grok,Grok 4.20,x-ai/grok-4.20,1,1,0.0,,,,,,,,
-TECHNICAL,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,1,1,0.0,,,,,,,,
-TECHNICAL,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,1,1,0.0,,,,,,,,
-TECHNICAL,Perplexity,Sonar,perplexity/sonar,1,1,0.0,,,,,,,,
+TECHNICAL,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1490.664,1490.664,1753.55,2310.024,2508.294,107.16,0.9,0.9
+APTITUDE,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1225.033,1225.033,1388.128,1294.534,1403.69,2012.85,1.0,1.0
+LOGICAL_REASONING,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,954.443,954.443,1092.753,1211.323,1278.385,6076.5,1.0,1.0
+CODING,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1791.174,1791.174,2284.968,2646.94,3318.044,111.4,0.8875,0.8875
+DEBUGGING,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,832.919,832.919,854.857,1643.811,1786.937,122.93,0.8541,0.8541
+SQL_DATABASE,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1208.697,1208.697,1553.708,1781.313,2046.692,153.81,0.9571,0.9571
+COMPUTER_SCIENCE,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1850.149,1850.149,2158.978,2631.007,3007.954,120.57,1.0,1.0
+SCENARIO,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1538.389,1538.389,1753.768,2281.76,2620.173,121.01,0.7678,0.8375
+REALTIME_INTERVIEW,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1286.267,1286.267,1675.905,2082.492,2601.363,118.4,0.875,0.875
+BEHAVIORAL_HR,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1829.798,1829.798,1994.32,2914.859,3662.979,144.41,0.6666,0.7667
+SHORT_ANSWER,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1825.117,1825.117,1933.134,1946.466,1987.833,485.68,1.0,1.0
+FOLLOW_UP,OpenAI,GPT-4o mini,openai/gpt-4o-mini,2,2,1.0,1459.229,1459.229,1536.742,2233.169,2320.23,124.88,0.9,0.9
+TECHNICAL,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,894.803,894.803,1027.138,1186.87,1196.098,320.56,0.7,0.7
+APTITUDE,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,779.263,779.263,786.442,1060.668,1238.322,292.23,1.0,1.0
+LOGICAL_REASONING,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,861.264,861.264,946.271,975.931,982.657,327.03,1.0,1.0
+CODING,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,1635.725,1635.725,2347.124,1945.723,2689.286,370.21,0.8125,0.8125
+DEBUGGING,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,867.158,867.158,950.761,1253.51,1323.788,335.0,0.8833,0.8833
+SQL_DATABASE,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,726.524,726.524,779.683,905.092,997.922,280.49,0.8286,0.8286
+COMPUTER_SCIENCE,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,883.374,883.374,985.092,1299.722,1305.383,348.63,0.9,0.9
+SCENARIO,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,1148.304,1148.304,1317.902,1598.327,1777.801,273.38,0.7262,0.8084
+REALTIME_INTERVIEW,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,1694.13,1694.13,2458.796,2258.952,2857.872,280.21,0.875,0.875
+BEHAVIORAL_HR,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,748.298,748.298,779.451,1100.55,1215.166,306.06,0.675,0.7725
+SHORT_ANSWER,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,874.787,874.787,1022.203,1011.759,1158.795,248.28,0.75,0.75
+FOLLOW_UP,Google Gemini,Gemini 2.5 Flash Lite,google/gemini-2.5-flash-lite,2,2,1.0,681.534,681.534,684.067,1264.891,1408.325,294.31,0.9,0.9
+TECHNICAL,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,838.529,838.529,860.542,2489.535,3003.988,70.22,1.0,1.0
+APTITUDE,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,859.21,859.21,862.036,1004.998,1069.325,58.21,1.0,1.0
+LOGICAL_REASONING,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,917.918,917.918,973.42,1129.973,1354.862,3176.91,1.0,1.0
+CODING,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,874.372,874.372,918.095,2035.946,2144.532,97.96,1.0,1.0
+DEBUGGING,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,927.024,927.024,936.514,2442.452,2583.803,72.73,0.8666,0.8666
+SQL_DATABASE,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,895.734,895.734,901.088,1792.512,1807.014,74.66,0.9571,0.9571
+COMPUTER_SCIENCE,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,840.894,840.894,874.664,2441.238,2496.395,79.6,0.9,0.9
+SCENARIO,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,854.498,854.498,870.686,2787.425,3034.661,62.04,0.6965,0.7875
+REALTIME_INTERVIEW,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,858.017,858.017,908.146,3633.913,3809.788,86.81,1.0,1.0
+BEHAVIORAL_HR,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,847.606,847.606,867.126,2652.027,3219.777,72.72,0.7833,0.8483
+SHORT_ANSWER,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,866.587,866.587,881.698,1215.626,1223.811,79.02,0.6666,0.6666
+FOLLOW_UP,xAI Grok,Grok 4.20,x-ai/grok-4.20,2,2,1.0,880.308,880.308,929.346,5088.744,6200.706,78.72,1.0,1.0
+TECHNICAL,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,886.616,886.616,1127.449,4154.224,4711.892,28.63,1.0,1.0
+APTITUDE,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,2596.158,2596.158,4009.89,3039.052,4207.884,30.64,1.0,1.0
+LOGICAL_REASONING,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,1656.119,1656.119,2454.445,2443.816,2763.864,32.91,1.0,1.0
+CODING,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,602.745,602.745,605.612,4721.63,4724.542,36.66,0.925,0.925
+DEBUGGING,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,786.904,786.904,814.613,4903.562,5833.113,29.15,0.8666,0.8666
+SQL_DATABASE,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,1194.284,1194.284,1595.968,3553.023,4480.253,42.4,0.9143,0.9143
+COMPUTER_SCIENCE,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,1145.554,1145.554,1622.928,4973.802,5859.037,42.06,0.9,0.9
+SCENARIO,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,3207.889,3207.889,5208.402,5826.163,7831.346,30.56,0.7262,0.8084
+REALTIME_INTERVIEW,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,907.145,907.145,1058.134,7932.059,8392.854,21.72,0.9,0.9
+BEHAVIORAL_HR,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,880.379,880.379,1003.222,5465.78,5705.657,27.8,0.8666,0.9066
+SHORT_ANSWER,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,1350.468,1350.468,1943.507,1997.941,2339.668,50.96,0.625,0.625
+FOLLOW_UP,DeepSeek,DeepSeek Chat,deepseek/deepseek-chat,2,2,1.0,967.569,967.569,1029.941,8324.193,10699.845,34.51,1.0,1.0
+TECHNICAL,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1409.485,1409.485,1649.003,2274.351,2288.825,154.06,1.0,1.0
+APTITUDE,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1312.778,1312.778,1417.918,1559.569,1561.859,205.4,1.0,1.0
+LOGICAL_REASONING,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1349.832,1349.832,1415.826,1382.702,1474.596,6533.12,1.0,1.0
+CODING,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1281.479,1281.479,1400.798,2689.215,2727.189,210.09,0.9625,0.9625
+DEBUGGING,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1184.115,1184.115,1198.874,2088.329,2238.24,143.88,0.8833,0.8833
+SQL_DATABASE,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1514.592,1514.592,1667.182,2365.631,2526.373,190.33,1.0,1.0
+COMPUTER_SCIENCE,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,1.0,1343.575,1343.575,1502.99,2842.102,3570.508,120.0,0.8,0.8
+SCENARIO,Anthropic Claude,Claude Haiku 4.5,anthropic/claude-haiku-4.5,2,2,0.5,1185.084,1185.084,1185.084,2779.955,2779.955,87.15,0.3929,0.575
+TECHNICAL,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1354.267,1354.267,1552.424,2937.892,3467.422,114.71,1.0,1.0
+APTITUDE,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1358.278,1358.278,1449.465,1432.289,1551.561,93.54,1.0,1.0
+LOGICAL_REASONING,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1427.86,1427.86,1488.242,1667.928,1917.087,282.89,1.0,1.0
+CODING,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1289.994,1289.994,1349.692,2300.872,2365.418,147.0,0.9625,0.9625
+DEBUGGING,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1313.438,1313.438,1325.337,2338.962,2612.694,148.32,0.9125,0.9125
+SQL_DATABASE,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1508.218,1508.218,1717.552,2678.114,2950.16,113.04,0.9571,0.9571
+COMPUTER_SCIENCE,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1330.749,1330.749,1462.843,2825.432,2910.242,111.27,0.9,0.9
+SCENARIO,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1588.51,1588.51,1710.351,3713.474,4148.609,112.02,0.7678,0.8375
+REALTIME_INTERVIEW,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1256.881,1256.881,1300.836,3356.594,3365.952,110.88,1.0,1.0
+BEHAVIORAL_HR,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1342.834,1342.834,1455.19,2722.959,2790.527,106.86,0.7833,0.8483
+SHORT_ANSWER,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1137.013,1137.013,1170.816,1533.841,1598.535,108.56,0.875,0.875
+FOLLOW_UP,Perplexity,Sonar,perplexity/sonar,2,2,1.0,1277.077,1277.077,1346.513,3188.282,3283.04,127.49,1.0,1.0

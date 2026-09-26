@@ -56,6 +56,7 @@ export async function generateGroqText(req: {
   let lastMessage = "Groq did not return an answer.";
 
   for (const model of MODEL_FALLBACKS) {
+    console.log("[GROQ] Request started");
     const res = await fetch(GROQ_CHAT_URL, {
       method: "POST",
       headers: {
@@ -97,6 +98,8 @@ export async function generateGroqText(req: {
       continue;
     }
 
+    console.log("[GROQ] First token received");
+    console.log("[GROQ] Stream completed");
     return {
       text,
       model: payload.model || model,

@@ -13,6 +13,9 @@ import {
   type StoredMeeting,
 } from "@/lib/meetings-client";
 import { cn } from "@/lib/utils";
+import { MacGlassButton, MacSegmentedControl } from "@/components/mac";
+import { isMacDesktopApp } from "@/lib/desktop";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 
 type StatusFilter = "all" | "interview" | "regular";
 
@@ -24,6 +27,12 @@ export default function MeetingsPage() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [mac, setMac] = useState(false);
+
+  useEffect(() => {
+    setMac(isMacDesktopApp());
+    persistDesktopQuery();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -96,14 +105,20 @@ export default function MeetingsPage() {
             Meetings
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Completed sessions and AI summaries in one place.
+            Completed sessions only. A live meeting appears here after you end it and the summary is saved.
           </p>
         </div>
-        <Link href="/meetings/live">
-          <Button variant="gradient">
-            <Video className="h-4 w-4" />
-            New live session
-          </Button>
+        <Link href={withDesktopParam("/meetings/live")}>
+          {mac ? (
+            <MacGlassButton accent icon={<Video className="h-4 w-4" />}>
+              New live session
+            </MacGlassButton>
+          ) : (
+            <Button variant="gradient">
+              <Video className="h-4 w-4" />
+              New live session
+            </Button>
+          )}
         </Link>
       </div>
 
@@ -116,20 +131,32 @@ export default function MeetingsPage() {
             leftIcon={<Search className="h-4 w-4" />}
           />
         </div>
-        <Button
-          variant={filtersOpen || statusFilter !== "all" ? "primary" : "outline"}
-          onClick={() => setFiltersOpen((o) => !o)}
-        >
-          <Filter className="h-4 w-4" />
-          Filters
-        </Button>
+        {mac ? (
+          <MacSegmentedControl<StatusFilter>
+            value={statusFilter}
+            onChange={setStatusFilter}
+            segments={[
+              { id: "all", label: "All" },
+              { id: "interview", label: "Interview" },
+              { id: "regular", label: "Regular" },
+            ]}
+          />
+        ) : (
+          <Button
+            variant={filtersOpen || statusFilter !== "all" ? "primary" : "outline"}
+            onClick={() => setFiltersOpen((o) => !o)}
+          >
+            <Filter className="h-4 w-4" />
+            Filters
+          </Button>
+        )}
       </div>
 
       {filtersOpen && (
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ["all", "All"],
+              ["all", "All completed"],
               ["interview", "Interview"],
               ["regular", "Regular"],
             ] as const
@@ -153,14 +180,17 @@ export default function MeetingsPage() {
 
       {error && (
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
+          {error}{" "}
+          <button type="button" className="underline" onClick={() => window.location.reload()}>
+            Try Again
+          </button>
         </p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {filtered.map((m) => (
           <div key={m.id} className="relative">
-            <Link href={`/meetings/${m.id}/summary`}>
+            <Link href={withDesktopParam(`/meetings/${m.id}/summary`)}>
               <Card hover className="h-full p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
@@ -203,21 +233,11 @@ export default function MeetingsPage() {
       </div>
 
       {loaded && !error && filtered.length === 0 && (
-        <div className="space-y-4 py-8 text-center">
-          <p className="text-sm text-muted">
-            {meetings.length === 0
-              ? "No meeting summaries yet."
-              : `No meetings match your search${statusFilter !== "all" ? " or filters" : ""}.`}
-          </p>
-          {meetings.length === 0 && (
-            <Link href="/meetings/live">
-              <Button variant="gradient">
-                <Video className="h-4 w-4" />
-                Start a Live Session
-              </Button>
-            </Link>
-          )}
-        </div>
+        <p className="py-8 text-center text-sm text-muted">
+          {meetings.length === 0
+            ? "No meeting summaries yet."
+            : `No meetings match your search${statusFilter !== "all" ? " or filters" : ""}.`}
+        </p>
       )}
     </div>
   );

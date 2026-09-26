@@ -19,6 +19,8 @@ export type DbUser = {
   lastActiveAt?: string;
   /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
   onboarding?: OnboardingProfile;
+  /** Optional billing entitlement. Absent means free. */
+  plan?: "free" | "premium";
 };
 
 export type DbInvite = {
@@ -164,6 +166,25 @@ export type DbMeetingAnswer = {
   questionWho?: string;
 };
 
+export type DeviceStatus = "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED";
+
+export type DbDevice = {
+  id: string;
+  userId: string;
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  appVersion: string;
+  status: Exclude<DeviceStatus, "NEW">;
+  registeredAt: string;
+  lastVerifiedAt?: string;
+  updatedAt?: string;
+  revokedAt?: string;
+  blockedAt?: string;
+  /** SHA-256 of the one-time device credential. Never store the plaintext. */
+  credentialHash?: string;
+};
+
 export type DbMeeting = {
   id: string;
   workspaceId: string;
@@ -197,6 +218,7 @@ export type WorkspaceStore = {
   audit: DbAudit[];
   ai: DbAiConfig;
   meetings?: DbMeeting[];
+  devices?: DbDevice[];
   activeMeetingId?: string | null;
   /** Latest resume / job briefing for live answers, even before a meeting starts. */
   liveBriefing?: {
@@ -257,6 +279,7 @@ function defaultStore(): WorkspaceStore {
     usage: [],
     audit: [],
     meetings: [],
+    devices: [],
     activeMeetingId: null,
     ai: {
       provider: "groq",
@@ -299,6 +322,10 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     ensureAiCatalog(memory.ai);
     if (!memory.workspace.createdAt) {
       memory.workspace.createdAt = memory.users[0]?.createdAt || new Date().toISOString();
+    }
+    if (!memory.devices) memory.devices = [];
+    for (const device of memory.devices) {
+      if (!device.updatedAt) device.updatedAt = device.lastVerifiedAt || device.registeredAt;
     }
     return memory;
   } catch {
@@ -389,5 +416,6 @@ export function publicUser(user: DbUser) {
     createdAt: user.createdAt,
     lastActiveAt: user.lastActiveAt || null,
     onboardingCompleted: Boolean(user.onboarding?.completedAt),
+    plan: user.plan === "premium" ? "premium" : "free",
   };
 }

@@ -1,0 +1,45 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [macos-desktop, main]
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      AUTH_SECRET: cueai-ci-build-secret-not-for-production
+      AUTH_URL: http://127.0.0.1:3002
+      NEXT_PUBLIC_SKIP_AUTH: "false"
+      NEXT_PUBLIC_AUTH_BYPASS: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Write web env for production build
+        run: |
+          printf '%s\n' \
+            'AUTH_SECRET=cueai-ci-build-secret-not-for-production' \
+            'AUTH_URL=http://127.0.0.1:3002' \
+            'NEXT_PUBLIC_SKIP_AUTH=false' \
+            'NEXT_PUBLIC_AUTH_BYPASS=false' \
+            > apps/web/.env.production
+      - name: Build web
+        working-directory: apps/web
+        run: npx next build
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CueAI-mac
+          path: |
+            apps/desktop/macos/release/*.dmg
+            apps/desktop/macos/release/*.zip
+          if-no-files-found: error
+          retention-days: 14

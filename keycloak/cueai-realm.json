@@ -21,8 +21,8 @@
   "defaultRoles": ["user"],
   "clients": [
     {
-      "clientId": "cueai-android",
-      "name": "CueAI Android / Mobile SPA",
+      "clientId": "cueai-web",
+      "name": "CueAI Web SPA",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",

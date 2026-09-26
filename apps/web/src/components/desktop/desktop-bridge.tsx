@@ -2,32 +2,49 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getDesktop, isDesktopApp } from "@/lib/desktop";
+import { getDesktop, isDesktopApp, isMacDesktopApp } from "@/lib/desktop";
+import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 
 /** Listens for tray / shortcut navigation events from Electron. */
 export function DesktopBridge() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!isDesktopApp()) return;
+    const mac = isMacDesktopApp();
+    if (mac) {
+      document.documentElement.dataset.desktop = "mac";
+      document.title = "CueAI";
+      persistDesktopQuery();
+    }
+
+    if (!isDesktopApp()) {
+      if (mac) return;
+      return;
+    }
     const desktop = getDesktop();
     if (!desktop) return;
 
-    const offNav = desktop.onNavigate((path) => {
-      router.push(path);
-    });
+    if (!mac) {
+      document.documentElement.dataset.desktop = "win";
+    }
+    document.title = "CueAI";
 
-    const offShortcut = desktop.onShortcut((name) => {
-      if (name === "command-palette") {
-        // Existing topbar search is the command surface for MVP
-        document.querySelector<HTMLButtonElement>("[data-command-trigger]")?.click();
-      }
-      if (name === "end-session") {
-        window.dispatchEvent(new CustomEvent("cueai:end-session"));
-      }
-    });
+    const offNav = desktop.onNavigate
+      ? desktop.onNavigate((path) => {
+          router.push(withDesktopParam(path));
+        })
+      : () => {};
 
-    document.documentElement.dataset.desktop = "true";
+    const offShortcut = desktop.onShortcut
+      ? desktop.onShortcut((name) => {
+          if (name === "command-palette") {
+            document.querySelector<HTMLButtonElement>("[data-command-trigger]")?.click();
+          }
+          if (name === "end-session") {
+            window.dispatchEvent(new CustomEvent("cueai:end-session"));
+          }
+        })
+      : () => {};
 
     return () => {
       offNav();

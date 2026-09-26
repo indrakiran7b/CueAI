@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   buildSystemInstruction,
   buildUserPrompt,
@@ -84,7 +84,33 @@ function parseTranscript(input: unknown): LiveTranscriptLine[] {
     .filter((line) => line.text.length > 0);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  if (process.env.CUEAI_LIVE_ANSWER_LOCAL !== "1") {
+    const base = (process.env.CUEAI_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+    try {
+      const upstream = await fetch(`${base}/v1/live/answer`, {
+        method: "POST",
+        headers: {
+          "content-type": request.headers.get("content-type") || "application/json",
+          accept: request.headers.get("accept") || "*/*",
+          ...(request.headers.get("cookie")
+            ? { cookie: request.headers.get("cookie") as string }
+            : {}),
+        },
+        body: await request.arrayBuffer(),
+      });
+      const headers = new Headers(CORS_HEADERS);
+      const type = upstream.headers.get("content-type");
+      if (type) headers.set("content-type", type);
+      return new Response(upstream.body, { status: upstream.status, headers });
+    } catch {
+      return json(
+        { error: "CueAI API is not running. Start apps/api or set CUEAI_LIVE_ANSWER_LOCAL=1." },
+        503,
+      );
+    }
+  }
+
   const groqKey = resolveGroqApiKey();
   const credentials = await resolveGeminiCredentials();
   if (!groqKey && !credentials) {
@@ -389,6 +415,7 @@ export async function POST(request: Request) {
 
     if (groqKey && !preferGemini) {
       try {
+        console.log("[GROQ] Request started");
         result = await generateGroqText({
           system,
           prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
@@ -399,6 +426,7 @@ export async function POST(request: Request) {
       } catch (err) {
         if (!credentials) throw err;
         console.error("live_answer_groq_fallback", err instanceof Error ? err.message : err);
+        console.log("[GEMINI] Fallback started");
         result = await generateGeminiText({
           credentials,
           system,

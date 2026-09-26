@@ -1,4 +1,52 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cueai-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cueai}
+      POSTGRES_USER: ${POSTGRES_USER:-cueai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cueai}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - cueai_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-cueai} -d ${POSTGRES_DB:-cueai}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: cueai-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  celery-worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.worker
+    container_name: cueai-celery-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:3000
+      CUEAI_ENV: development
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.1
     container_name: cueai-keycloak
@@ -19,3 +67,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
+
+volumes:
+  cueai_pg_data:
