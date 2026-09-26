@@ -1,13 +1,12 @@
 import { canAccessAdmin } from "@/lib/roles";
+import { resolveBillingPlan } from "@/lib/billing-plans";
 
 export type CuePlan = "free" | "premium";
 
 export const FREE_MEETING_QA_LIMIT = 5;
 
 export function resolvePlan(value?: string | null): CuePlan {
-  const raw = String(value || "").trim().toLowerCase();
-  if (raw === "premium" || raw === "pro" || raw === "enterprise") return "premium";
-  return "free";
+  return resolveBillingPlan(value) === "free" ? "free" : "premium";
 }
 
 export function canViewFullMeetingQa(input: {

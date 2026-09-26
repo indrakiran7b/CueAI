@@ -16,6 +16,7 @@ import {
   type TranslateLang,
 } from "@/lib/translate-client";
 import { cn } from "@/lib/utils";
+import { RequireAdmin } from "@/components/auth/require-admin";
 
 const languages = [
   { id: "en", label: "English" },
@@ -520,14 +521,16 @@ function TranslationContent() {
 
 export default function TranslationPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
-          Loading translation…
-        </div>
-      }
-    >
-      <TranslationContent />
-    </Suspense>
+    <RequireAdmin>
+      <Suspense
+        fallback={
+          <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+            Loading translation…
+          </div>
+        }
+      >
+        <TranslationContent />
+      </Suspense>
+    </RequireAdmin>
   );
 }

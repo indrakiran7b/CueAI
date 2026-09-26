@@ -20,7 +20,9 @@ export type DbUser = {
   /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
   onboarding?: OnboardingProfile;
   /** Optional billing entitlement. Absent means free. */
-  plan?: "free" | "premium";
+  plan?: "free" | "pro" | "team" | "premium";
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
 };
 
 export type DbInvite = {
@@ -408,6 +410,6 @@ export function publicUser(user: DbUser) {
     createdAt: user.createdAt,
     lastActiveAt: user.lastActiveAt || null,
     onboardingCompleted: Boolean(user.onboarding?.completedAt),
-    plan: user.plan === "premium" ? "premium" : "free",
+    plan: user.plan === "team" ? "team" : user.plan === "pro" || user.plan === "premium" ? "pro" : "free",
   };
 }

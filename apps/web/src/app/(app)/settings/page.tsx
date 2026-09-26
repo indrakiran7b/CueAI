@@ -23,6 +23,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
 import { LicensePanel } from "@/components/desktop/license-panel";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
+import { BillingPanel } from "@/components/settings/billing-panel";
 import { deleteAccountLocal, updateSessionProfile } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,14 @@ export default function SettingsPage() {
     setEmail(session?.email || "");
     setWorkspace(session?.workspace || "");
   }, [session]);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    if (requested && sections.some((item) => item.id === requested)) {
+      if (!admin && requested === "workspace") setSection("profile");
+      else setSection(requested);
+    }
+  }, [admin]);
 
   useEffect(() => {
     if (!admin && section === "workspace") setSection("profile");
@@ -345,24 +354,7 @@ export default function SettingsPage() {
           </Card>
         )}
 
-        {section === "billing" && (
-          <Card className="space-y-4 p-6">
-            <div className="flex items-center justify-between">
-              <CardTitle>Billing</CardTitle>
-              <Badge variant="purple">Unavailable</Badge>
-            </div>
-            <p className="text-sm text-muted">
-              Billing and plan upgrades are not connected yet. No charges are
-              processed from this screen.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => window.open("/#pricing", "_self")}
-            >
-              View marketing plans
-            </Button>
-          </Card>
-        )}
+        {section === "billing" && <BillingPanel />}
 
         {section === "api" && (
           <Card className="space-y-4 p-6">

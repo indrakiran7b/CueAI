@@ -22,6 +22,7 @@ import {
   type CaptureDisplay,
 } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
+import { RequireAdmin } from "@/components/auth/require-admin";
 
 type AnalyzeStatus = "idle" | "analyzing" | "ready" | "error";
 
@@ -221,6 +222,7 @@ export default function ScreenContextPage() {
         ] as CaptureDisplay[]);
 
   return (
+    <RequireAdmin>
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -463,5 +465,6 @@ export default function ScreenContextPage() {
         </div>
       </div>
     </div>
+    </RequireAdmin>
   );
 }

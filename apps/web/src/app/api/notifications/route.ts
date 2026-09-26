@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server/api-auth";
 import { readStore } from "@/lib/server/db";
+import { canAccessAdmin } from "@/lib/roles";
 
-function hrefFor(action: string, resourceId?: string) {
+function hrefFor(action: string, resourceId?: string, sessionRole?: string) {
   if (action.startsWith("meeting") || action.includes("meeting")) {
     return resourceId ? `/meetings/${resourceId}/summary` : "/meetings";
   }
   if (action.includes("device")) return "/settings";
-  if (action.includes("knowledge")) return "/knowledge";
+  if (action.includes("knowledge")) return canAccessAdmin(sessionRole) ? "/knowledge" : "/dashboard";
   if (action.includes("workspace")) return "/settings";
   if (action.includes("user") || action.includes("invite")) return "/settings";
   return "/dashboard";
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       id: event.id,
       title: titleFor(event.action, event.resourceType),
       body: event.actorName ? `${event.actorName}` : "",
-      href: hrefFor(event.action, event.resourceId),
+      href: hrefFor(event.action, event.resourceId, session.role),
       createdAt: event.createdAt,
     }));
 

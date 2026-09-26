@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_BYPASS } from "@/lib/auth-mode";
+import { isResumeProductPath } from "@/lib/product-mode";
 import {
   SESSION_COOKIE,
   verifySessionEdge,
@@ -59,6 +60,7 @@ export async function middleware(req: NextRequest) {
     }
     const login = new URL("/login", req.url);
     login.searchParams.set("next", pathname);
+    if (isResumeProductPath(pathname)) login.searchParams.set("product", "resume");
     return NextResponse.redirect(login);
   }
 

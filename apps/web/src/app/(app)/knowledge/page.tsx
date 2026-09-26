@@ -21,10 +21,17 @@ import {
   type KnowledgeDoc,
 } from "@/lib/knowledge-store";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminUser } from "@/lib/app-access";
+import { useRouter } from "next/navigation";
+import { withDesktopParam } from "@/lib/desktop-query";
 
 const folders = ["All", "Security", "GTM", "Engineering", "Sales"];
 
 export default function KnowledgePage() {
+  const { session, ready } = useAuth();
+  const router = useRouter();
+  const admin = isAdminUser(session?.role);
   const inputRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [folder, setFolder] = useState("All");
@@ -35,10 +42,15 @@ export default function KnowledgePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
+    if (!admin) {
+      router.replace(withDesktopParam("/dashboard"));
+      return;
+    }
     const loaded = loadKnowledgeDocs();
     setDocs(loaded);
     setSelected(loaded[0]?.id ?? null);
-  }, []);
+  }, [ready, admin, router]);
 
   const filtered = docs.filter((d) => {
     const inFolder = folder === "All" || d.folder === folder;
@@ -80,6 +92,14 @@ export default function KnowledgePage() {
     setDocs(next);
     setSelected(next[0]?.id ?? null);
     setMessage("Document deleted.");
+  }
+
+  if (!ready || !admin) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+        {ready ? "Redirecting…" : "Loading workspace…"}
+      </div>
+    );
   }
 
   return (

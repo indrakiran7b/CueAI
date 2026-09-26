@@ -12,6 +12,7 @@ import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { persistProductFromSearch } from "@/lib/product-mode";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { MacAuthShell, MacSignupForm } from "@/components/mac/mac-auth-screen";
 
@@ -81,6 +82,7 @@ function SignupForm() {
   useEffect(() => {
     setMounted(true);
     persistDesktopQuery();
+    persistProductFromSearch(searchParams.toString());
     setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
   }, [searchParams]);
 

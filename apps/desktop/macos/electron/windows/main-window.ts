@@ -103,9 +103,19 @@ export function createMainWindow(): BrowserWindow {
   );
 
   win.setTitle("CueAI");
-  if (process.platform === "darwin") {
-    win.setWindowButtonVisibility(false);
+  function keepMacTrafficLights() {
+    if (process.platform !== "darwin" || win.isDestroyed()) return;
+    win.setWindowButtonVisibility(true);
+    if (typeof win.setWindowButtonPosition === "function") {
+      win.setWindowButtonPosition({ x: 16, y: 13 });
+    }
   }
+  keepMacTrafficLights();
+  win.webContents.on("did-navigate", () => keepMacTrafficLights());
+  win.webContents.on("did-navigate-in-page", () => keepMacTrafficLights());
+  win.webContents.on("did-finish-load", () => keepMacTrafficLights());
+  win.on("enter-full-screen", () => keepMacTrafficLights());
+  win.on("leave-full-screen", () => keepMacTrafficLights());
   win.webContents.on("console-message", (_event, _level, message) => {
     if (message.startsWith("[DEVICE]") || message.startsWith("[AUTH]")) {
       console.log(message);

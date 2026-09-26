@@ -10,10 +10,14 @@ import { Card } from "@/components/ui/card";
 import { fetchMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminUser } from "@/lib/app-access";
 
 export default function ConversationFeedPage() {
   const params = useParams<{ id: string }>();
   const meetingId = typeof params.id === "string" ? params.id : "";
+  const { session } = useAuth();
+  const admin = isAdminUser(session?.role);
 
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,12 +104,14 @@ export default function ConversationFeedPage() {
               Summary
             </Button>
           </Link>
+          {admin && (
           <Link href={`/translation?meetingId=${encodeURIComponent(meeting.id)}`}>
             <Button variant="outline" size="sm">
               <Languages className="h-3.5 w-3.5" />
               Translation
             </Button>
           </Link>
+          )}
         </div>
       </div>
 

@@ -10,15 +10,15 @@ export function macMainWindowOptions(
 ): BrowserWindowConstructorOptions {
   const isMac = process.platform === "darwin";
   return {
-    // Custom title-bar controls live on the top-right. Do not show native left lights.
-    frame: false,
     ...(isMac
       ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: 13 },
           vibrancy: "under-window" as const,
           visualEffectState: "active" as const,
         }
-      : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1c1c1e" : "#f2f2f7",
+      : { frame: false }),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#090909" : "#f8fafc",
     roundedCorners: true,
     hasShadow: true,
     fullscreenable: true,

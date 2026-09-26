@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import {
   Check,
   Download,
@@ -145,6 +145,22 @@ export default function ResumePage() {
 
   const canExport = Boolean(analysis && acceptedCount > 0 && improvedResume.trim());
 
+  useEffect(() => {
+    function applyHash(hash: string) {
+      if (hash === "#job") setTab("jd");
+      else if (hash === "#results") setTab("improved");
+      else if (hash === "#upload" || hash === "#analysis" || hash === "#skills" || hash === "#suggestions") {
+        setTab("editor");
+      }
+    }
+    applyHash(window.location.hash);
+    function onHash() {
+      applyHash(window.location.hash);
+    }
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   function assignFile(next: File | null) {
     setError(null);
     setAnalysis(null);
@@ -276,6 +292,7 @@ export default function ResumePage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <div className="space-y-4">
           <Card
+            id="upload"
             className={cn(
               "border-dashed p-8 text-center transition-colors",
               dragOver && "border-primary bg-[var(--primary-muted)]/30"
@@ -344,7 +361,7 @@ export default function ResumePage() {
           />
 
           {tab === "jd" ? (
-            <Card className="p-4">
+            <Card id="job" className="p-4">
               <form onSubmit={(e) => void runAnalyze(e)}>
                 <label className="text-sm font-medium" htmlFor="job-description">
                   Job description <span className="text-subtle">(optional)</span>
@@ -381,7 +398,7 @@ export default function ResumePage() {
               </form>
             </Card>
           ) : tab === "improved" ? (
-            <Card className="p-4">
+            <Card id="results" className="p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-medium">Fresh improved resume</p>
@@ -510,7 +527,7 @@ export default function ResumePage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="flex flex-col items-center p-5">
+          <Card id="analysis" className="flex flex-col items-center p-5">
             <CardTitle className="mb-4 self-start">Match scores</CardTitle>
             <Gauge value={analysis?.matchScore ?? 0} label="AI Match" />
             <div className="mt-6 w-full space-y-3">
@@ -531,7 +548,7 @@ export default function ResumePage() {
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card id="suggestions" className="p-5">
             <CardHeader>
               <CardTitle>Missing keywords</CardTitle>
             </CardHeader>
@@ -547,7 +564,7 @@ export default function ResumePage() {
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card id="skills" className="p-5">
             <CardHeader>
               <CardTitle>Suggested skills</CardTitle>
             </CardHeader>

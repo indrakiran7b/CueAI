@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { AUTH_BYPASS } from "@/lib/auth";
 import { withDesktopParam } from "@/lib/desktop-query";
+import { isResumeProductPath } from "@/lib/product-mode";
 
 /** Require a local/OAuth session for app routes unless auth bypass is enabled. */
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -18,7 +19,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     if (!ready || AUTH_BYPASS) return;
     const next = encodeURIComponent(pathname || "/dashboard");
     if (!session) {
-      router.replace(withDesktopParam(`/login?next=${next}`));
+      const resume = isResumeProductPath(pathname);
+      router.replace(
+        withDesktopParam(resume ? `/login?product=resume&next=${next}` : `/login?next=${next}`),
+      );
       return;
     }
     if (needsOnboarding) {

@@ -328,10 +328,23 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle(IpcChannels.DESKTOP_OPEN_EXTERNAL, async (_e, url: string) => {
-    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+    if (typeof url !== "string") throw new Error("Invalid URL");
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
       throw new Error("Invalid URL");
     }
-    await shell.openExternal(url);
+    const host = parsed.hostname.toLowerCase();
+    const stripeHost = host === "stripe.com" || host.endsWith(".stripe.com");
+    const localDev = host === "127.0.0.1" || host === "localhost";
+    if (stripeHost && parsed.protocol !== "https:") {
+      throw new Error("Stripe checkout must use HTTPS");
+    }
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && localDev)) {
+      throw new Error("Invalid URL");
+    }
+    await shell.openExternal(parsed.toString());
   });
 
   ipcMain.handle(

@@ -286,12 +286,32 @@ export default function LandingPage() {
             editable, private, and ready before the call ends.
           </motion.p>
           <motion.div
-            className="mt-9 flex flex-wrap items-center justify-center gap-3"
+            className="mx-auto mt-8 max-w-[520px]"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.18 }}
+            transition={{ duration: 0.45, delay: 0.16 }}
           >
-            <Pill href="/signup">
+            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--lp-ink-muted)]">
+              Choose your experience
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Link href="/resume-tailor?product=resume" className="lp-product-card">
+                <span className="lp-product-card-title">Resume Tailor</span>
+                <span className="lp-product-card-copy">AI-powered resume optimization</span>
+              </Link>
+              <Link href="/login?product=cueai" className="lp-product-card">
+                <span className="lp-product-card-title">CueAI</span>
+                <span className="lp-product-card-copy">AI meeting and productivity platform</span>
+              </Link>
+            </div>
+          </motion.div>
+          <motion.div
+            className="mt-6 flex flex-wrap items-center justify-center gap-3"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <Pill href="/signup?product=cueai">
               Get started for free
               <ArrowRight className="h-4 w-4" />
             </Pill>

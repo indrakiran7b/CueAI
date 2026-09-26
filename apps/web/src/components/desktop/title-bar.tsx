@@ -37,35 +37,8 @@ export function DesktopTitleBar() {
 
   if (mac) {
     return (
-      <header
-        className="mac-titlebar"
-        onDoubleClick={onDoubleClick}
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      >
+      <header className="mac-titlebar">
         <span className="mac-titlebar-title">CueAI</span>
-        <div
-          className="mac-titlebar-controls"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <TrafficLight
-            kind="min"
-            glyph="−"
-            label="Minimize"
-            onClick={() => void desktop?.minimize()}
-          />
-          <TrafficLight
-            kind="max"
-            glyph={maximized ? "❐" : "□"}
-            label={maximized ? "Restore" : "Maximize"}
-            onClick={() => void desktop?.maximize()}
-          />
-          <TrafficLight
-            kind="close"
-            glyph="×"
-            label="Close"
-            onClick={() => void desktop?.close()}
-          />
-        </div>
       </header>
     );
   }
@@ -106,29 +79,6 @@ export function DesktopTitleBar() {
         </WinChromeBtn>
       </div>
     </header>
-  );
-}
-
-function TrafficLight({
-  kind,
-  glyph,
-  label,
-  onClick,
-}: {
-  kind: "min" | "max" | "close";
-  glyph: string;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      className={`mac-traffic ${kind}`}
-      onClick={onClick}
-    >
-      <span aria-hidden>{glyph}</span>
-    </button>
   );
 }
 

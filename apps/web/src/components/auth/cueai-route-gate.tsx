@@ -6,6 +6,12 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { restrictedCueAiPath } from "@/lib/app-access";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { withDesktopParam } from "@/lib/desktop-query";
+import {
+  getProductMode,
+  isResumeProductPath,
+  persistProductFromSearch,
+  persistProductMode,
+} from "@/lib/product-mode";
 
 export function CueAiRouteGate({ children }: { children: ReactNode }) {
   const { session, ready } = useAuth();
@@ -13,8 +19,15 @@ export function CueAiRouteGate({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [mac] = useState(() => isMacDesktopApp());
 
+  useEffect(() => {
+    persistProductFromSearch();
+    if (isResumeProductPath(pathname || "/")) persistProductMode("resume");
+  }, [pathname]);
+
+  const resumeProduct = isResumeProductPath(pathname || "/") || getProductMode() === "resume";
   const blocked = restrictedCueAiPath(pathname || "/", session?.role, {
     macDesktop: mac,
+    resumeProduct,
   });
 
   useEffect(() => {

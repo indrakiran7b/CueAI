@@ -13,6 +13,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
 import { canAccessAdmin } from "@/lib/roles";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { isResumeProductPath, persistProductFromSearch, persistProductMode } from "@/lib/product-mode";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { MacAuthShell, MacLoginForm } from "@/components/mac/mac-auth-screen";
 
@@ -73,24 +74,39 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  function afterLoginPath() {
+    persistProductFromSearch(searchParams.toString());
+    const product = searchParams.get("product");
+    persistProductMode(product);
+    const next = searchParams.get("next");
+    if (product === "resume" || (next && isResumeProductPath(next))) {
+      persistProductMode("resume");
+      const dest = next && isResumeProductPath(next) ? next : "/resume-tailor";
+      return withDesktopParam(`${dest}${dest.includes("?") ? "&" : "?"}product=resume`);
+    }
+    if (next && next.startsWith("/")) return withDesktopParam(next);
+    return withDesktopParam("/dashboard");
+  }
+
   useEffect(() => {
     setMounted(true);
     persistDesktopQuery();
+    persistProductFromSearch(searchParams.toString());
     setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
   }, [searchParams]);
 
   useEffect(() => {
     if (AUTH_BYPASS) {
       void refresh();
-      router.replace(withDesktopParam("/dashboard"));
+      router.replace(afterLoginPath());
     }
-  }, [router, refresh]);
+  }, [router, refresh, searchParams]);
 
   useEffect(() => {
     if (ready && session && !AUTH_BYPASS) {
-      router.replace(mac ? "/dashboard?desktop=mac" : withDesktopParam("/dashboard"));
+      router.replace(afterLoginPath());
     }
-  }, [ready, session, router, mac]);
+  }, [ready, session, router, mac, searchParams]);
 
   useEffect(() => {
     const authError = searchParams.get("error");
@@ -165,9 +181,7 @@ function LoginForm() {
         return;
       }
 
-      const next = searchParams.get("next");
-      const dest = next && next.startsWith("/") ? next : "/dashboard";
-      router.push(withDesktopParam(dest));
+      router.push(afterLoginPath());
     } catch {
       setError("Unable to reach auth server.");
     } finally {
@@ -202,9 +216,7 @@ function LoginForm() {
                 return;
               }
               await refresh();
-              const next = searchParams.get("next");
-              const dest = next && next.startsWith("/") ? next : "/dashboard";
-              router.push(withDesktopParam(dest));
+              router.push(afterLoginPath());
             } catch {
               setError("Unable to reach auth server.");
             } finally {

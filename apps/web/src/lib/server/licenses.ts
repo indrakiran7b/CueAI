@@ -333,6 +333,21 @@ export async function validateLicense(input: {
     });
   }
 
+  const { keygateValidateLicense } = await import("@/lib/server/keygate");
+  const keygate = await keygateValidateLicense({
+    licenseKey: input.licenseKey,
+    licenseId: license.id,
+    deviceId: input.deviceId,
+    platform: input.platform,
+  });
+  if (!keygate.skipped && !keygate.ok) {
+    return publicFromLicense(license, activation, activeCount, input.platform, input.deviceId, {
+      valid: false,
+      state: "REVOKED",
+      message: keygate.message || "This license is not authorized.",
+    });
+  }
+
   const now = new Date().toISOString();
   await updateLicenseStore((s) => {
     const act = s.activations.find(

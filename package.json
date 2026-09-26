@@ -37,6 +37,7 @@
     "db:redis": "docker compose up redis -d",
     "worker:celery": "node scripts/run-celery-worker.cjs",
     "celery:verify": "node scripts/verify-celery-task.cjs",
+    "test:billing": "node --test tests/billing/checkout-plans.test.mjs",
     "generate:license-keys": "node scripts/generate-license-keys.mjs",
     "generate:license": "node scripts/generate-license.mjs",
     "client:server": "node scripts/start-remote-licensing.cjs",

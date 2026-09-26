@@ -34,6 +34,8 @@ import {
   type MacPermissionsSnapshot,
   type MeetingSession,
 } from "@/lib/desktop";
+import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminUser } from "@/lib/app-access";
 
 function permissionCopy(
   state: MacPermissionState | undefined,
@@ -140,6 +142,8 @@ function ControlCard({
 }
 
 export default function CompanionPage() {
+  const { session } = useAuth();
+  const admin = isAdminUser(session?.role);
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState(false);
   const [desktopReady, setDesktopReady] = useState<boolean | null>(null);
@@ -648,6 +652,7 @@ export default function CompanionPage() {
             >
               Screenshot
             </MacGlassButton>
+            {admin && (
             <MacGlassButton
               onClick={() => {
                 window.location.href = "/screen-context";
@@ -655,6 +660,7 @@ export default function CompanionPage() {
             >
               Screen Context
             </MacGlassButton>
+            )}
           </ControlCard>
           <ControlCard
             icon={Minimize2}

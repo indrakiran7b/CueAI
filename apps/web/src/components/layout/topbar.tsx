@@ -11,6 +11,7 @@ import {
   Video,
   FileText,
   Settings,
+  BookOpen,
   Check,
   User,
   Shield,
@@ -22,6 +23,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getDesktop } from "@/lib/desktop";
+import { isAdminUser, safeCueAiHref, visibleCueAiNav } from "@/lib/app-access";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -45,12 +47,14 @@ const COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
   { label: "Desktop Companion", href: "/companion", icon: Video },
+  { label: "Knowledge Base", href: "/knowledge", icon: BookOpen, adminOnly: true as const },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Topbar() {
   const { theme, toggleTheme } = useTheme();
   const { session, logout } = useAuth();
+  const admin = isAdminUser(session?.role);
   const router = useRouter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -212,7 +216,12 @@ export function Topbar() {
     workspaces.find((row) => row.current)?.name || session?.workspace || "CueAI";
   const unread = notifs.filter((n) => !readIds.includes(n.id)).length;
   const q = commandQuery.trim().toLowerCase();
-  const filteredCommands = COMMAND_LINKS.filter((c) => !q || c.label.toLowerCase().includes(q));
+  const allowedHrefs = new Set(visibleCueAiNav(session?.role).map((item) => item.href));
+  const filteredCommands = COMMAND_LINKS.filter((c) => {
+    if (c.href !== "/meetings/live" && !allowedHrefs.has(c.href)) return false;
+    if ("adminOnly" in c && c.adminOnly && !admin) return false;
+    return !q || c.label.toLowerCase().includes(q);
+  });
   const filteredMeetings = meetingHits.filter((m) => !q || m.title.toLowerCase().includes(q));
 
   function persistRead(ids: string[]) {
@@ -264,11 +273,14 @@ export function Topbar() {
     <header
       ref={headerRef}
       className={cn(
-        "mac-toolbar sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-[var(--border)] bg-[var(--background)]/80 px-4 backdrop-blur-xl sm:px-6"
+        "mac-toolbar sticky top-0 z-20 flex h-12 items-center gap-2.5 border-b border-[var(--border)] bg-[var(--background)]/80 px-3 backdrop-blur-xl sm:px-4"
       )}
-      style={macDesktop ? ({ WebkitAppRegion: "drag" } as React.CSSProperties) : undefined}
+      style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
     >
-      <div className="relative hidden md:block">
+      <div
+        className="relative hidden md:block"
+        style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
+      >
         <button
           type="button"
           onClick={() => {
@@ -339,6 +351,13 @@ export function Topbar() {
       >
         <button
           type="button"
+          className="rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-sm font-medium transition hover:border-[var(--border-strong)] hover:text-foreground"
+          onClick={() => router.push(withDesktopParam("/settings?section=billing"))}
+        >
+          Upgrade
+        </button>
+        <button
+          type="button"
           onClick={toggleTheme}
           className="flex h-9 w-9 items-center justify-center rounded-xl text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -399,7 +418,7 @@ export function Topbar() {
                     onClick={() => {
                       persistRead(readIds.includes(n.id) ? readIds : [...readIds, n.id]);
                       setNotifOpen(false);
-                      router.push(n.href);
+                      router.push(safeCueAiHref(n.href, session?.role));
                     }}
                   >
                     <span>{n.title}</span>

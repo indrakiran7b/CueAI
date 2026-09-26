@@ -113,6 +113,43 @@
   border-radius: 20px;
 }
 
+[data-landing] .lp-product-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border: 1px solid var(--lp-hairline);
+  background: var(--lp-surface-1);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+[data-landing] .lp-product-card:hover {
+  border-color: color-mix(in srgb, var(--lp-accent) 58%, var(--lp-hairline));
+  background: color-mix(in srgb, var(--lp-surface-1) 86%, #fff);
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+[data-landing] .lp-product-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+[data-landing] .lp-product-card-copy {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--lp-ink-muted);
+}
+
 [data-landing] .lp-spotlight {
   position: relative;
   overflow: hidden;
