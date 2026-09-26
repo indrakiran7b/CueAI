@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -21,7 +22,6 @@ from accuracy import evaluate_response
 from config import (
     MAX_RETRIES,
     MAX_TOKENS,
-    MAX_TOKENS_CODE,
     RETRY_BACKOFF_SEC,
     SYSTEM_PROMPT,
     TEMPERATURE,
@@ -30,10 +30,10 @@ from config import (
 from prompts import PromptCase
 
 
-def _max_tokens_for(prompt: PromptCase) -> int:
-    if prompt.eval_type in {"coding", "debugging", "sql"}:
-        return MAX_TOKENS_CODE
-    return MAX_TOKENS
+def _redact(text: str) -> str:
+    cleaned = re.sub(r"sk-or-v1-[A-Za-z0-9]+", "[REDACTED]", text or "")
+    cleaned = re.sub(r"Bearer\s+\S+", "Bearer [REDACTED]", cleaned, flags=re.I)
+    return cleaned[:400]
 
 
 @dataclass
@@ -44,6 +44,7 @@ class RunResult:
     model_id: str
     question_id: str
     category: str
+    difficulty: str
     question: str
     run_number: int
     request_start_time: str
@@ -69,13 +70,26 @@ class RunResult:
     syntax_ok: Optional[bool] = None
     logic_ok: Optional[bool] = None
     correctness_ok: Optional[bool] = None
+    edge_cases_ok: Optional[bool] = None
+    time_complexity_ok: Optional[bool] = None
+    quality: Optional[float] = None
+    relevance: Optional[float] = None
+    instruction_following: Optional[float] = None
+    consistency: Optional[float] = None
+    retry_count: int = 0
+    input_cost: str = "UNKNOWN"
+    output_cost: str = "UNKNOWN"
+    total_cost: str = "UNKNOWN"
     accuracy_notes: str = ""
-    # Internal/display helpers
     question_number: int = 0
     question_total: int = 0
 
     def to_row(self) -> dict[str, Any]:
-        return asdict(self)
+        row = asdict(self)
+        row["model"] = self.model_name
+        row["response"] = self.complete_response
+        row["accuracy"] = self.accuracy_label
+        return row
 
 
 def _wall_now() -> str:
@@ -104,13 +118,13 @@ def classify_error(exc: BaseException) -> tuple[str, str]:
     if isinstance(exc, AuthenticationError):
         return "invalid_api_key", "OpenRouter rejected the API key (unauthorized)"
     if isinstance(exc, NotFoundError):
-        return "model_unavailable", f"Model unavailable: {msg}"
+        return "model_unavailable", f"Model unavailable: {_redact(msg)}"
     if isinstance(exc, RateLimitError):
-        return "rate_limit", f"Rate limited: {msg}"
+        return "rate_limit", f"Rate limited: {_redact(msg)}"
     if isinstance(exc, APITimeoutError):
-        return "timeout", f"Request timed out: {msg}"
+        return "timeout", f"Request timed out: {_redact(msg)}"
     if isinstance(exc, APIConnectionError):
-        return "network_error", f"Network error: {msg}"
+        return "network_error", f"Network error: {_redact(msg)}"
     if isinstance(exc, APIStatusError):
         code = getattr(exc, "status_code", None)
         if code == 401:
@@ -118,13 +132,29 @@ def classify_error(exc: BaseException) -> tuple[str, str]:
         if code == 404:
             return "model_unavailable", f"Not found (404): {msg}"
         if code == 429:
-            return "rate_limit", f"Rate limited (429): {msg}"
-        return "api_error", f"API status {code}: {msg}"
-    return "unknown_error", f"{type(exc).__name__}: {msg}"
+            return "rate_limit", f"Rate limited (429): {_redact(msg)}"
+        if code == 402:
+            return "insufficient_credits", "OpenRouter has no remaining credits for this key"
+        return "api_error", f"API status {code}: {_redact(msg)}"
+    return "unknown_error", f"{type(exc).__name__}: {_redact(msg)}"
 
 
 def _should_retry(error_type: str) -> bool:
     return error_type in {"rate_limit", "timeout", "network_error", "api_error"}
+
+
+def _usage_cost(usage: Any) -> str:
+    if usage is None:
+        return "UNKNOWN"
+    cost = getattr(usage, "cost", None)
+    if cost is None and isinstance(usage, dict):
+        cost = usage.get("cost")
+    try:
+        if cost is None:
+            return "UNKNOWN"
+        return f"{float(cost):.8f}"
+    except (TypeError, ValueError):
+        return "UNKNOWN"
 
 
 def _stream_once(
@@ -142,14 +172,16 @@ def _stream_once(
     finish_reason = None
     usage = None
 
+    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for role, content in prompt.history:
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": prompt.text})
+
     stream = client.chat.completions.create(
         model=model.model_id,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt.text},
-        ],
+        messages=messages,
         temperature=TEMPERATURE,
-        max_tokens=_max_tokens_for(prompt),
+        max_tokens=MAX_TOKENS,
         stream=True,
         stream_options={"include_usage": True},
     )
@@ -216,6 +248,7 @@ def _failed_result(
     gen_s: Optional[float] = None,
     usage: Any = None,
     response: str = "",
+    retry_count: int = 0,
 ) -> RunResult:
     return RunResult(
         timestamp=_iso_now(),
@@ -224,6 +257,7 @@ def _failed_result(
         model_id=model.model_id,
         question_id=prompt.id,
         category=prompt.category,
+        difficulty=prompt.difficulty,
         question=prompt.text,
         run_number=run_number,
         request_start_time=request_start_wall,
@@ -242,13 +276,17 @@ def _failed_result(
         complete_response=response,
         status="FAILED",
         error_type=error_type,
-        error_message=error_message,
+        error_message=_redact(error_message),
         expected_answer=prompt.expected_answer,
         accuracy_label="failed",
         accuracy_score=0.0,
         syntax_ok=None,
         logic_ok=None,
         correctness_ok=False,
+        quality=0.0,
+        relevance=0.0,
+        instruction_following=0.0,
+        retry_count=retry_count,
         accuracy_notes="Request failed",
         question_number=question_number,
         question_total=question_total,
@@ -268,6 +306,7 @@ def run_streaming_request(
     last_error_message = ""
     outer_start = time.perf_counter()
     outer_wall = _wall_now()
+    retries_used = 0
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -277,6 +316,7 @@ def run_streaming_request(
             total_s = measured["total_s"]
             gen_s = measured["gen_s"]
             usage = measured["usage"]
+            retries_used = attempt - 1
 
             if not text.strip() or ttft_s is None:
                 return _failed_result(
@@ -300,6 +340,7 @@ def run_streaming_request(
                     gen_s=gen_s,
                     usage=usage,
                     response=text,
+                    retry_count=retries_used,
                 )
 
             input_tokens = _usage_int(usage, "prompt_tokens")
@@ -320,6 +361,7 @@ def run_streaming_request(
                 tokens_per_sec = output_tokens / gen_s
 
             acc = evaluate_response(prompt, text)
+            cost = _usage_cost(usage)
 
             return RunResult(
                 timestamp=_iso_now(),
@@ -328,6 +370,7 @@ def run_streaming_request(
                 model_id=model.model_id,
                 question_id=prompt.id,
                 category=prompt.category,
+                difficulty=prompt.difficulty,
                 question=prompt.text,
                 run_number=run_number,
                 request_start_time=measured["request_start_wall"],
@@ -355,12 +398,20 @@ def run_streaming_request(
                 syntax_ok=acc["syntax_ok"],
                 logic_ok=acc["logic_ok"],
                 correctness_ok=acc["correctness_ok"],
+                edge_cases_ok=acc.get("edge_cases_ok"),
+                time_complexity_ok=acc.get("time_complexity_ok"),
+                quality=acc.get("quality"),
+                relevance=acc.get("relevance"),
+                instruction_following=acc.get("instruction_following"),
+                retry_count=retries_used,
+                total_cost=cost,
                 accuracy_notes=str(acc["accuracy_notes"]),
                 question_number=question_number,
                 question_total=question_total,
             )
         except Exception as exc:  # noqa: BLE001
             last_error_type, last_error_message = classify_error(exc)
+            retries_used = attempt - 1
             if attempt < MAX_RETRIES and _should_retry(last_error_type):
                 time.sleep(RETRY_BACKOFF_SEC * attempt)
                 continue
@@ -377,4 +428,5 @@ def run_streaming_request(
         request_start_wall=outer_wall,
         completion_wall=_wall_now(),
         total_s=time.perf_counter() - outer_start,
+        retry_count=retries_used,
     )

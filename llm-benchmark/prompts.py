@@ -19,7 +19,11 @@ EvalType = Literal[
     "aptitude",
     "logical",
     "behavioral",
+    "scenario",
+    "follow_up",
 ]
+
+Difficulty = Literal["EASY", "MEDIUM", "HARD"]
 
 
 @dataclass(frozen=True)
@@ -31,8 +35,11 @@ class PromptCase:
     expected_answer: str = ""
     eval_type: EvalType = "conceptual"
     coding_checks: tuple[str, ...] = ()
-    # For aptitude/logical: accept any of these normalized answer tokens
     accepted_answers: tuple[str, ...] = ()
+    difficulty: Difficulty = "MEDIUM"
+    history: tuple[tuple[str, str], ...] = ()
+    word_limit: int = 0
+    bullet_count: int = 0
 
 
 def _q(
@@ -45,6 +52,10 @@ def _q(
     eval_type: EvalType = "conceptual",
     coding_checks: tuple[str, ...] = (),
     accepted: tuple[str, ...] = (),
+    difficulty: Difficulty = "MEDIUM",
+    history: tuple[tuple[str, str], ...] = (),
+    word_limit: int = 0,
+    bullet_count: int = 0,
 ) -> PromptCase:
     return PromptCase(
         id=f"Q{n:02d}",
@@ -55,6 +66,10 @@ def _q(
         eval_type=eval_type,
         coding_checks=coding_checks,
         accepted_answers=accepted,
+        difficulty=difficulty,
+        history=history,
+        word_limit=word_limit,
+        bullet_count=bullet_count,
     )
 
 
@@ -661,94 +676,353 @@ PROMPTS: list[PromptCase] = [
         expected="Lock ensuring mutual exclusion for shared resource access.",
         eval_type="factual",
     ),
-    # ========== 12. FOLLOW-UP QUESTIONS (5) ==========
+    # ========== 12. FOLLOW-UP QUESTIONS (multi-turn, identical context) ==========
     _q(
         71,
         "FOLLOW_UP",
-        "You just said REST is stateless. Follow-up: how do apps keep user login state with REST?",
-        keywords=("token", "jwt", "session", "cookie", "auth", "header"),
-        expected="Client sends auth tokens/cookies; server validates without storing session if JWT.",
+        "What is REST API?",
+        keywords=("rest", "api", "http", "resource"),
+        expected="REST is an HTTP-style API design for resources.",
+        eval_type="follow_up",
+        difficulty="EASY",
     ),
     _q(
         72,
         "FOLLOW_UP",
-        "You mentioned indexes speed reads. Follow-up: when can an index hurt performance?",
-        keywords=("write", "insert", "update", "storage", "overhead", "maintain"),
-        expected="Extra write/storage cost; poor selectivity can hurt.",
+        "Explain it with a concrete example.",
+        keywords=("example", "get", "post", "resource", "http"),
+        expected="Example: GET /users/42 retrieves a user resource over HTTP.",
+        eval_type="follow_up",
+        difficulty="MEDIUM",
+        history=(
+            ("user", "What is REST API?"),
+            ("assistant", "REST is an HTTP-style API design for resources."),
+        ),
     ),
     _q(
         73,
         "FOLLOW_UP",
-        "You said binary search is O(log n). Follow-up: what precondition makes that true?",
-        keywords=("sorted", "order", "random access"),
-        expected="Data must be sorted (and random-access for arrays).",
-        eval_type="factual",
+        "How is REST different from SOAP?",
+        keywords=("soap", "xml", "http", "lightweight", "protocol"),
+        expected="SOAP is a stricter XML protocol; REST is a lighter HTTP resource style.",
+        eval_type="follow_up",
+        difficulty="MEDIUM",
+        history=(
+            ("user", "What is REST API?"),
+            ("assistant", "REST is an HTTP-style API design for resources."),
+            ("user", "Explain it with a concrete example."),
+            ("assistant", "Example: GET /users/42 retrieves a user resource over HTTP."),
+        ),
     ),
     _q(
         74,
         "FOLLOW_UP",
-        "You explained Docker containers. Follow-up: how is a container different from a VM?",
-        keywords=("kernel", "hypervisor", "os", "lightweight", "share"),
-        expected="Containers share host kernel; VMs virtualize hardware/OS.",
+        "When would you choose REST over SOAP?",
+        keywords=("web", "json", "mobile", "public", "simple"),
+        expected="Prefer REST for public/web/mobile JSON APIs; SOAP when formal contracts/WS-* are required.",
+        eval_type="follow_up",
+        difficulty="HARD",
+        history=(
+            ("user", "What is REST API?"),
+            ("assistant", "REST is an HTTP-style API design for resources."),
+            ("user", "Explain it with a concrete example."),
+            ("assistant", "Example: GET /users/42 retrieves a user resource over HTTP."),
+            ("user", "How is REST different from SOAP?"),
+            ("assistant", "SOAP is a stricter XML protocol; REST is a lighter HTTP resource style."),
+        ),
     ),
     _q(
         75,
         "FOLLOW_UP",
-        "You described polymorphism. Follow-up: how does it differ from inheritance?",
-        keywords=("polymorphism", "inherit", "behavior", "reuse", "interface"),
-        expected="Inheritance reuses structure; polymorphism varies behavior via shared interface.",
+        "What is polymorphism?",
+        keywords=("polymorphism", "same", "interface", "behavior"),
+        expected="Same interface, different implementations.",
+        eval_type="follow_up",
+        difficulty="EASY",
     ),
-    # Extra coverage (same shared order for every model)
     _q(
         76,
-        "LOGICAL_REASONING",
-        "A, B and C sit in a single row. B is in the middle. A is not at the right end. "
-        "Who sits at the right end? One word.",
-        keywords=("c",),
-        expected="C",
-        eval_type="logical",
-        accepted=("c", "person c", "c sits"),
+        "FOLLOW_UP",
+        "Give a short Python example of polymorphism.",
+        keywords=("class", "def", "override", "python"),
+        expected="Two subclasses implement the same method differently.",
+        eval_type="follow_up",
+        difficulty="MEDIUM",
+        history=(
+            ("user", "What is polymorphism?"),
+            ("assistant", "Same interface, different implementations."),
+        ),
     ),
+    # Extra TECHNICAL
     _q(
         77,
-        "DEBUGGING",
-        "Find the bug:\n"
-        "```python\ndef append_item(item, bucket=[]):\n"
-        "    bucket.append(item)\n"
-        "    return bucket\n"
-        "print(append_item(1))\n"
-        "print(append_item(2))\n"
-        "```\n"
-        "Explain the unexpected output and give a correct default.",
-        keywords=("mutable", "default", "none", "list"),
-        expected="Mutable default list is shared. Use bucket=None then bucket = bucket or [].",
-        eval_type="debugging",
-        coding_checks=("mutable", "none", "default"),
+        "TECHNICAL",
+        "What is RAG in one short paragraph?",
+        keywords=("retrieval", "augment", "generation", "document"),
+        expected="Retrieval-Augmented Generation grounds an LLM with retrieved documents.",
+        eval_type="factual",
+        difficulty="MEDIUM",
     ),
     _q(
         78,
-        "APTITUDE",
-        "Simple interest on Rs.2000 at 10% per year for 2 years is how many rupees? Number only.",
-        keywords=("400",),
-        expected="400",
-        eval_type="aptitude",
-        accepted=("400", "rs 400", "rs.400"),
+        "TECHNICAL",
+        "What is an API gateway?",
+        keywords=("gateway", "route", "auth", "rate", "api"),
+        expected="A front door that routes, authenticates, and rate-limits API traffic.",
+        difficulty="MEDIUM",
     ),
     _q(
         79,
-        "SQL_DATABASE",
-        "Write SQL to count employees per department from employees(dept, name).",
-        keywords=("select", "count", "group by", "dept"),
-        expected="SELECT dept, COUNT(*) FROM employees GROUP BY dept;",
-        eval_type="sql",
-        coding_checks=("select", "group by", "count"),
+        "TECHNICAL",
+        "What is caching and when should you use it?",
+        keywords=("cache", "latency", "ttl", "stale", "memory"),
+        expected="Store expensive results to cut latency; watch TTL and invalidation.",
+        difficulty="MEDIUM",
     ),
     _q(
         80,
         "TECHNICAL",
-        "What is the CAP theorem in distributed systems?",
-        keywords=("consistency", "availability", "partition", "cap"),
-        expected="A distributed system can fully guarantee only two of Consistency, Availability, Partition tolerance.",
+        "Explain authentication vs authorization.",
+        keywords=("identity", "permission", "authn", "authz", "who", "what"),
+        expected="Authentication verifies identity; authorization checks permissions.",
+        difficulty="EASY",
+    ),
+    _q(
+        81,
+        "TECHNICAL",
+        "What is load balancing?",
+        keywords=("load", "balance", "traffic", "instance", "scale"),
+        expected="Distribute traffic across instances for scale and availability.",
+        difficulty="MEDIUM",
+    ),
+    # Extra CODING
+    _q(
+        82,
+        "CODING",
+        "Write Python to merge two sorted lists into one sorted list. State Big-O.",
+        keywords=("def", "merge", "sorted", "o(n"),
+        expected="Two-pointer merge; O(n+m).",
+        eval_type="coding",
+        coding_checks=("def", "return"),
+        difficulty="MEDIUM",
+    ),
+    _q(
+        83,
+        "CODING",
+        "Write Python to find the first non-repeating character in a string, or return None.",
+        keywords=("def", "count", "first", "return"),
+        expected="Count frequencies then scan in order.",
+        eval_type="coding",
+        coding_checks=("def", "return"),
+        difficulty="MEDIUM",
+    ),
+    # Extra DEBUGGING
+    _q(
+        84,
+        "DEBUGGING",
+        "Find the SQL bug:\nSELECT dept, COUNT(*) FROM employees WHERE COUNT(*) > 5 GROUP BY dept;\n"
+        "Explain and give corrected SQL.",
+        keywords=("having", "where", "group", "count"),
+        expected="Aggregate filters use HAVING, not WHERE.",
+        eval_type="debugging",
+        coding_checks=("having", "group"),
+        difficulty="MEDIUM",
+    ),
+    _q(
+        85,
+        "DEBUGGING",
+        "API bug: a handler returns 200 with an empty body when the user is missing. "
+        "What status should it use and why?",
+        keywords=("404", "not found", "status"),
+        expected="Use 404 (or 401 if unauthorized), not 200 with empty body.",
+        eval_type="debugging",
+        coding_checks=("404", "status"),
+        difficulty="MEDIUM",
+    ),
+    _q(
+        86,
+        "DEBUGGING",
+        "Find the async bug:\n"
+        "```python\nimport asyncio\nasync def load():\n    return 1\nprint(load())\n```\n"
+        "Explain and fix.",
+        keywords=("await", "asyncio", "coroutine", "run"),
+        expected="Must await or asyncio.run the coroutine; print(load()) prints a coroutine object.",
+        eval_type="debugging",
+        coding_checks=("await", "asyncio"),
+        difficulty="HARD",
+    ),
+    _q(
+        87,
+        "DEBUGGING",
+        "Data-processing bug: pandas `df['x'] = df['x'] / df['x'].mean()` is run twice in a pipeline. "
+        "What happens to the values? How do you make it idempotent?",
+        keywords=("idempotent", "normalize", "twice", "mean"),
+        expected="Second pass renormalizes already scaled data. Compute mean once or skip if already scaled.",
+        eval_type="debugging",
+        difficulty="HARD",
+    ),
+    # Extra SQL
+    _q(
+        88,
+        "SQL_DATABASE",
+        "Write SQL to find duplicate emails in users(email).",
+        keywords=("select", "email", "group by", "having", "count"),
+        expected="GROUP BY email HAVING COUNT(*) > 1.",
+        eval_type="sql",
+        coding_checks=("group by", "having"),
+        difficulty="MEDIUM",
+    ),
+    _q(
+        89,
+        "SQL_DATABASE",
+        "Explain INNER JOIN vs LEFT JOIN in two bullets.",
+        keywords=("inner", "left", "match", "null"),
+        expected="INNER keeps matches only; LEFT keeps all left rows.",
+        bullet_count=2,
+        difficulty="EASY",
+    ),
+    _q(
+        90,
+        "SQL_DATABASE",
+        "When do you use WHERE vs HAVING?",
+        keywords=("where", "having", "group", "aggregate"),
+        expected="WHERE filters rows before grouping; HAVING filters after aggregates.",
+        difficulty="MEDIUM",
+    ),
+    # Extra CS
+    _q(
+        91,
+        "COMPUTER_SCIENCE",
+        "What is a deadlock? Give one prevention idea.",
+        keywords=("deadlock", "lock", "wait", "cycle"),
+        expected="Circular wait on locks; prevent with lock ordering or timeouts.",
+        difficulty="MEDIUM",
+    ),
+    _q(
+        92,
+        "COMPUTER_SCIENCE",
+        "What is a hash table and its average lookup complexity?",
+        keywords=("hash", "o(1)", "bucket", "key"),
+        expected="Key-to-bucket map; average O(1) lookup.",
+        eval_type="factual",
+        accepted=("o(1)", "constant"),
+        difficulty="EASY",
+    ),
+    _q(
+        93,
+        "COMPUTER_SCIENCE",
+        "What is a binary tree vs a binary search tree?",
+        keywords=("binary", "tree", "search", "left", "right"),
+        expected="BST orders left < node < right; a binary tree has no ordering requirement.",
+        difficulty="MEDIUM",
+    ),
+    # Extra SCENARIO
+    _q(
+        94,
+        "SCENARIO",
+        "Production API latency jumps after a deploy. List 5 investigation steps.",
+        keywords=("deploy", "metric", "trace", "log", "rollback", "profile"),
+        expected="Compare deploy diff, metrics/traces, slow endpoints, DB, rollback plan.",
+        eval_type="scenario",
+        difficulty="HARD",
+    ),
+    _q(
+        95,
+        "SCENARIO",
+        "The app works locally but fails in production. How do you debug? 5 checks.",
+        keywords=("env", "config", "secret", "network", "permission", "log"),
+        expected="Compare env/config/secrets, network, permissions, versions, production logs.",
+        eval_type="scenario",
+        difficulty="MEDIUM",
+    ),
+    _q(
+        96,
+        "SCENARIO",
+        "Two users get different results from the same feature. How do you investigate?",
+        keywords=("repro", "account", "cache", "flag", "data", "permission"),
+        expected="Reproduce both accounts; check flags, cache, data, permissions, race.",
+        eval_type="scenario",
+        difficulty="MEDIUM",
+    ),
+    _q(
+        97,
+        "SCENARIO",
+        "A query takes 10s instead of 100ms. What do you check first?",
+        keywords=("explain", "index", "lock", "plan", "volume"),
+        expected="EXPLAIN/plan, missing index, locks, data volume, connection pool.",
+        eval_type="scenario",
+        difficulty="MEDIUM",
+    ),
+    _q(
+        98,
+        "SCENARIO",
+        "The app crashes intermittently. What do you investigate first?",
+        keywords=("log", "core", "memory", "timeout", "health"),
+        expected="Crash logs/core dumps, memory, timeouts, health checks, last deploy.",
+        eval_type="scenario",
+        difficulty="MEDIUM",
+    ),
+    # Extra REALTIME
+    _q(
+        99,
+        "REALTIME_INTERVIEW",
+        "What is HTTP?",
+        keywords=("http", "protocol", "request", "web"),
+        expected="Hypertext Transfer Protocol for web requests.",
+        difficulty="EASY",
+    ),
+    _q(
+        100,
+        "REALTIME_INTERVIEW",
+        "What is Python?",
+        keywords=("python", "language", "interpret"),
+        expected="A high-level interpreted programming language.",
+        difficulty="EASY",
+    ),
+    _q(
+        101,
+        "REALTIME_INTERVIEW",
+        "What is OOP?",
+        keywords=("object", "class", "encapsul", "inherit"),
+        expected="Object-oriented programming: classes, objects, encapsulation.",
+        difficulty="EASY",
+    ),
+    _q(
+        102,
+        "REALTIME_INTERVIEW",
+        "What is RAG?",
+        keywords=("retrieval", "augment", "generation"),
+        expected="Retrieval-Augmented Generation.",
+        difficulty="EASY",
+    ),
+    # Extra SHORT ANSWER with constraints
+    _q(
+        103,
+        "SHORT_ANSWER",
+        "Explain REST API in at most 30 words.",
+        keywords=("rest", "http", "api"),
+        expected="REST is an HTTP resource API style.",
+        eval_type="factual",
+        word_limit=30,
+        difficulty="EASY",
+    ),
+    _q(
+        104,
+        "SHORT_ANSWER",
+        "Explain polymorphism in at most 50 words.",
+        keywords=("polymorphism", "interface", "behavior"),
+        expected="Same interface, different behavior.",
+        word_limit=50,
+        difficulty="EASY",
+    ),
+    _q(
+        105,
+        "SHORT_ANSWER",
+        "List exactly three bullet points: benefits of database indexes.",
+        keywords=("index", "lookup", "query"),
+        expected="Faster lookups; better filters/sorts; write/storage tradeoff.",
+        bullet_count=3,
+        difficulty="MEDIUM",
     ),
 ]
 
@@ -769,16 +1043,29 @@ REQUIRED_CATEGORIES = (
 )
 
 
-# CueAI realtime subset (short questions) — same order subset for --cueai
+# CueAI realtime subset (short questions) — same order subset for --cueai / --category realtime
 CUEAI_REALTIME_PROMPTS: list[PromptCase] = [
     p for p in PROMPTS if p.category == "REALTIME_INTERVIEW"
 ]
 
 
-def select_prompts(*, cueai_only: bool = False, quick: bool = False) -> list[PromptCase]:
-    prompts = list(CUEAI_REALTIME_PROMPTS) if cueai_only else list(PROMPTS)
+def select_prompts(
+    *,
+    cueai_only: bool = False,
+    quick: bool = False,
+    category: str | None = None,
+) -> list[PromptCase]:
+    prompts = list(PROMPTS)
+    if cueai_only:
+        prompts = [p for p in prompts if p.category == "REALTIME_INTERVIEW"]
+    if category:
+        prompts = [p for p in prompts if p.category == category]
     if quick:
-        return prompts[:1]
+        picked: list[PromptCase] = []
+        for cat in REQUIRED_CATEGORIES:
+            cat_items = [p for p in prompts if p.category == cat]
+            picked.extend(cat_items[:2])
+        return picked
     return prompts
 
 
@@ -790,7 +1077,6 @@ def category_counts() -> dict[str, int]:
 
 
 def validate_question_bank(min_total: int = 60, min_per_category: int = 5) -> None:
-    """Fail fast if the shared bank is too small or reordered IDs collide."""
     counts = category_counts()
     missing = [c for c in REQUIRED_CATEGORIES if counts.get(c, 0) < min_per_category]
     if missing:

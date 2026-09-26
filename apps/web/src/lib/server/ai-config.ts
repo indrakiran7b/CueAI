@@ -1,12 +1,26 @@
-import type { DbAiConfig, DbAiModel, DbAiProvider } from "@/lib/server/db";
-import { decryptSecret, maskSecret } from "@/lib/server/session";
+import type { AiProviderType, DbAiConfig, DbAiModel, DbAiProvider } from "@/lib/server/db";
+import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/session";
 
-const DEFAULT_ENDPOINTS: Record<string, string> = {
+export const DEFAULT_ENDPOINTS: Record<string, string> = {
   groq: "https://api.groq.com/openai/v1",
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com/v1beta",
+  openrouter: "https://openrouter.ai/api/v1",
+  deepseek: "https://api.deepseek.com",
+  perplexity: "https://api.perplexity.ai",
   custom: "",
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  groq: "Groq",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Google Gemini",
+  openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
+  perplexity: "Perplexity",
+  custom: "Custom",
 };
 
 function capabilityFor(modelName: string): DbAiModel["capability"] {
@@ -14,6 +28,103 @@ function capabilityFor(modelName: string): DbAiModel["capability"] {
   if (n.includes("whisper") || n.includes("stt")) return "stt";
   if (n.includes("embed")) return "embedding";
   return "chat";
+}
+
+type EnvProviderSeed = {
+  type: AiProviderType;
+  envKey: string;
+  defaultModels: string[];
+};
+
+/** Providers discovered from server env (only when a key is present). */
+const ENV_PROVIDER_SEEDS: EnvProviderSeed[] = [
+  {
+    type: "groq",
+    envKey: "GROQ_API_KEY",
+    defaultModels: [
+      process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
+      "llama-3.3-70b-versatile",
+      "whisper-large-v3",
+    ],
+  },
+  {
+    type: "gemini",
+    envKey: "GEMINI_API_KEY",
+    defaultModels: [process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash"],
+  },
+  {
+    type: "openai",
+    envKey: "OPENAI_API_KEY",
+    defaultModels: [process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini"],
+  },
+  {
+    type: "anthropic",
+    envKey: "ANTHROPIC_API_KEY",
+    defaultModels: [process.env.ANTHROPIC_MODEL?.trim() || "claude-3-5-sonnet-latest"],
+  },
+  {
+    type: "openrouter",
+    envKey: "OPENROUTER_API_KEY",
+    defaultModels: [process.env.OPENROUTER_MODEL?.trim() || "openrouter/auto"],
+  },
+  {
+    type: "deepseek",
+    envKey: "DEEPSEEK_API_KEY",
+    defaultModels: [process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat"],
+  },
+  {
+    type: "perplexity",
+    envKey: "PERPLEXITY_API_KEY",
+    defaultModels: [process.env.PERPLEXITY_MODEL?.trim() || "sonar"],
+  },
+];
+
+function ensureProvider(
+  ai: DbAiConfig,
+  type: AiProviderType,
+  opts?: { apiKey?: string; models?: string[] },
+) {
+  if (!ai.providers) ai.providers = [];
+  if (!ai.models) ai.models = [];
+  let prov = ai.providers.find((p) => p.type === type);
+  if (!prov) {
+    prov = {
+      id: `prov_${type}`,
+      name: PROVIDER_LABELS[type] || type,
+      type,
+      enabled: true,
+      endpoint: DEFAULT_ENDPOINTS[type] || "",
+      apiKeyEnc: "",
+      updatedAt: new Date().toISOString(),
+    };
+    ai.providers.push(prov);
+  }
+  if (opts?.apiKey && !prov.apiKeyEnc) {
+    prov.apiKeyEnc = encryptSecret(opts.apiKey);
+  }
+  for (const name of opts?.models || []) {
+    const exists = ai.models.some((m) => m.name === name && m.providerId === prov!.id);
+    if (exists) continue;
+    ai.models.push({
+      id: `mdl_${type}_${name.replace(/[^a-zA-Z0-9]+/g, "_").slice(0, 36)}`,
+      name,
+      providerId: prov.id,
+      capability: capabilityFor(name),
+      enabled: true,
+      isDefault: false,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
+/** Merge providers/models from env API keys so Admin UI reflects configured backends. */
+export function syncProvidersFromEnv(ai: DbAiConfig): DbAiConfig {
+  for (const seed of ENV_PROVIDER_SEEDS) {
+    const key = process.env[seed.envKey]?.trim();
+    if (!key) continue;
+    ensureProvider(ai, seed.type, { apiKey: key, models: seed.defaultModels });
+  }
+  return ai;
 }
 
 /** Ensure structured providers/models catalogs exist (migrate legacy flat fields). */
@@ -24,7 +135,7 @@ export function ensureAiCatalog(ai: DbAiConfig): DbAiConfig {
       : ([ai.provider || "groq"] as DbAiProvider["type"][]);
     ai.providers = types.map((type) => ({
       id: `prov_${type}`,
-      name: type.charAt(0).toUpperCase() + type.slice(1),
+      name: PROVIDER_LABELS[type] || type.charAt(0).toUpperCase() + type.slice(1),
       type,
       enabled: true,
       endpoint: type === ai.provider ? ai.endpoint || DEFAULT_ENDPOINTS[type] || "" : DEFAULT_ENDPOINTS[type] || "",
@@ -51,7 +162,14 @@ export function ensureAiCatalog(ai: DbAiConfig): DbAiConfig {
     }));
   }
 
-  // Keep legacy fields in sync for resume/transcribe consumers
+  syncProvidersFromEnv(ai);
+
+  // Ensure at least one default model
+  if (ai.models.length && !ai.models.some((m) => m.isDefault)) {
+    const first = ai.models.find((m) => m.enabled) || ai.models[0];
+    if (first) first.isDefault = true;
+  }
+
   const def = ai.models.find((m) => m.isDefault && m.enabled) || ai.models.find((m) => m.enabled);
   if (def) {
     ai.defaultModel = def.name;
@@ -120,5 +238,3 @@ export function publicAiSummary(ai: DbAiConfig) {
     activeProvider: ai.provider,
   };
 }
-
-export { DEFAULT_ENDPOINTS };

@@ -20,9 +20,12 @@ from config import (
     CHART_ACCURACY,
     CHART_AVG_LATENCY,
     CHART_AVG_TTFT,
+    CHART_CATEGORY_ACCURACY,
+    CHART_CATEGORY_LATENCY,
     CHART_CUEAI_LATENCY,
     CHART_CUEAI_TTFT,
     CHART_P90_TTFT,
+    CHART_QUESTION_LATENCY,
     CHART_SUCCESS,
     CHART_TPS,
     EXCEL_PATH,
@@ -124,6 +127,9 @@ def generate_charts(
         "accuracy": None,
         "cueai_ttft": None,
         "cueai_latency": None,
+        "category_latency": None,
+        "category_accuracy": None,
+        "question_latency": None,
     }
     if model_summary.empty:
         return charts
@@ -219,6 +225,53 @@ def generate_charts(
                     "ms",
                     CHART_CUEAI_LATENCY,
                 )
+
+        cat_rows = []
+        for cat, g in raw.groupby("category", sort=False):
+            ok = g[g["status"] == "SUCCESS"]
+            tot = [float(x) for x in ok["total_latency_ms"].dropna().tolist()]
+            accs = [float(x) for x in ok["accuracy_score"].dropna().tolist()] if "accuracy_score" in ok else []
+            cat_rows.append(
+                {
+                    "category": cat,
+                    "latency": (sum(tot) / len(tot)) if tot else 0.0,
+                    "accuracy": (sum(accs) / len(accs) * 100.0) if accs else 0.0,
+                }
+            )
+        if cat_rows:
+            cdf = pd.DataFrame(cat_rows)
+            clabels = [_safe_label(str(c), 18) for c in cdf["category"].tolist()]
+            charts["category_latency"] = _bar_chart(
+                clabels,
+                [float(x) for x in cdf["latency"]],
+                "Average Total Latency by Category",
+                "ms",
+                CHART_CATEGORY_LATENCY,
+            )
+            charts["category_accuracy"] = _bar_chart(
+                clabels,
+                [float(x) for x in cdf["accuracy"]],
+                "Accuracy by Category",
+                "%",
+                CHART_CATEGORY_ACCURACY,
+            )
+
+        q_rows = []
+        if "question_id" in raw.columns:
+            for qid, g in raw.groupby("question_id", sort=False):
+                ok = g[g["status"] == "SUCCESS"]
+                tot = [float(x) for x in ok["total_latency_ms"].dropna().tolist()]
+                if tot:
+                    q_rows.append((str(qid), sum(tot) / len(tot)))
+            q_rows = q_rows[:24]
+            if q_rows:
+                charts["question_latency"] = _bar_chart(
+                    [q for q, _ in q_rows],
+                    [v for _, v in q_rows],
+                    "Question-Level Average Total Latency (first 24)",
+                    "ms",
+                    CHART_QUESTION_LATENCY,
+                )
     return charts
 
 
@@ -257,6 +310,9 @@ def _attach_charts(ws, chart_paths: dict[str, Optional[Path]], start_row: int) -
         "accuracy",
         "cueai_ttft",
         "cueai_latency",
+        "category_latency",
+        "category_accuracy",
+        "question_latency",
     )
     for key in order:
         p = chart_paths.get(key)
@@ -313,16 +369,40 @@ def save_excel_report(
     ws_ms = wb.create_sheet()
     _write_df_sheet(ws_ms, model_summary, "Model Summary")
 
-    # 3. Question Comparison
-    ws_qc = wb.create_sheet()
-    _write_df_sheet(ws_qc, question_summary, "Question Comparison")
-
     ws_cat = wb.create_sheet()
     _write_df_sheet(
         ws_cat,
         category_summary if category_summary is not None else pd.DataFrame(),
-        "Category Summary",
+        "Category Comparison",
     )
+
+    ws_qc = wb.create_sheet()
+    _write_df_sheet(ws_qc, question_summary, "Question Comparison")
+
+    category_sheets = (
+        ("Technical", "TECHNICAL"),
+        ("Aptitude", "APTITUDE"),
+        ("Logical Reasoning", "LOGICAL_REASONING"),
+        ("Coding", "CODING"),
+        ("Debugging", "DEBUGGING"),
+        ("SQL", "SQL_DATABASE"),
+        ("Computer Science", "COMPUTER_SCIENCE"),
+        ("Scenarios", "SCENARIO"),
+        ("Real-Time", "REALTIME_INTERVIEW"),
+        ("HR", "BEHAVIORAL_HR"),
+        ("Short Answers", "SHORT_ANSWER"),
+        ("Follow-Up", "FOLLOW_UP"),
+    )
+    for title, cat in category_sheets:
+        subset = (
+            question_summary[question_summary["category"] == cat].copy()
+            if not question_summary.empty and "category" in question_summary.columns
+            else pd.DataFrame()
+        )
+        if subset.empty and not raw.empty and "category" in raw.columns:
+            subset = raw[raw["category"] == cat].copy()
+        ws = wb.create_sheet()
+        _write_df_sheet(ws, subset, title)
 
     # 4. Speed Results
     speed_cols = [

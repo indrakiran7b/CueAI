@@ -1,49 +1,79 @@
 # CueAI OpenRouter LLM Benchmark
 
-Real-world **speed + response** benchmark for CueAI. Every configured model receives the **exact same questions in the exact same order**.
+Real-world **speed + response** benchmark for CueAI. Every configured model receives the **exact same questions in the exact same order**, with the same system prompt, temperature, and max tokens.
 
-**Never commit `.env` or paste your API key into source, logs, CSV, or Excel.**
+This tool is **independent of the CueAI desktop app**. It only makes OpenRouter HTTP requests. It does not use the microphone, camera, screen recording, system audio, overlay, or Electron.
+
+**Never commit `.env` or paste your API key into source, logs, CSV, Excel, or the terminal.**
 
 ## Question bank
 
-75 questions across 12 categories (at least 5 each):
+105 shared questions across 12 categories (at least 5 each), with EASY / MEDIUM / HARD difficulty.
 
-1. TECHNICAL
-2. APTITUDE (verified expected answers)
-3. LOGICAL_REASONING
-4. CODING
-5. DEBUGGING
-6. SQL_DATABASE
-7. COMPUTER_SCIENCE
-8. SCENARIO
-9. REALTIME_INTERVIEW (CueAI short / live)
-10. BEHAVIORAL_HR
-11. SHORT_ANSWER
-12. FOLLOW_UP
+## macOS setup
 
-## Prerequisites
+1. Open Terminal.
 
-- Windows 10/11
-- Python 3.10+
-- OpenRouter API key in `.env` (gitignored)
+2. Go to the project:
 
-## Setup (Windows)
-
-```powershell
+```bash
 cd llm-benchmark
-python -m venv .venv
-.venv\Scripts\activate
+```
+
+3. Create a virtual environment:
+
+```bash
+python3 -m venv .venv
+```
+
+4. Activate:
+
+```bash
+source .venv/bin/activate
+```
+
+5. Install:
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Commands
+6. Configure `.env` (gitignored):
 
-```powershell
-python main.py --quick
-python main.py --runs 1
-python main.py --runs 5
-python main.py --cueai --runs 5
-python main.py --model openai/gpt-4o-mini --runs 5
+```bash
+OPENROUTER_API_KEY=YOUR_KEY
+```
+
+Copy from `.env.example` if needed.
+
+7. Quick benchmark (2 questions from each category, 1 run, all models):
+
+```bash
+python3 main.py --quick
+```
+
+8. Full benchmark:
+
+```bash
+python3 main.py --runs 5
+```
+
+9. CueAI real-time subset:
+
+```bash
+python3 main.py --category realtime --runs 5
+```
+
+10. One model:
+
+```bash
+python3 main.py --model openai/gpt-4o-mini --runs 5
+```
+
+List the bank without API calls:
+
+```bash
+python3 main.py --list
 ```
 
 ## Outputs
@@ -53,10 +83,13 @@ Under `results/`:
 - `raw_results.csv` — one row per model/question/run
 - `model_summary.csv` — per-model aggregates
 - `question_summary.csv` — per-question × model aggregates
+- `category_summary.csv` — per-category × model aggregates
 - `LLM_Benchmark_Report.xlsx` — full report + charts
 
 ## Notes
 
 - Models only in `config.py` (do not invent IDs)
 - Accuracy is separate from latency (SUCCESS ≠ correct)
+- Follow-up turns use a **fixed** prior conversation so every model gets the same context
 - Streaming TTFT uses `time.perf_counter()`
+- Paths use `pathlib.Path` (cross-platform)

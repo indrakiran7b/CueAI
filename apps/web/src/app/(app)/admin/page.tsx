@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   Activity,
   BarChart3,
-  BookOpen,
   Bot,
   Building2,
   Check,
@@ -12,7 +11,6 @@ import {
   Clock3,
   Cpu,
   Database,
-  FilePenLine,
   KeyRound,
   Laptop,
   Ticket,
@@ -60,12 +58,10 @@ type NavId =
   | "users"
   | "invitations"
   | "roles"
-  | "knowledge"
   | "providers"
   | "models"
   | "tokens"
   | "meetings"
-  | "resume"
   | "privacy"
   | "retention"
   | "audit"
@@ -169,17 +165,6 @@ type Invite = {
   accountStatus?: string;
 };
 
-type KnowledgeItem = {
-  id: string;
-  title: string;
-  type: string;
-  status: string;
-  sizeLabel: string;
-  preview: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type AiProvider = {
   id: string;
   name: string;
@@ -266,25 +251,6 @@ type MeetingUsage = UsageBase & {
     model: string | null;
     createdAt: string;
     label: string | null;
-  }>;
-};
-
-type ResumeUsage = UsageBase & {
-  kind: "resume_rewrite";
-  period: UsageBase["period"] & {
-    totalRewrites: number;
-    operations: number;
-    successfulRewrites: number;
-    failedRewrites: number;
-  };
-  recent: Array<{
-    id: string;
-    rewrites: number;
-    userName: string;
-    provider: string | null;
-    model: string | null;
-    createdAt: string;
-    status: string;
   }>;
 };
 
@@ -410,10 +376,6 @@ function AdminPortalInner() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>("User");
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
-  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
-  const [knowledgeQuery, setKnowledgeQuery] = useState("");
-  const [knowledgeTitle, setKnowledgeTitle] = useState("");
-  const [knowledgeContent, setKnowledgeContent] = useState("");
   const [ai, setAi] = useState<AiCatalog | null>(null);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [newProvider, setNewProvider] = useState({
@@ -429,7 +391,6 @@ function AdminPortalInner() {
   });
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [meetingUsage, setMeetingUsage] = useState<MeetingUsage | null>(null);
-  const [resumeUsage, setResumeUsage] = useState<ResumeUsage | null>(null);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [audit, setAudit] = useState<ActivityEvent[]>([]);
   const [confirmUser, setConfirmUser] = useState<User | null>(null);
@@ -498,19 +459,15 @@ function AdminPortalInner() {
     }
   }, [role]);
 
-  const loadUsage = useCallback(async (id: "tokens" | "meetings" | "resume") => {
+  const loadUsage = useCallback(async (id: "tokens" | "meetings") => {
     setBusy(`usage-${id}`);
     setError(null);
     try {
       if (id === "tokens") {
         setTokenUsage(await api<TokenUsage>("/api/admin/usage?type=tokens"));
-      } else if (id === "meetings") {
+      } else {
         setMeetingUsage(
           await api<MeetingUsage>("/api/admin/usage?type=meeting_minutes"),
-        );
-      } else {
-        setResumeUsage(
-          await api<ResumeUsage>("/api/admin/usage?type=resume_rewrite"),
         );
       }
     } catch (cause) {
@@ -526,7 +483,7 @@ function AdminPortalInner() {
   }, [loadAll]);
 
   useEffect(() => {
-    if (tab !== "tokens" && tab !== "meetings" && tab !== "resume") return;
+    if (tab !== "tokens" && tab !== "meetings") return;
     const timer = window.setTimeout(() => void loadUsage(tab), 0);
     return () => window.clearTimeout(timer);
   }, [loadUsage, tab]);
@@ -562,25 +519,6 @@ function AdminPortalInner() {
     } catch (cause) {
       fail(cause, "User search failed.");
     }
-  }
-
-  async function searchKnowledge(value: string) {
-    setKnowledgeQuery(value);
-    try {
-      const data = await api<{ items: KnowledgeItem[] }>(
-        `/api/admin/knowledge?q=${encodeURIComponent(value)}`,
-      );
-      setKnowledge(data.items);
-    } catch (cause) {
-      fail(cause, "Knowledge search failed.");
-    }
-  }
-
-  async function reloadKnowledge() {
-    const data = await api<{ items: KnowledgeItem[] }>(
-      `/api/admin/knowledge?q=${encodeURIComponent(knowledgeQuery)}`,
-    );
-    setKnowledge(data.items);
   }
 
   async function patchAi(body: object, message: string) {
@@ -681,7 +619,6 @@ function AdminPortalInner() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <Metric icon={Users} label="Active users" value={overview.metrics.activeUsers} />
                   <Metric icon={Mail} label="Open invites" value={overview.metrics.pendingInvites} />
-                  <Metric icon={BookOpen} label="Knowledge items" value={overview.metrics.knowledgeItems} />
                   <Metric
                     icon={Cpu}
                     label="Tokens this period"
@@ -691,11 +628,6 @@ function AdminPortalInner() {
                     icon={Clock3}
                     label="Meetings processed"
                     value={overview.metrics.periodMeetingSessions}
-                  />
-                  <Metric
-                    icon={FilePenLine}
-                    label="Resume rewrites"
-                    value={overview.metrics.periodResumeRewrites}
                   />
                 </div>
                 <Card className="p-5">
@@ -1106,138 +1038,6 @@ function AdminPortalInner() {
               </Card>
             )}
 
-            {tab === "knowledge" && (
-              <div className="space-y-4">
-                {can(role, "knowledge.write") && (
-                  <Card className="space-y-3 p-5">
-                    <SectionTitle icon={Plus} title="Add knowledge" />
-                    <Input
-                      placeholder="Title"
-                      value={knowledgeTitle}
-                      onChange={(event) => setKnowledgeTitle(event.target.value)}
-                    />
-                    <textarea
-                      className="min-h-32 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary-muted)]"
-                      placeholder="Content"
-                      value={knowledgeContent}
-                      onChange={(event) => setKnowledgeContent(event.target.value)}
-                    />
-                    <Button
-                      loading={busy === "knowledge-create"}
-                      disabled={!knowledgeTitle.trim() || !knowledgeContent.trim()}
-                      onClick={() =>
-                        void mutate(
-                          "knowledge-create",
-                          () =>
-                            api("/api/admin/knowledge", {
-                              method: "POST",
-                              body: JSON.stringify({
-                                title: knowledgeTitle,
-                                content: knowledgeContent,
-                                type: "note",
-                              }),
-                            }),
-                          "Knowledge item created.",
-                          () => {
-                            setKnowledgeTitle("");
-                            setKnowledgeContent("");
-                            void reloadKnowledge();
-                          },
-                        )
-                      }
-                    >
-                      Add item
-                    </Button>
-                  </Card>
-                )}
-                <Card className="p-5">
-                  <SectionTitle
-                    icon={BookOpen}
-                    title="Knowledge base"
-                    action={
-                      <Input
-                        aria-label="Search knowledge"
-                        placeholder="Search…"
-                        value={knowledgeQuery}
-                        onChange={(event) => void searchKnowledge(event.target.value)}
-                        className="sm:w-72"
-                      />
-                    }
-                  />
-                  {!knowledge.length ? (
-                    <Empty>No knowledge items yet.</Empty>
-                  ) : (
-                    <ul className="mt-4 space-y-3">
-                      {knowledge.map((item) => (
-                        <li key={item.id} className="rounded-xl border border-[var(--border)] p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="font-medium">{item.title}</h3>
-                                <Badge>{item.type}</Badge>
-                                <Badge variant={item.status === "indexed" ? "success" : "warning"}>
-                                  {item.status}
-                                </Badge>
-                              </div>
-                              <p className="mt-2 text-sm text-muted">{item.preview}</p>
-                              <p className="mt-2 text-xs text-subtle">
-                                {item.sizeLabel} · Updated {formatDate(item.updatedAt)}
-                              </p>
-                            </div>
-                            {can(role, "knowledge.write") && (
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => {
-                                    const title = window.prompt("Knowledge title", item.title);
-                                    if (!title?.trim()) return;
-                                    void mutate(
-                                      `knowledge-${item.id}`,
-                                      () =>
-                                        api("/api/admin/knowledge", {
-                                          method: "PATCH",
-                                          body: JSON.stringify({ id: item.id, title }),
-                                        }),
-                                      "Knowledge item updated.",
-                                      () => void reloadKnowledge(),
-                                    );
-                                  }}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  onClick={() => {
-                                    if (!window.confirm(`Delete “${item.title}”?`)) return;
-                                    void mutate(
-                                      `knowledge-${item.id}`,
-                                      () =>
-                                        api(`/api/admin/knowledge?id=${encodeURIComponent(item.id)}`, {
-                                          method: "DELETE",
-                                        }),
-                                      "Knowledge item deleted.",
-                                      () =>
-                                        setKnowledge((current) =>
-                                          current.filter((entry) => entry.id !== item.id),
-                                        ),
-                                    );
-                                  }}
-                                >
-                                  Delete
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-              </div>
-            )}
-
             {tab === "providers" && (
               <div className="space-y-4">
                 {can(role, "ai.write") && (
@@ -1256,6 +1056,9 @@ function AdminPortalInner() {
                         <option value="groq">Groq</option>
                         <option value="gemini">Google Gemini</option>
                         <option value="anthropic">Anthropic</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="perplexity">Perplexity</option>
                         <option value="custom">Custom</option>
                       </select>
                       <Input
@@ -1708,42 +1511,6 @@ function AdminPortalInner() {
                         user: item.userName,
                         quantity: `${item.minutes} minutes`,
                         detail: [item.provider, item.model].filter(Boolean).join(" · "),
-                        createdAt: item.createdAt,
-                      }))}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-
-            {tab === "resume" && (
-              <div className="space-y-4">
-                {busy === "usage-resume" && !resumeUsage ? (
-                  <Card><Empty>Loading resume rewrites…</Empty></Card>
-                ) : !resumeUsage || resumeUsage.period.eventCount === 0 ? (
-                  <Card><Empty>No resume rewrites have been recorded yet.</Empty></Card>
-                ) : (
-                  <>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Metric icon={FilePenLine} label="Total rewrites" value={resumeUsage.period.totalRewrites} />
-                      <Metric icon={ClipboardList} label="Operations" value={resumeUsage.period.operations} />
-                    </div>
-                    <Card className="p-5">
-                      <SectionTitle icon={BarChart3} title="Resume rewrites over time" />
-                      <UsageChart data={resumeUsage.period.overTime} empty="No resume rewrites in this period." />
-                    </Card>
-                    <Card className="p-5">
-                      <h3 className="font-semibold">Resume rewrites by user</h3>
-                      <AggregateList items={resumeUsage.period.byUser.map((item) => ({ label: item.userName, value: item.quantity }))} empty="No per-user resume rewrites." />
-                    </Card>
-                    <RecentUsage
-                      title="Recent resume rewrites"
-                      rows={resumeUsage.recent.map((item) => ({
-                        id: item.id,
-                        primary: "Resume rewrite",
-                        user: item.userName,
-                        quantity: `${item.rewrites} rewrites`,
-                        detail: [item.status, item.provider, item.model].filter(Boolean).join(" · "),
                         createdAt: item.createdAt,
                       }))}
                     />

@@ -40,7 +40,15 @@ export type DbInvite = {
   workspaceId?: string;
 };
 
-export type AiProviderType = "groq" | "openai" | "anthropic" | "gemini" | "custom";
+export type AiProviderType =
+  | "groq"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "openrouter"
+  | "deepseek"
+  | "perplexity"
+  | "custom";
 
 export type DbAiProvider = {
   id: string;
