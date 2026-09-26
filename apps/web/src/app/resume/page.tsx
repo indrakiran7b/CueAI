@@ -276,8 +276,9 @@ export default function ResumePage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <div className="space-y-4">
           <Card
+            id="upload"
             className={cn(
-              "border-dashed p-8 text-center transition-colors",
+              "scroll-mt-28 border-dashed p-8 text-center transition-colors",
               dragOver && "border-primary bg-[var(--primary-muted)]/30"
             )}
             onDragOver={(e) => {
@@ -333,6 +334,7 @@ export default function ResumePage() {
             </div>
           )}
 
+          <div id="job-description" className="scroll-mt-28" />
           <Tabs
             tabs={[
               { id: "editor", label: "Side-by-side" },
@@ -346,7 +348,7 @@ export default function ResumePage() {
           {tab === "jd" ? (
             <Card className="p-4">
               <form onSubmit={(e) => void runAnalyze(e)}>
-                <label className="text-sm font-medium" htmlFor="job-description">
+                <label className="text-sm font-medium" htmlFor="job-description-input">
                   Job description <span className="text-subtle">(optional)</span>
                 </label>
                 <p className="mt-1 text-xs text-subtle">
@@ -354,7 +356,7 @@ export default function ResumePage() {
                   for general ATS / rewrite feedback.
                 </p>
                 <textarea
-                  id="job-description"
+                  id="job-description-input"
                   value={jd}
                   onChange={(e) => setJd(e.target.value)}
                   rows={10}
@@ -381,7 +383,7 @@ export default function ResumePage() {
               </form>
             </Card>
           ) : tab === "improved" ? (
-            <Card className="p-4">
+            <Card id="results" className="scroll-mt-28 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-medium">Fresh improved resume</p>
@@ -416,7 +418,7 @@ export default function ResumePage() {
               )}
             </Card>
           ) : (
-            <div className="space-y-3">
+            <div id="suggestions" className="scroll-mt-28 space-y-3">
               {analysis?.summary && (
                 <Card className="p-4 text-sm leading-relaxed text-muted">
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-subtle">
@@ -510,7 +512,7 @@ export default function ResumePage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="flex flex-col items-center p-5">
+          <Card id="ats" className="scroll-mt-28 flex flex-col items-center p-5">
             <CardTitle className="mb-4 self-start">Match scores</CardTitle>
             <Gauge value={analysis?.matchScore ?? 0} label="AI Match" />
             <div className="mt-6 w-full space-y-3">
@@ -547,7 +549,7 @@ export default function ResumePage() {
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card id="skills" className="scroll-mt-28 p-5">
             <CardHeader>
               <CardTitle>Suggested skills</CardTitle>
             </CardHeader>

@@ -15,6 +15,9 @@ type LicenseStatus = {
   expiresAt?: string;
   devicesActive?: number;
   maxDevices?: number;
+  plan?: string;
+  deviceId?: string;
+  platform?: string;
 };
 
 function formatLicenseType(value?: string) {
@@ -85,28 +88,34 @@ export function LicensePanel() {
         </div>
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-muted">License Status</dt>
+            <dt className="text-muted">Plan</dt>
+            <dd className="font-medium">
+              {status?.plan
+                ? formatLicenseType(status.plan)
+                : formatLicenseType(status?.licenseType)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted">Status</dt>
             <dd className="font-medium">{active ? "Active" : status?.state || "Unknown"}</dd>
           </div>
           <div>
-            <dt className="text-muted">License Type</dt>
-            <dd className="font-medium">{formatLicenseType(status?.licenseType)}</dd>
+            <dt className="text-muted">Device</dt>
+            <dd className="font-medium">
+              {status?.platform === "macos"
+                ? "This Mac"
+                : status?.platform === "windows"
+                  ? "This Windows PC"
+                  : "This device"}
+            </dd>
           </div>
           <div>
             <dt className="text-muted">Expires</dt>
             <dd className="font-medium">{formatDate(status?.expiresAt)}</dd>
           </div>
-          <div>
-            <dt className="text-muted">Devices</dt>
-            <dd className="font-medium">
-              {status?.devicesActive != null && status?.maxDevices != null
-                ? `${status.devicesActive} / ${status.maxDevices}`
-                : "—"}
-            </dd>
-          </div>
           {status?.clientName ? (
             <div className="sm:col-span-2">
-              <dt className="text-muted">Client</dt>
+              <dt className="text-muted">License</dt>
               <dd className="font-medium">{status.clientName}</dd>
             </div>
           ) : null}
@@ -114,9 +123,18 @@ export function LicensePanel() {
         {message ? <p className="text-sm text-muted">{message}</p> : null}
         <div className="flex flex-wrap gap-2">
           {active ? (
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void deactivate()}>
-              Deactivate This Device
-            </Button>
+            <>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => void deactivate()}>
+                Deactivate This Device
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.location.assign("/settings#billing")}
+              >
+                Manage Subscription
+              </Button>
+            </>
           ) : (
             <Button type="button" onClick={() => window.location.assign("/license")}>
               Enter New License

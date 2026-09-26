@@ -12,3 +12,6 @@
 CUEAI_WEB_URL=https://YOUR-SUBDOMAIN.ngrok-free.app
 LICENSE_SIGNING_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nPASTE_YOUR_PUBLIC_KEY_HERE\n-----END PUBLIC KEY-----"
 LICENSE_ENFORCEMENT=true
+
+# Do NOT put Keygate server secrets here.
+# KEYGATE_BASE_URL / KEYGATE_SERVER_API_KEY / KEYGATE_API_KEY belong only on the CueAI backend host.

@@ -286,66 +286,43 @@ export default function LandingPage() {
             editable, private, and ready before the call ends.
           </motion.p>
 
-          {/* Product selector — above Get started / Download */}
+          {/* Compact product selector — directly above Get started / Download */}
           <motion.div
             id="products"
-            className="mx-auto mt-10 grid max-w-[920px] gap-4 text-left sm:grid-cols-2"
+            className="mx-auto mt-10 max-w-xl"
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.16 }}
           >
-            <div className="rounded-3xl border border-[var(--lp-hairline)] bg-[var(--lp-surface)] p-6 sm:p-7">
-              <h2 className="text-xl font-semibold text-white">Resume Tailor</h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--lp-ink-muted)]">
-                Customize your resume for any job description using AI.
-              </p>
-              <ul className="mt-4 space-y-2 text-sm text-white/85">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  ATS-friendly resumes
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  Job-specific tailoring
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  Instant AI suggestions
-                </li>
-              </ul>
-              <Pill href="/resume" className="mt-6 !px-4 !py-2.5 text-sm">
-                Open Resume Tailor
-                <ArrowRight className="h-4 w-4" />
-              </Pill>
-            </div>
-            <div className="rounded-3xl border border-[var(--lp-hairline)] bg-[var(--lp-surface)] p-6 sm:p-7">
-              <h2 className="text-xl font-semibold text-white">CueAI</h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--lp-ink-muted)]">
-                AI meeting assistance, interview preparation, and productivity support.
-              </p>
-              <ul className="mt-4 space-y-2 text-sm text-white/85">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  Meeting assistance
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  Interview preparation
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-[var(--lp-accent)]" />
-                  Personalized AI support
-                </li>
-              </ul>
-              <Pill href="/login?next=/dashboard" className="mt-6 !px-4 !py-2.5 text-sm">
-                Open CueAI
-                <ArrowRight className="h-4 w-4" />
-              </Pill>
+            <p className="mb-3 text-center text-xs font-medium uppercase tracking-[0.14em] text-[var(--lp-ink-dim)]">
+              Choose your experience
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Link
+                href="/resume-tailor"
+                className="lp-product-card group"
+                aria-label="Open Resume Tailor"
+              >
+                <span className="text-base font-semibold text-white">Resume Tailor</span>
+                <span className="mt-1 block text-sm text-[var(--lp-ink-muted)]">
+                  AI-powered resume optimization
+                </span>
+              </Link>
+              <Link
+                href="/dashboard"
+                className="lp-product-card group"
+                aria-label="Open CueAI"
+              >
+                <span className="text-base font-semibold text-white">CueAI</span>
+                <span className="mt-1 block text-sm text-[var(--lp-ink-muted)]">
+                  AI meeting and productivity platform
+                </span>
+              </Link>
             </div>
           </motion.div>
 
           <motion.div
-            className="mt-9 flex flex-wrap items-center justify-center gap-3"
+            className="mt-7 flex flex-wrap items-center justify-center gap-3"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
@@ -550,7 +527,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Pill
-                href={plan.cta === "Book Demo" ? "/login" : "/signup"}
+                href={plan.cta === "Book Demo" ? "/login" : "/pricing"}
                 variant={plan.highlighted ? "primary" : "ghost"}
                 className="mt-8 w-full"
               >

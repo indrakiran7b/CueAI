@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/auth-provider";
 import { isAdminUser } from "@/lib/app-access";
-import { canViewFullMeetingQa, canViewFullTranscript, FREE_MEETING_QA_LIMIT } from "@/lib/entitlements";
+import { canViewFullMeetingQa, canViewFullTranscript, meetingQaLimit } from "@/lib/entitlements";
 import { fetchMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ export default function MeetingSummaryPage() {
   const admin = isAdminUser(session?.role);
   const fullQa = canViewFullMeetingQa({ role: session?.role, plan: session?.plan });
   const fullTranscript = canViewFullTranscript({ role: session?.role, plan: session?.plan });
+  const qaLimit = meetingQaLimit({ role: session?.role, plan: session?.plan });
 
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,9 +174,9 @@ export default function MeetingSummaryPage() {
               <CardTitle>Questions & Answers</CardTitle>
             </CardHeader>
             <ul className="space-y-3">
-              {(fullQa
+              {(fullQa || qaLimit < 0
                 ? meeting.aiAnswers
-                : meeting.aiAnswers.slice(0, FREE_MEETING_QA_LIMIT)
+                : meeting.aiAnswers.slice(0, qaLimit)
               ).map((answer) => (
                 <li key={answer.id} className="flex gap-2 text-sm text-foreground/90">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-400" />
@@ -186,7 +187,7 @@ export default function MeetingSummaryPage() {
                 </li>
               ))}
             </ul>
-            {!fullQa && meeting.aiAnswers.length > FREE_MEETING_QA_LIMIT && (
+            {!fullQa && qaLimit >= 0 && meeting.aiAnswers.length > qaLimit && (
               <div className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-4">
                 <p className="text-sm font-medium text-foreground">Unlock Complete Meeting Summary</p>
                 <p className="mt-2 text-xs text-muted">Get access to:</p>

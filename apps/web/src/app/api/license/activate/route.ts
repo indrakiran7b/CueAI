@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
         ? 404
         : result.state === "EXPIRED"
           ? 403
-          : result.state === "REVOKED"
+          : result.state === "REVOKED" || result.state === "SUSPENDED"
             ? 403
             : result.state === "DEVICE_LIMIT_REACHED"
               ? 409

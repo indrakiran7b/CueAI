@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-export type LicenseType = "CLIENT_TESTING";
+export type LicenseType = "CLIENT_TESTING" | "PRO" | "BUSINESS" | "ENTERPRISE" | "FREE";
 export type LicenseStatus = "ACTIVE" | "REVOKED";
 export type LicenseActivationStatus = "ACTIVE" | "DEACTIVATED";
 
@@ -31,9 +31,29 @@ export type DbLicenseActivation = {
   metadata?: Record<string, string | number | boolean>;
 };
 
+/** Encrypted Keygate license-key binding for device (server-side only). */
+export type DbKeygateBinding = {
+  id: string;
+  licenseId: string;
+  deviceId: string;
+  platform: "windows" | "macos";
+  /** encryptSecret(licenseKey) — never log or return raw */
+  licenseKeyEnc: string;
+  planName?: string;
+  planId?: string;
+  features?: Record<string, unknown>;
+  clientName?: string;
+  expiresAt?: string;
+  activatedAt: string;
+  lastSeenAt: string;
+  deactivatedAt?: string;
+  status: LicenseActivationStatus;
+};
+
 export type LicenseStore = {
   licenses: DbLicense[];
   activations: DbLicenseActivation[];
+  keygateBindings: DbKeygateBinding[];
 };
 
 const DATA_DIR = process.env.CUEAI_DATA_DIR?.trim() || path.join(process.cwd(), ".data");
@@ -44,7 +64,7 @@ let loadedMtimeMs = 0;
 let writeQueue: Promise<void> = Promise.resolve();
 
 function defaultStore(): LicenseStore {
-  return { licenses: [], activations: [] };
+  return { licenses: [], activations: [], keygateBindings: [] };
 }
 
 async function storeFileMtime(): Promise<number> {
@@ -78,6 +98,7 @@ async function ensureLoaded(): Promise<LicenseStore> {
     loadedMtimeMs = mtime || Date.now();
     if (!memory.licenses) memory.licenses = [];
     if (!memory.activations) memory.activations = [];
+    if (!memory.keygateBindings) memory.keygateBindings = [];
     return memory;
   } catch {
     memory = defaultStore();
@@ -103,6 +124,10 @@ export function newLicenseId() {
 
 export function newActivationId() {
   return `lact_${randomUUID().slice(0, 12)}`;
+}
+
+export function newKeygateBindingId() {
+  return `kgb_${randomUUID().slice(0, 12)}`;
 }
 
 /** Test helper — reset in-memory cache between isolated runs. */

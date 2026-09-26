@@ -3,6 +3,7 @@ export type LicensePlatform = "windows" | "macos";
 export type LicenseState =
   | "ACTIVE"
   | "EXPIRED"
+  | "SUSPENDED"
   | "REVOKED"
   | "INVALID"
   | "DEVICE_LIMIT_REACHED"
@@ -46,6 +47,12 @@ export type LicenseStatusResult = {
   licenseId?: string;
   deviceId?: string;
   platform?: LicensePlatform;
+  plan?: string;
+  entitlements?: {
+    "meeting.full_summary"?: boolean;
+    "meeting.max_questions"?: number;
+    desktop_companion?: boolean;
+  };
 };
 
 export type LicenseActivateResult = LicenseStatusResult & {

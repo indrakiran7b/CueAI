@@ -73,8 +73,8 @@ export function registerIpcHandlers() {
       return;
     }
 
-    // Main shell always hides — companion / tray keep the process alive.
-    win.hide();
+    // Invoke close(); main-window "close" listener may hide-to-tray unless quitting.
+    if (!win.isDestroyed()) win.close();
   });
 
   ipcMain.handle(IpcChannels.WINDOW_IS_MAXIMIZED, (event) => {

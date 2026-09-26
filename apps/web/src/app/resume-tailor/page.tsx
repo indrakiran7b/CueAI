@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 
-/** Alias for the Resume Tailor product (canonical route: /resume). */
+/**
+ * Public Resume Tailor entry alias.
+ * Canonical experience lives at /resume (isolated product shell).
+ */
 export default function ResumeTailorAliasPage() {
   redirect("/resume");
 }

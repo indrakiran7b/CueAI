@@ -88,9 +88,16 @@ function LoginForm() {
 
   useEffect(() => {
     if (ready && session && !AUTH_BYPASS) {
-      router.replace(mac ? "/dashboard?desktop=mac" : withDesktopParam("/dashboard"));
+      const next = searchParams.get("next");
+      const dest =
+        next && next.startsWith("/") && !next.startsWith("//")
+          ? next
+          : mac
+            ? "/dashboard?desktop=mac"
+            : "/dashboard";
+      router.replace(withDesktopParam(dest));
     }
-  }, [ready, session, router, mac]);
+  }, [ready, session, router, mac, searchParams]);
 
   useEffect(() => {
     const authError = searchParams.get("error");

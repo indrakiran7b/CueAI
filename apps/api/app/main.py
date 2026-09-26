@@ -100,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.modules.jobs.router import router as jobs_router
     from app.modules.live.router import router as live_router
     from app.modules.entitlements.router import router as entitlements_router
+    from app.modules.license.router import router as license_router
     from app.modules.onboarding.router import router as onboarding_router
     from app.modules.workspace.router import router as workspace_router
 
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(workspace_router, prefix="/v1")
     app.include_router(onboarding_router, prefix="/v1")
     app.include_router(entitlements_router, prefix="/v1")
+    app.include_router(license_router, prefix="/v1")
 
     @app.exception_handler(HTTPException)
     async def cueai_http_exception_handler(

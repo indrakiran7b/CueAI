@@ -32,6 +32,10 @@ async function postJson<T>(
 function mapApiToResult(json: Record<string, unknown>, fallbackMessage?: string): LicenseStatusResult {
   const state = String(json.state || "INVALID") as LicenseStatusResult["state"];
   const valid = Boolean(json.valid);
+  const entitlements =
+    json.entitlements && typeof json.entitlements === "object"
+      ? (json.entitlements as LicenseStatusResult["entitlements"])
+      : undefined;
   return {
     ok: valid,
     state: state === "NETWORK_ERROR" ? "NETWORK_ERROR" : state,
@@ -42,11 +46,18 @@ function mapApiToResult(json: Record<string, unknown>, fallbackMessage?: string)
     expiresAt: typeof json.expiresAt === "string" ? json.expiresAt : undefined,
     devicesActive: typeof json.devicesActive === "number" ? json.devicesActive : undefined,
     maxDevices: typeof json.maxDevices === "number" ? json.maxDevices : undefined,
-    licenseId: typeof json.signedPayload === "object" && json.signedPayload && "licenseId" in (json.signedPayload as object)
-      ? String((json.signedPayload as { licenseId: string }).licenseId)
-      : undefined,
+    licenseId:
+      typeof json.signedPayload === "object" &&
+      json.signedPayload &&
+      "licenseId" in (json.signedPayload as object)
+        ? String((json.signedPayload as { licenseId: string }).licenseId)
+        : typeof json.licenseId === "string"
+          ? json.licenseId
+          : undefined,
     deviceId: typeof json.deviceId === "string" ? json.deviceId : undefined,
     platform: json.platform === "macos" || json.platform === "windows" ? json.platform : undefined,
+    plan: typeof json.plan === "string" ? json.plan : undefined,
+    entitlements,
   };
 }
 

@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { withDesktopParam } from "@/lib/desktop-query";
+import { UpgradeButton } from "@/components/layout/upgrade-button";
 
 type AppNotification = {
   id: string;
@@ -337,6 +338,8 @@ export function Topbar() {
         className="ml-auto flex items-center gap-1.5 sm:gap-2"
         style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
       >
+        <UpgradeButton />
+
         <button
           type="button"
           onClick={toggleTheme}

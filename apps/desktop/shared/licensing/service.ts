@@ -25,6 +25,8 @@ function userMessageForState(state: LicenseStatusResult["state"]): string {
   switch (state) {
     case "EXPIRED":
       return "Your CueAI license has expired.";
+    case "SUSPENDED":
+      return "Your CueAI license is suspended. Contact support or renew your subscription.";
     case "REVOKED":
       return "Your CueAI license has been revoked.";
     case "DEVICE_LIMIT_REACHED":
@@ -206,6 +208,16 @@ export function createLicensingService(deps: LicensingDeps) {
     return local;
   }
 
+  async function resolveStartupPath(): Promise<string> {
+    if (!deps.enforcementEnabled) return "/dashboard";
+    const status = await resolveStartupAuthorized();
+    if (!status.authorized) {
+      const state = status.state || "NOT_ACTIVATED";
+      return `/license?desktop=${deps.platform}&state=${encodeURIComponent(state)}`;
+    }
+    return deps.platform === "macos" ? "/login?desktop=mac" : "/dashboard";
+  }
+
   async function deactivate(): Promise<LicenseStatusResult> {
     const local = deps.readLocal();
     if (!local) {
@@ -217,7 +229,13 @@ export function createLicensingService(deps: LicensingDeps) {
       deps.fetchImpl,
     );
     deps.clearLocal();
-    return { ...remote, ok: true, authorized: false, state: "NOT_ACTIVATED", message: "Device deactivated." };
+    return {
+      ...remote,
+      ok: true,
+      authorized: false,
+      state: "NOT_ACTIVATED",
+      message: "Device deactivated.",
+    };
   }
 
   function getPublicStatus(): LicenseStatusResult {
@@ -246,6 +264,7 @@ export function createLicensingService(deps: LicensingDeps) {
     activate,
     validateOnline,
     resolveStartupAuthorized,
+    resolveStartupPath,
     deactivate,
     getPublicStatus,
     resolveInitialPath,

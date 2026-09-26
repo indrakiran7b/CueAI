@@ -10,11 +10,14 @@ apps/desktop/shared/licensing/service.ts
         │ HTTPS
         ▼
 apps/web/src/app/api/license/*
-        ▼
-apps/web/.data/licenses.json
+        │
+        ├─ (Keygate enabled) → Keygate /api/v1/license/*
+        └─ (fallback)        → apps/web/.data/licenses.json
 ```
 
 The server is authoritative. Desktop stores a **signed activation payload** locally (Keychain/DPAPI via Electron `safeStorage`). Offline use is allowed during `LICENSE_OFFLINE_GRACE_HOURS` (default 72) after the last successful validation.
+
+When `KEYGATE_BASE_URL` is set, CueAI backend proxies activate/verify/deactivate to Keygate. Desktop never holds `KEYGATE_SERVER_API_KEY`. See `docs/KEYGATE-INTEGRATION.md`.
 
 **Note:** This repository uses a JSON file store (`licenses.json`), not PostgreSQL. No separate database was introduced.
 

@@ -35,9 +35,15 @@ export function createMainWindow(): BrowserWindow {
   });
 
   const origin = getWebOrigin().replace(/\/$/, "");
-  const initialPath = getLicenseService().resolveInitialPath();
-  const target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
-  void win.loadURL(target);
+  let target = `${origin}/license?desktop=windows`;
+  void (async () => {
+    const license = getLicenseService();
+    const initialPath = license.resolveStartupPath
+      ? await license.resolveStartupPath()
+      : license.resolveInitialPath();
+    target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
+    void win.loadURL(target);
+  })();
 
   win.once("ready-to-show", () => {
     win.show();

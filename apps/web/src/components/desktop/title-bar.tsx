@@ -2,28 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { getDesktop, isDesktopApp, isMacDesktopApp } from "@/lib/desktop";
+import { DesktopWindowControls } from "@/components/desktop/window-controls";
 
-/** Frameless window chrome — only rendered inside Electron. */
+/**
+ * Frameless Electron window chrome — single title bar.
+ * Window controls (− □ ×) live here at the absolute top-right (not in page content).
+ */
 export function DesktopTitleBar() {
   const [visible, setVisible] = useState(false);
   const [mac, setMac] = useState(false);
-  const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    const desktop = getDesktop();
     const macApp = isMacDesktopApp();
     const id = window.requestAnimationFrame(() => {
       setMac(macApp);
       setVisible(isDesktopApp() || macApp);
     });
-    if (!desktop?.isMaximized || !desktop.onMaximizedChange) {
-      return () => window.cancelAnimationFrame(id);
-    }
-    void desktop.isMaximized().then(setMaximized);
-    const unsub = desktop.onMaximizedChange(setMaximized);
+    // Re-check shortly in case preload attaches after first paint.
+    const t = window.setTimeout(() => {
+      setMac(isMacDesktopApp());
+      setVisible(isDesktopApp() || isMacDesktopApp());
+    }, 250);
     return () => {
       window.cancelAnimationFrame(id);
-      unsub();
+      window.clearTimeout(t);
     };
   }, []);
 
@@ -43,29 +45,7 @@ export function DesktopTitleBar() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <span className="mac-titlebar-title">CueAI</span>
-        <div
-          className="mac-titlebar-controls"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <TrafficLight
-            kind="min"
-            glyph="−"
-            label="Minimize"
-            onClick={() => void desktop?.minimize()}
-          />
-          <TrafficLight
-            kind="max"
-            glyph={maximized ? "❐" : "□"}
-            label={maximized ? "Restore" : "Maximize"}
-            onClick={() => void desktop?.maximize()}
-          />
-          <TrafficLight
-            kind="close"
-            glyph="×"
-            label="Close"
-            onClick={() => void desktop?.close()}
-          />
-        </div>
+        <DesktopWindowControls variant="mac" />
       </header>
     );
   }
@@ -95,66 +75,8 @@ export function DesktopTitleBar() {
         >
           Companion
         </button>
-        <WinChromeBtn label="Minimize" onClick={() => void desktop?.minimize()}>
-          −
-        </WinChromeBtn>
-        <WinChromeBtn label={maximized ? "Restore" : "Maximize"} onClick={() => void desktop?.maximize()}>
-          {maximized ? "❐" : "□"}
-        </WinChromeBtn>
-        <WinChromeBtn label="Close" danger onClick={() => void desktop?.close()}>
-          ×
-        </WinChromeBtn>
+        <DesktopWindowControls variant="windows" />
       </div>
     </header>
-  );
-}
-
-function TrafficLight({
-  kind,
-  glyph,
-  label,
-  onClick,
-}: {
-  kind: "min" | "max" | "close";
-  glyph: string;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      className={`mac-traffic ${kind}`}
-      onClick={onClick}
-    >
-      <span aria-hidden>{glyph}</span>
-    </button>
-  );
-}
-
-function WinChromeBtn({
-  children,
-  onClick,
-  label,
-  danger,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  label: string;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className={
-        danger
-          ? "rounded-lg px-2 py-1.5 text-muted transition hover:bg-red-500/20 hover:text-red-400"
-          : "rounded-lg px-2 py-1.5 text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
-      }
-    >
-      {children}
-    </button>
   );
 }

@@ -21,6 +21,21 @@ export type DbUser = {
   onboarding?: OnboardingProfile;
   /** Optional billing entitlement. Absent means free. */
   plan?: "free" | "premium";
+  /** Stripe Customer id (cus_…). Never expose secret keys. */
+  stripeCustomerId?: string;
+  /** Active Stripe Subscription id (sub_…). */
+  stripeSubscriptionId?: string;
+  /** Stripe Price id currently attached. */
+  stripePriceId?: string;
+  /** Mapped CueAI plan key: free | pro | team | enterprise */
+  billingPlanId?: string;
+  /** Stripe-like status: active | trialing | past_due | canceled | unpaid | incomplete | incomplete_expired */
+  billingStatus?: string;
+  billingPeriodStart?: string;
+  billingPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
+  /** Keygate license id created after successful payment (if Keygate admin mint succeeded). */
+  keygateLicenseId?: string;
 };
 
 export type DbInvite = {
@@ -417,5 +432,9 @@ export function publicUser(user: DbUser) {
     lastActiveAt: user.lastActiveAt || null,
     onboardingCompleted: Boolean(user.onboarding?.completedAt),
     plan: user.plan === "premium" ? "premium" : "free",
+    billingPlanId: user.billingPlanId || (user.plan === "premium" ? "pro" : "free"),
+    billingStatus: user.billingStatus || (user.plan === "premium" ? "active" : "none"),
+    billingPeriodEnd: user.billingPeriodEnd || null,
+    cancelAtPeriodEnd: Boolean(user.cancelAtPeriodEnd),
   };
 }

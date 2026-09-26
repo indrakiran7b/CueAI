@@ -119,8 +119,15 @@ export function createMainWindow(): BrowserWindow {
   if (isMac) installMacContextMenu(win);
 
   const origin = getWebOrigin().replace(/\/$/, "");
-  const initialPath = getLicenseService().resolveInitialPath();
-  const target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
+  let target = `${origin}/license?desktop=macos`;
+  void (async () => {
+    const license = getLicenseService();
+    const initialPath = license.resolveStartupPath
+      ? await license.resolveStartupPath()
+      : license.resolveInitialPath();
+    target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
+    void loadRenderer(win, target);
+  })();
 
   win.webContents.on("did-start-loading", () => {
     const url = win.webContents.getURL();
@@ -148,8 +155,6 @@ export function createMainWindow(): BrowserWindow {
       `${desc || "Connection refused"} (${code}). Start the web app, then Retry.`
     );
   });
-
-  void loadRenderer(win, target);
 
   win.once("ready-to-show", () => {
     win.show();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   Bell,
   CreditCard,
@@ -20,6 +20,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
+import { BillingPanel } from "@/components/billing/billing-panel";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
 import { LicensePanel } from "@/components/desktop/license-panel";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
@@ -75,9 +76,31 @@ export default function SettingsPage() {
     setWorkspace(session?.workspace || "");
   }, [session]);
 
+  // Deep-link: /settings#billing (Upgrade button, Stripe return links)
+  useEffect(() => {
+    const applyHash = () => {
+      const hash = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
+      if (!hash) return;
+      const allowed = sections.some((s) => s.id === hash);
+      if (!allowed) return;
+      window.setTimeout(() => setSection(hash), 0);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
   useEffect(() => {
     if (!admin && section === "workspace") setSection("profile");
   }, [admin, section]);
+
+  function selectSection(id: string) {
+    setSection(id);
+    if (typeof window !== "undefined") {
+      const next = id === "profile" ? "/settings" : `/settings#${id}`;
+      window.history.replaceState(null, "", next);
+    }
+  }
 
   function saveProfile() {
     updateSessionProfile({ name, email });
@@ -129,7 +152,7 @@ export default function SettingsPage() {
           {visibleSections.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => selectSection(s.id)}
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm transition",
                 section === s.id
@@ -346,22 +369,13 @@ export default function SettingsPage() {
         )}
 
         {section === "billing" && (
-          <Card className="space-y-4 p-6">
-            <div className="flex items-center justify-between">
-              <CardTitle>Billing</CardTitle>
-              <Badge variant="purple">Unavailable</Badge>
-            </div>
-            <p className="text-sm text-muted">
-              Billing and plan upgrades are not connected yet. No charges are
-              processed from this screen.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => window.open("/#pricing", "_self")}
-            >
-              View marketing plans
-            </Button>
-          </Card>
+          <Suspense
+            fallback={
+              <Card className="p-6 text-sm text-muted">Loading billing…</Card>
+            }
+          >
+            <BillingPanel compact />
+          </Suspense>
         )}
 
         {section === "api" && (
