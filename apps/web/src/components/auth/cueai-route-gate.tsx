@@ -6,36 +6,38 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { restrictedCueAiPath } from "@/lib/app-access";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { withDesktopParam } from "@/lib/desktop-query";
-import {
-  getProductMode,
-  isResumeProductPath,
-  persistProductFromSearch,
-  persistProductMode,
-} from "@/lib/product-mode";
+import { isResumeProductPath, persistProductFromSearch, persistProductMode } from "@/lib/product-mode";
 
 export function CueAiRouteGate({ children }: { children: ReactNode }) {
-  const { session, ready } = useAuth();
+  const { session, status } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [mac] = useState(() => isMacDesktopApp());
 
   useEffect(() => {
     persistProductFromSearch();
-    if (isResumeProductPath(pathname || "/")) persistProductMode("resume");
+    persistProductMode(isResumeProductPath(pathname || "/") ? "resume" : "cueai");
   }, [pathname]);
 
-  const resumeProduct = isResumeProductPath(pathname || "/") || getProductMode() === "resume";
-  const blocked = restrictedCueAiPath(pathname || "/", session?.role, {
-    macDesktop: mac,
-    resumeProduct,
-  });
+  const blocked =
+    status === "authenticated"
+      ? restrictedCueAiPath(pathname || "/", session?.role, { macDesktop: mac })
+      : null;
 
   useEffect(() => {
-    if (!ready || !blocked) return;
+    if (status !== "authenticated" || !blocked) return;
     router.replace(withDesktopParam(blocked));
-  }, [ready, blocked, router]);
+  }, [status, blocked, router]);
 
-  if (ready && blocked) {
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+        Loading workspace…
+      </div>
+    );
+  }
+
+  if (status === "authenticated" && blocked) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
         Redirecting…

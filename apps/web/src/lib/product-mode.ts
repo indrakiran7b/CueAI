@@ -12,6 +12,16 @@ export function isResumeProductPath(pathname?: string | null): boolean {
   );
 }
 
+export function isResumeLoginPath(pathname?: string | null): boolean {
+  const path = (pathname || "").split("?")[0] || "/";
+  return path === "/resume-tailor/login" || path.startsWith("/resume-tailor/login/");
+}
+
+export function isResumePublicPath(pathname?: string | null): boolean {
+  const path = (pathname || "").split("?")[0] || "/";
+  return isResumeLoginPath(path) || path === "/resume-tailor/denied";
+}
+
 export function persistProductMode(mode?: string | null) {
   if (typeof window === "undefined") return;
   if (mode === "resume" || mode === "cueai") {

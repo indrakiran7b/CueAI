@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,13 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
 import { canAccessAdmin } from "@/lib/roles";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
-import { isResumeProductPath, persistProductFromSearch, persistProductMode } from "@/lib/product-mode";
+import {
+  isResumeLoginPath,
+  isResumeProductPath,
+  isResumePublicPath,
+  persistProductFromSearch,
+  persistProductMode,
+} from "@/lib/product-mode";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { MacAuthShell, MacLoginForm } from "@/components/mac/mac-auth-screen";
 
@@ -65,48 +71,63 @@ function AuthShell({
 
 function LoginForm() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { refresh, session, ready } = useAuth();
+  const { refresh, session, status } = useAuth();
   const [loading, setLoading] = useState<"user" | "admin" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [mac, setMac] = useState(searchParams.get("desktop") === "mac");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const enteringRef = useRef(false);
 
-  function afterLoginPath() {
+  const resumeFlow =
+    isResumeLoginPath(pathname) ||
+    searchParams.get("product") === "resume" ||
+    isResumeProductPath(searchParams.get("next"));
+
+  function afterLoginPath(role?: string | null) {
     persistProductFromSearch(searchParams.toString());
-    const product = searchParams.get("product");
-    persistProductMode(product);
+    persistProductMode(resumeFlow ? "resume" : "cueai");
     const next = searchParams.get("next");
-    if (product === "resume" || (next && isResumeProductPath(next))) {
-      persistProductMode("resume");
-      const dest = next && isResumeProductPath(next) ? next : "/resume-tailor";
-      return withDesktopParam(`${dest}${dest.includes("?") ? "&" : "?"}product=resume`);
+    if (resumeFlow) {
+      if (next && isResumeProductPath(next) && !isResumePublicPath(next)) return next;
+      return "/resume-tailor";
     }
-    if (next && next.startsWith("/")) return withDesktopParam(next);
+    if (next && next.startsWith("/") && !isResumeProductPath(next)) {
+      return withDesktopParam(next);
+    }
     return withDesktopParam("/dashboard");
+  }
+
+  function enterApp(role?: string | null) {
+    if (enteringRef.current) return;
+    enteringRef.current = true;
+    const dest = afterLoginPath(role);
+    router.replace(dest);
+    router.refresh();
   }
 
   useEffect(() => {
     setMounted(true);
     persistDesktopQuery();
     persistProductFromSearch(searchParams.toString());
+    persistProductMode(resumeFlow ? "resume" : "cueai");
     setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
-  }, [searchParams]);
+  }, [searchParams, resumeFlow]);
 
   useEffect(() => {
-    if (AUTH_BYPASS) {
-      void refresh();
-      router.replace(afterLoginPath());
-    }
-  }, [router, refresh, searchParams]);
+    if (!AUTH_BYPASS) return;
+    void refresh().then(() => enterApp(session?.role || "Admin"));
+  }, [refresh, session?.role]);
 
   useEffect(() => {
-    if (ready && session && !AUTH_BYPASS) {
-      router.replace(afterLoginPath());
+    if (AUTH_BYPASS || loading || enteringRef.current) return;
+    if (status === "authenticated" && session) {
+      enterApp(session.role);
     }
-  }, [ready, session, router, mac, searchParams]);
+  }, [status, session, loading]);
 
   useEffect(() => {
     const authError = searchParams.get("error");
@@ -161,7 +182,6 @@ function LoginForm() {
         return;
       }
 
-      // Await so the app gate sees the fresh session before we navigate.
       await refresh();
 
       if (rememberMe) {
@@ -174,14 +194,16 @@ function LoginForm() {
         if (!canAccessAdmin(result.session.role)) {
           setError("This account does not have Admin Portal access.");
           setLoading(null);
-          router.push(withDesktopParam("/dashboard"));
+          enterApp(result.session.role);
           return;
         }
-        router.push(withDesktopParam("/admin"));
+        enteringRef.current = true;
+        router.replace(withDesktopParam("/admin"));
+        router.refresh();
         return;
       }
 
-      router.push(afterLoginPath());
+      enterApp(result.session.role);
     } catch {
       setError("Unable to reach auth server.");
     } finally {
@@ -189,7 +211,7 @@ function LoginForm() {
     }
   }
 
-  if (mac) {
+  if (mac && !resumeFlow) {
     return (
       <MacAuthShell
         title="Welcome back"
@@ -216,7 +238,7 @@ function LoginForm() {
                 return;
               }
               await refresh();
-              router.push(afterLoginPath());
+              enterApp(result.session.role);
             } catch {
               setError("Unable to reach auth server.");
             } finally {
@@ -227,7 +249,7 @@ function LoginForm() {
         <MacAuthDivider />
         <SocialAuthButtons
           appearance="mac"
-          callbackUrl="/dashboard?desktop=mac"
+          callbackUrl={resumeFlow ? "/resume-tailor?product=resume" : "/dashboard?desktop=mac"}
           providers={["google", "apple"]}
         />
       </MacAuthShell>
@@ -236,8 +258,12 @@ function LoginForm() {
 
   return (
     <AuthShell
-      title="Sign in to your account"
-      subtitle="Continue with Google or Apple, or use email."
+      title={resumeFlow ? "Sign in to Resume Tailor" : "Sign in to your account"}
+      subtitle={
+        resumeFlow
+          ? "Use your CueAI account to continue to Resume Tailor."
+          : "Continue with Google or Apple, or use email."
+      }
       footer={
         <>
           Don&apos;t have an account?{" "}
@@ -247,7 +273,10 @@ function LoginForm() {
         </>
       }
     >
-      <SocialAuthButtons callbackUrl="/dashboard" providers={["google", "apple"]} />
+      <SocialAuthButtons
+        callbackUrl={resumeFlow ? "/resume-tailor?product=resume" : "/dashboard"}
+        providers={["google", "apple"]}
+      />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
@@ -314,7 +343,7 @@ function LoginForm() {
             {error}
           </p>
         )}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className={resumeFlow ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>
           <Button
             type="submit"
             variant="gradient"
@@ -326,18 +355,20 @@ function LoginForm() {
             Sign in
             <ArrowRight className="h-4 w-4" />
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full"
-            size="lg"
-            loading={loading === "admin"}
-            disabled={loading !== null}
-            onClick={() => void signIn("admin")}
-          >
-            <Shield className="h-4 w-4" />
-            Admin sign in
-          </Button>
+          {!resumeFlow && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              size="lg"
+              loading={loading === "admin"}
+              disabled={loading !== null}
+              onClick={() => void signIn("admin")}
+            >
+              <Shield className="h-4 w-4" />
+              Admin sign in
+            </Button>
+          )}
         </div>
       </form>
     </AuthShell>

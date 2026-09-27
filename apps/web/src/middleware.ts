@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_BYPASS } from "@/lib/auth-mode";
-import { isResumeProductPath } from "@/lib/product-mode";
+import { isResumeLoginPath, isResumeProductPath, isResumePublicPath } from "@/lib/product-mode";
 import {
   SESSION_COOKIE,
+  canAccessResumeTailorRole,
   verifySessionEdge,
 } from "@/lib/server/session-edge";
 
@@ -20,14 +21,14 @@ const PUBLIC_PREFIXES = [
 
 function isPublicPath(pathname: string) {
   if (pathname === "/") return true;
-  return PUBLIC_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  if (isResumePublicPath(pathname)) return true;
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 /**
  * Protect app pages and authenticated APIs. Role checks for Admin still happen
  * in requirePermission / RequireAdmin (live role from store).
+ * Browser/platform query params must not change Resume Tailor authorization.
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -36,8 +37,6 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Live desktop helpers stay reachable without a browser cookie (local Electron).
-  // Meeting history APIs still require auth via route handlers.
   if (
     pathname.startsWith("/api/live/") ||
     pathname.startsWith("/api/transcribe") ||
@@ -54,13 +53,25 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionEdge(token);
 
+  if (isResumeProductPath(pathname) && !isResumeLoginPath(pathname)) {
+    if (!session) {
+      const login = new URL("/resume-tailor/login", req.url);
+      login.searchParams.set("next", pathname);
+      login.searchParams.set("product", "resume");
+      return NextResponse.redirect(login);
+    }
+    if (!canAccessResumeTailorRole(session.role)) {
+      return NextResponse.redirect(new URL("/resume-tailor/denied", req.url));
+    }
+    return NextResponse.next();
+  }
+
   if (!session) {
     if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const login = new URL("/login", req.url);
     login.searchParams.set("next", pathname);
-    if (isResumeProductPath(pathname)) login.searchParams.set("product", "resume");
     return NextResponse.redirect(login);
   }
 

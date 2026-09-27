@@ -1,5 +1,5 @@
-import { canAccessAdmin } from "@/lib/roles";
-import { isResumeProductMode, isResumeProductPath } from "@/lib/product-mode";
+import { canAccessAdmin, canAccessResumeTailor } from "@/lib/roles";
+import { isResumeProductPath } from "@/lib/product-mode";
 
 export type CueAiNavItem = {
   href: string;
@@ -68,17 +68,10 @@ export function restrictedCueAiPath(
   opts?: { macDesktop?: boolean; resumeProduct?: boolean },
 ): string | null {
   const path = pathname.split("?")[0] || "/";
-  const resumeMode = opts?.resumeProduct ?? (typeof window !== "undefined" && isResumeProductMode());
 
   if (isResumeProductPath(path)) {
+    if (!canAccessResumeTailor(role)) return "/resume-tailor/denied";
     return null;
-  }
-
-  if (resumeMode) {
-    if (path === "/settings" || path.startsWith("/settings/")) {
-      return null;
-    }
-    return "/resume-tailor";
   }
 
   if (isNormalUser(role)) {

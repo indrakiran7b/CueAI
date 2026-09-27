@@ -14,6 +14,7 @@ import { faqs, pricing } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/logo";
 import { useLandingParallax } from "@/components/landing/use-landing-parallax";
+import { isDesktopApp } from "@/lib/desktop";
 import "./landing.css";
 
 /* Inter with tight display tracking ≈ Framer GT Walsheim substitute */
@@ -202,8 +203,13 @@ function LiveMock() {
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [desktopRuntime, setDesktopRuntime] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useLandingParallax(rootRef);
+
+  useEffect(() => {
+    setDesktopRuntime(isDesktopApp());
+  }, []);
 
   const marqueeItems = [
     "Live transcription",
@@ -294,11 +300,13 @@ export default function LandingPage() {
             <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--lp-ink-muted)]">
               Choose your experience
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Link href="/resume-tailor?product=resume" className="lp-product-card">
-                <span className="lp-product-card-title">Resume Tailor</span>
-                <span className="lp-product-card-copy">AI-powered resume optimization</span>
-              </Link>
+            <div className={desktopRuntime ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
+              {!desktopRuntime && (
+                <Link href="/resume-tailor?product=resume" className="lp-product-card">
+                  <span className="lp-product-card-title">Resume Tailor</span>
+                  <span className="lp-product-card-copy">AI-powered resume optimization</span>
+                </Link>
+              )}
               <Link href="/login?product=cueai" className="lp-product-card">
                 <span className="lp-product-card-title">CueAI</span>
                 <span className="lp-product-card-copy">AI meeting and productivity platform</span>

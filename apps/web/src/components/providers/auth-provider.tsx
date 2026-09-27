@@ -20,9 +20,12 @@ import {
   type CueSession,
 } from "@/lib/auth";
 
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+
 type AuthContextValue = {
   session: CueSession | null;
   ready: boolean;
+  status: AuthStatus;
   /** Re-reads live membership from the server; await it before navigating on it. */
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
@@ -116,8 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [status]);
 
+  const authStatus: AuthStatus = !ready
+    ? "loading"
+    : localSession
+      ? "authenticated"
+      : "unauthenticated";
+
   return (
-    <AuthContext.Provider value={{ session: localSession, ready, refresh, logout }}>
+    <AuthContext.Provider
+      value={{ session: localSession, ready, status: authStatus, refresh, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

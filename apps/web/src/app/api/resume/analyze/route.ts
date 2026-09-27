@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/server/api-auth";
+import { requireAuth } from "@/lib/server/api-auth";
+import { canAccessResumeTailor } from "@/lib/roles";
 import { extractDocumentText } from "@/lib/server/extract-document";
 
 export const runtime = "nodejs";
@@ -104,8 +105,14 @@ function parseModelJson(content: string): Record<string, unknown> {
 }
 
 export async function POST(request: NextRequest) {
-  const { error } = await requirePermission("admin.access", request);
-  if (error) return error;
+  const { error, session } = await requireAuth(request);
+  if (error || !session) return error;
+  if (!canAccessResumeTailor(session.role)) {
+    return NextResponse.json(
+      { error: "Sign in to use Resume Tailor." },
+      { status: 403 },
+    );
+  }
 
   const apiKey = process.env.GROQ_API_KEY?.trim() || "";
   const { resolveGeminiCredentials } = await import("@/lib/server/gemini");

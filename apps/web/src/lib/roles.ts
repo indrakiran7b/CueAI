@@ -113,3 +113,9 @@ export function can(role: string | null | undefined, permission: AdminPermission
 export function canAccessAdmin(role?: string | null): boolean {
   return can(role, "admin.access");
 }
+
+/** Resume Tailor is available to any authenticated workspace role on the web. */
+export function canAccessResumeTailor(role?: string | null): boolean {
+  const normalized = normalizeRole(role);
+  return normalized === "Admin" || normalized === "Manager" || normalized === "User";
+}

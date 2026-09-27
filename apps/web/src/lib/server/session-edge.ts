@@ -75,3 +75,7 @@ export async function verifySessionEdge(
 export function canAccessAdminRole(role?: string | null) {
   return role === "Admin" || role === "Manager";
 }
+
+export function canAccessResumeTailorRole(role?: string | null) {
+  return role === "Admin" || role === "Manager" || role === "User";
+}

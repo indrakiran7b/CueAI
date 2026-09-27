@@ -9,28 +9,28 @@ import { isResumeProductPath } from "@/lib/product-mode";
 
 /** Require a local/OAuth session for app routes unless auth bypass is enabled. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { session, ready } = useAuth();
+  const { session, status } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const resumePath = isResumeProductPath(pathname);
 
-  const needsOnboarding = Boolean(session) && !session?.onboardingCompleted;
+  const needsOnboarding = Boolean(session) && !session?.onboardingCompleted && !resumePath;
 
   useEffect(() => {
-    if (!ready || AUTH_BYPASS) return;
+    if (status === "loading" || AUTH_BYPASS) return;
     const next = encodeURIComponent(pathname || "/dashboard");
-    if (!session) {
-      const resume = isResumeProductPath(pathname);
+    if (status === "unauthenticated") {
       router.replace(
-        withDesktopParam(resume ? `/login?product=resume&next=${next}` : `/login?next=${next}`),
+        withDesktopParam(resumePath ? `/resume-tailor/login?product=resume&next=${next}` : `/login?next=${next}`),
       );
       return;
     }
     if (needsOnboarding) {
       router.replace(withDesktopParam(`/onboarding?next=${next}`));
     }
-  }, [ready, session, needsOnboarding, router, pathname]);
+  }, [status, needsOnboarding, router, pathname, resumePath]);
 
-  if (!ready) {
+  if (status === "loading") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
         Loading workspace…
@@ -38,7 +38,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!AUTH_BYPASS && !session) {
+  if (!AUTH_BYPASS && status === "unauthenticated") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
         Redirecting to sign in…
