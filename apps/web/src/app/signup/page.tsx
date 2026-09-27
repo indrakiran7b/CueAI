@@ -70,7 +70,7 @@ export default function SignupPage() {
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refresh } = useAuth();
+  const { refresh, applySession } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -111,8 +111,9 @@ function SignupForm() {
         return;
       }
 
+      applySession(result.session);
       await refresh();
-      router.push(mac ? "/onboarding?desktop=mac" : withDesktopParam("/onboarding"));
+      router.replace(mac ? "/onboarding?desktop=mac" : withDesktopParam("/onboarding"));
     } catch {
       setError("Unable to reach auth server.");
     } finally {

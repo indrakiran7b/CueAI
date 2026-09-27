@@ -18,12 +18,20 @@ export const USER_BLOCKED_PATH_PREFIXES = [
   "/screen-context",
 ] as const;
 
+/** Web-only product routes — blocked inside Electron (Windows + macOS). */
+export const DESKTOP_WEB_ONLY_PREFIXES = ["/resume", "/resume-tailor"] as const;
+
 export function isAdminUser(role?: string | null): boolean {
   return canAccessAdmin(role);
 }
 
 export function isNormalUser(role?: string | null): boolean {
   return !canAccessAdmin(role);
+}
+
+/** Resume Tailor: Admin + Manager only (same permission as admin.access). */
+export function canAccessResumeTailor(role?: string | null): boolean {
+  return canAccessAdmin(role);
 }
 
 function meetingFeedRedirect(pathname: string): string | null {
@@ -34,8 +42,7 @@ function meetingFeedRedirect(pathname: string): string | null {
 
 /**
  * Authenticated CueAI route policy.
- * Resume Tailor (/resume, /resume-tailor) lives outside the CueAI app shell —
- * do not redirect those paths from this helper (they are never under (app)/layout).
+ * Resume Tailor lives outside the CueAI app shell.
  * Knowledge Base is Admin-only.
  */
 export function restrictedCueAiPath(
@@ -45,7 +52,6 @@ export function restrictedCueAiPath(
 ): string | null {
   const path = pathname.split("?")[0] || "/";
 
-  // Knowledge Base: Admin Portal users only.
   if (path === "/knowledge" || path.startsWith("/knowledge/")) {
     if (isNormalUser(role)) return "/dashboard";
     return null;
@@ -72,7 +78,18 @@ export function isUserBlockedPath(pathname: string): boolean {
   );
 }
 
-/** True when the role may open this CueAI in-app path. */
+/** Paths that must never open inside the desktop shell. */
+export function isDesktopWebOnlyPath(pathname: string): boolean {
+  const path = pathname.split("?")[0] || "/";
+  return DESKTOP_WEB_ONLY_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+export function isDesktopBlockedPath(pathname: string): boolean {
+  return isDesktopWebOnlyPath(pathname) || isUserBlockedPath(pathname);
+}
+
 export function canAccessCueaiPath(
   pathname: string,
   role?: string | null,

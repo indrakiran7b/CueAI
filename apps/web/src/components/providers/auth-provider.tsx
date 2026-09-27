@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -24,7 +25,9 @@ type AuthContextValue = {
   session: CueSession | null;
   ready: boolean;
   /** Re-reads live membership from the server; await it before navigating on it. */
-  refresh: () => Promise<void>;
+  refresh: () => Promise<CueSession | null>;
+  /** Apply a known session immediately (e.g. after login) and invalidate in-flight syncs. */
+  applySession: (session: CueSession | null) => void;
   logout: () => Promise<void>;
 };
 
@@ -34,12 +37,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: nextSession, status } = useSession();
   const [localSession, setLocalSession] = useState<CueSession | null>(null);
   const [ready, setReady] = useState(false);
+  /** Bumped on every apply/refresh so stale /api/auth/me responses cannot wipe a fresh login. */
+  const syncGenRef = useRef(0);
+
+  const applySession = useCallback((session: CueSession | null) => {
+    syncGenRef.current += 1;
+    setLocalSession(session);
+    setReady(true);
+  }, []);
 
   const refresh = useCallback(async () => {
-    // Always prefer live server membership/role over stale localStorage/JWT claims.
+    const gen = ++syncGenRef.current;
     const next = await syncSessionFromServer();
+    if (gen !== syncGenRef.current) return next;
     setLocalSession(next);
     setReady(true);
+    return next;
   }, []);
 
   useEffect(() => {
@@ -48,50 +61,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         localStorage.setItem("cueai-session", JSON.stringify(guest));
       }
-      setLocalSession(guest);
-      setReady(true);
+      applySession(guest);
       return;
     }
 
-    console.log("[AUTH] Startup");
-    if (status === "loading") {
-      console.log("[AUTH] Session check started");
-      return;
-    }
+    if (status === "loading") return;
 
-    // Server session cookie is source of truth for role.
-    console.log("[AUTH] Session check started");
-    void syncSessionFromServer().then(async (s) => {
+    let cancelled = false;
+    const gen = ++syncGenRef.current;
+
+    void (async () => {
+      const s = await syncSessionFromServer();
+      if (cancelled || gen !== syncGenRef.current) return;
+
       if (s) {
         setLocalSession(s);
         setReady(true);
-        console.log("[AUTH] Session check complete");
         return;
       }
+
       // OAuth authenticated but no CueAI cookie yet — link membership by verified email.
       if (nextSession?.user?.email) {
         const linked = await syncOAuthMembership();
+        if (cancelled || gen !== syncGenRef.current) return;
         if (linked) {
           setLocalSession(linked);
           setReady(true);
-          console.log("[AUTH] Session check complete");
           return;
         }
       }
+
+      if (cancelled || gen !== syncGenRef.current) return;
       setLocalSession(null);
       setReady(true);
-      console.log("[AUTH] Session check complete");
-    });
-  }, [nextSession?.user?.email, status]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nextSession?.user?.email, status, applySession]);
 
   const logout = useCallback(async () => {
     if (AUTH_BYPASS) {
       localStorage.setItem("cueai-session", JSON.stringify(DEV_GUEST_SESSION));
-      setLocalSession({ ...DEV_GUEST_SESSION });
+      applySession({ ...DEV_GUEST_SESSION });
       return;
     }
     try {
-      // Stop any active companion / capture when leaving the app.
       const { startDesktopMeetingSession, hideCompanionOverlay } = await import(
         "@/lib/desktop"
       );
@@ -107,17 +123,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     await logoutApi();
     clearSession();
-    setLocalSession(null);
+    applySession(null);
     if (status === "authenticated") {
       await nextAuthSignOut({ redirect: false });
     }
     if (typeof window !== "undefined") {
       window.location.assign("/login");
     }
-  }, [status]);
+  }, [status, applySession]);
 
   return (
-    <AuthContext.Provider value={{ session: localSession, ready, refresh, logout }}>
+    <AuthContext.Provider value={{ session: localSession, ready, refresh, applySession, logout }}>
       {children}
     </AuthContext.Provider>
   );

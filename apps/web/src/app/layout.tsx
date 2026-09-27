@@ -5,6 +5,7 @@ import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { DesktopTitleBar } from "@/components/desktop/title-bar";
 import { DesktopBridge } from "@/components/desktop/desktop-bridge";
+import { DesktopAccessGuard } from "@/components/desktop/desktop-access-guard";
 import "./globals.css";
 import "./mac-desktop.css";
 import "@/components/mac/mac-glass.css";
@@ -59,10 +60,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           <AuthSessionProvider>
             <AuthProvider>
-              {/* Electron chrome for all routes (landing + app shell). No-op in browser. */}
               <DesktopTitleBar />
               <DesktopBridge />
-              {children}
+              <DesktopAccessGuard>{children}</DesktopAccessGuard>
             </AuthProvider>
           </AuthSessionProvider>
         </ThemeProvider>

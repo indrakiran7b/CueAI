@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { extractDocumentText } from "@/lib/server/extract-document";
+import { requirePermission } from "@/lib/server/api-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -16,7 +17,15 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const { error } = await requirePermission("admin.access", request);
+  if (error) {
+    return NextResponse.json(
+      { error: "Resume Tailor requires Admin or Manager access." },
+      { status: error.status, headers: CORS_HEADERS },
+    );
+  }
+
   try {
     const form = await request.formData();
     const file = form.get("resume");

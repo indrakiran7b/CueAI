@@ -65,7 +65,7 @@ function AuthShell({
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refresh, session, ready } = useAuth();
+  const { refresh, applySession, session, ready } = useAuth();
   const [loading, setLoading] = useState<"user" | "admin" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -152,7 +152,9 @@ function LoginForm() {
         return;
       }
 
-      // Await so the app gate sees the fresh session before we navigate.
+      // Apply login session immediately so protected routes never see a stale null
+      // from an in-flight startup /api/auth/me that raced ahead of this request.
+      applySession(result.session);
       await refresh();
 
       if (rememberMe) {
@@ -165,16 +167,17 @@ function LoginForm() {
         if (!canAccessAdmin(result.session.role)) {
           setError("This account does not have Admin Portal access.");
           setLoading(null);
-          router.push(withDesktopParam("/dashboard"));
+          router.replace(withDesktopParam("/dashboard"));
           return;
         }
-        router.push(withDesktopParam("/admin"));
+        router.replace(withDesktopParam("/admin"));
         return;
       }
 
       const next = searchParams.get("next");
-      const dest = next && next.startsWith("/") ? next : "/dashboard";
-      router.push(withDesktopParam(dest));
+      const dest =
+        next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+      router.replace(withDesktopParam(dest));
     } catch {
       setError("Unable to reach auth server.");
     } finally {
@@ -208,10 +211,14 @@ function LoginForm() {
                 setError(result.error);
                 return;
               }
+              applySession(result.session);
               await refresh();
               const next = searchParams.get("next");
-              const dest = next && next.startsWith("/") ? next : "/dashboard";
-              router.push(withDesktopParam(dest));
+              const dest =
+                next && next.startsWith("/") && !next.startsWith("//")
+                  ? next
+                  : "/dashboard";
+              router.replace(withDesktopParam(dest));
             } catch {
               setError("Unable to reach auth server.");
             } finally {

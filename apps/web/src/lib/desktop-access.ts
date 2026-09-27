@@ -1,9 +1,11 @@
 /**
- * @deprecated Use `@/lib/app-access` — kept for any stray imports.
+ * Desktop path policy — Resume Tailor and other web-only routes stay out of Electron.
  */
 export {
   CUEAI_USER_NAV_HREFS as DESKTOP_USER_NAV_HREFS,
   USER_BLOCKED_PATH_PREFIXES as DESKTOP_BLOCKED_PATH_PREFIXES,
+  DESKTOP_WEB_ONLY_PREFIXES,
   isCueaiUserNavHref as isDesktopUserNavHref,
-  isUserBlockedPath as isDesktopBlockedPath,
+  isDesktopBlockedPath,
+  isDesktopWebOnlyPath,
 } from "@/lib/app-access";
