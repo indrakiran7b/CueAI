@@ -24,6 +24,10 @@ function restrictedCueAiPath(pathname, role) {
   if ((path === "/admin" || path.startsWith("/admin/")) && isNormal) {
     return "/dashboard";
   }
+  if (isNormal) {
+    if (path === "/translation" || path.startsWith("/translation/")) return "/dashboard";
+    if (path === "/screen-context" || path.startsWith("/screen-context/")) return "/dashboard";
+  }
   return null;
 }
 
@@ -62,4 +66,24 @@ test("Desktop blocks Resume Tailor routes", () => {
   assert.equal(isDesktopBlockedPath("/resume-tailor"), true);
   assert.equal(isDesktopBlockedPath("/resume"), true);
   assert.equal(isDesktopBlockedPath("/dashboard"), false);
+});
+
+test("Desktop does not block Admin Portal / Translation / Screen Context", () => {
+  assert.equal(isDesktopBlockedPath("/admin"), false);
+  assert.equal(isDesktopBlockedPath("/translation"), false);
+  assert.equal(isDesktopBlockedPath("/screen-context"), false);
+  assert.equal(isDesktopBlockedPath("/knowledge"), false);
+});
+
+test("Admin can open Admin Portal / Translation / Screen Context", () => {
+  assert.equal(restrictedCueAiPath("/admin", "Admin"), null);
+  assert.equal(restrictedCueAiPath("/translation", "Admin"), null);
+  assert.equal(restrictedCueAiPath("/screen-context", "Admin"), null);
+  assert.equal(restrictedCueAiPath("/translation", "Manager"), null);
+});
+
+test("User is role-blocked from Admin Portal / Translation / Screen Context", () => {
+  assert.equal(restrictedCueAiPath("/admin", "User"), "/dashboard");
+  assert.equal(restrictedCueAiPath("/translation", "User"), "/dashboard");
+  assert.equal(restrictedCueAiPath("/screen-context", "User"), "/dashboard");
 });

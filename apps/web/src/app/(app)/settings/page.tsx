@@ -24,9 +24,11 @@ import { BillingPanel } from "@/components/billing/billing-panel";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
 import { LicensePanel } from "@/components/desktop/license-panel";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
+import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { deleteAccountLocal, updateSessionProfile } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
 import { cn } from "@/lib/utils";
+import { CUEAI_SHORTCUTS, formatShortcut } from "@/lib/shortcuts";
 
 const sections = [
   { id: "profile", label: "Profile", icon: User },
@@ -40,7 +42,7 @@ const sections = [
   { id: "workspace", label: "Workspace", icon: Building2 },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "api", label: "API Keys", icon: KeyRound },
-  { id: "danger", label: "Danger Zone", icon: Trash2 },
+  { id: "danger", label: "Delete Account", icon: Trash2 },
 ];
 
 export default function SettingsPage() {
@@ -56,6 +58,12 @@ export default function SettingsPage() {
   );
   const [workspace, setWorkspace] = useState(session?.workspace || "");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [shortcutRows, setShortcutRows] = useState(() =>
+    CUEAI_SHORTCUTS.map((row) => ({
+      action: row.action,
+      keys: formatShortcut(...row.parts),
+    })),
+  );
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -65,10 +73,15 @@ export default function SettingsPage() {
       return {};
     }
   });
-  const [storedApiKey, setStoredApiKey] = useState<string | null>(() =>
-    typeof window !== "undefined" ? localStorage.getItem("cueai-api-key") : null
-  );
-  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+
+  useEffect(() => {
+    setShortcutRows(
+      CUEAI_SHORTCUTS.map((row) => ({
+        action: row.action,
+        keys: formatShortcut(...row.parts),
+      })),
+    );
+  }, []);
 
   useEffect(() => {
     setName(session?.name || "");
@@ -284,14 +297,7 @@ export default function SettingsPage() {
           <Card className="p-6">
             <CardTitle className="mb-4">Keyboard Shortcuts</CardTitle>
             <div className="space-y-2">
-              {[
-                ["Toggle Companion", "⌘⇧Space"],
-                ["Settings", "⌘,"],
-                ["Command palette", "⌘K"],
-                ["Close window", "⌘W"],
-                ["Minimize", "⌘M"],
-                ["Ask / primary action", "⌘↩"],
-              ].map(([action, keys]) => (
+              {shortcutRows.map(({ action, keys }) => (
                 <div
                   key={action}
                   className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
@@ -378,59 +384,16 @@ export default function SettingsPage() {
           </Suspense>
         )}
 
-        {section === "api" && (
-          <Card className="space-y-4 p-6">
-            <CardTitle>API Keys</CardTitle>
-            <p className="text-sm text-muted">
-              Public developer API keys are not issued by CueAI yet. Any key
-              stored here stays on this device only and is not a real server
-              credential.
-            </p>
-            {storedApiKey ? (
-              <>
-                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
-                  <code className="font-mono text-xs text-muted">
-                    {apiKeyVisible
-                      ? storedApiKey
-                      : `${storedApiKey.slice(0, 10)}••••••••`}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setApiKeyVisible((v) => !v)}
-                  >
-                    {apiKeyVisible ? "Hide" : "Reveal"}
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    localStorage.removeItem("cueai-api-key");
-                    setStoredApiKey(null);
-                    setApiKeyVisible(false);
-                    setSaveMsg("Local key cleared.");
-                  }}
-                >
-                  Clear local key
-                </Button>
-              </>
-            ) : (
-              <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-muted">
-                No API keys yet.
-              </p>
-            )}
-          </Card>
-        )}
+        {section === "api" && <ApiKeysPanel />}
 
         {section === "danger" && (
           <Card className="space-y-4 border-red-500/30 p-6">
-            <CardTitle className="text-red-400">Danger Zone</CardTitle>
+            <CardTitle className="text-red-400">Delete Account</CardTitle>
             <p className="text-sm text-muted">
-              Permanently delete your local CueAI account and session data.
+              Permanently delete your CueAI account and associated data.
             </p>
             <Button variant="danger" onClick={() => void onDeleteAccount()}>
-              Delete account
+              Delete Account
             </Button>
           </Card>
         )}

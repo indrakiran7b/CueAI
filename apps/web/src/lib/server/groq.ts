@@ -46,16 +46,24 @@ export async function generateGroqText(req: {
   temperature?: number;
   maxOutputTokens?: number;
   jsonObject?: boolean;
+  /** Override env key (BYOK / resolver). */
+  apiKey?: string;
+  /** Prefer this model first when provided. */
+  model?: string;
 }): Promise<GroqResult> {
-  const apiKey = resolveGroqApiKey();
+  const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
     throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
   }
 
   let lastStatus = 502;
   let lastMessage = "Groq did not return an answer.";
+  const preferredModel = req.model?.trim() || "";
+  const models = preferredModel
+    ? [preferredModel, ...MODEL_FALLBACKS.filter((m) => m !== preferredModel)]
+    : MODEL_FALLBACKS;
 
-  for (const model of MODEL_FALLBACKS) {
+  for (const model of models) {
     console.log("[GROQ] Request started");
     const res = await fetch(GROQ_CHAT_URL, {
       method: "POST",
@@ -122,16 +130,25 @@ export async function streamGroqText(req: {
   maxOutputTokens?: number;
   signal?: AbortSignal;
   onToken: (token: string) => void;
+  apiKey?: string;
+  model?: string;
 }): Promise<GroqResult> {
-  const apiKey = resolveGroqApiKey();
+  const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
     throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
   }
 
   let lastStatus = 502;
   let lastMessage = "Groq did not return an answer.";
+  const preferredStreamModel = req.model?.trim() || "";
+  const models = preferredStreamModel
+    ? [
+        preferredStreamModel,
+        ...STREAM_MODEL_FALLBACKS.filter((m) => m !== preferredStreamModel),
+      ]
+    : STREAM_MODEL_FALLBACKS;
 
-  for (const model of STREAM_MODEL_FALLBACKS) {
+  for (const model of models) {
     const res = await fetch(GROQ_CHAT_URL, {
       method: "POST",
       headers: {

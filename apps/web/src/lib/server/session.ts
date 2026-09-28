@@ -1,4 +1,11 @@
-import { createHmac, timingSafeEqual, scryptSync, randomBytes } from "node:crypto";
+import {
+  createHmac,
+  timingSafeEqual,
+  scryptSync,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+} from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import { normalizeRole } from "@/lib/roles";
 
@@ -76,21 +83,51 @@ export function verifyPassword(password: string, stored: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** 32-byte AES key from CUEAI_SECRET_ENCRYPTION_KEY or AUTH_SECRET. */
+function vaultKey(): Buffer {
+  const explicit = process.env.CUEAI_SECRET_ENCRYPTION_KEY?.trim();
+  if (explicit) {
+    if (/^[0-9a-fA-F]{64}$/.test(explicit)) return Buffer.from(explicit, "hex");
+    return createHmac("sha256", "cueai-vault-v1").update(explicit).digest();
+  }
+  return createHmac("sha256", secret()).update("cueai-secret-key-v2-aes").digest();
+}
+
+/**
+ * Encrypt a secret with AES-256-GCM (authenticated).
+ * Format: aesgcm.<iv>.<ciphertext>.<tag> (base64url parts).
+ * Legacy XOR format (iv.data) remains decryptable for older admin keys.
+ */
 export function encryptSecret(value: string) {
   if (!value) return "";
-  const key = createHmac("sha256", secret()).update("cueai-secret-key").digest();
   const iv = randomBytes(12);
-  // Simple XOR stream with HMAC key material (dev-safe vault; replace with AES in prod KMS).
-  const input = Buffer.from(value, "utf8");
-  const out = Buffer.alloc(input.length);
-  for (let i = 0; i < input.length; i++) {
-    out[i] = input[i]! ^ key[i % key.length]!;
-  }
-  return `${b64url(iv)}.${b64url(out)}`;
+  const cipher = createCipheriv("aes-256-gcm", vaultKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `aesgcm.${b64url(iv)}.${b64url(encrypted)}.${b64url(tag)}`;
 }
 
 export function decryptSecret(value: string) {
   if (!value) return "";
+  if (value.startsWith("aesgcm.")) {
+    const parts = value.split(".");
+    if (parts.length !== 4) return "";
+    const [, ivPart, dataPart, tagPart] = parts;
+    if (!ivPart || !dataPart || !tagPart) return "";
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", vaultKey(), fromB64url(ivPart));
+      decipher.setAuthTag(fromB64url(tagPart));
+      const out = Buffer.concat([
+        decipher.update(fromB64url(dataPart)),
+        decipher.final(),
+      ]);
+      return out.toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  // Legacy XOR stream (admin provider keys written before AES upgrade).
   const [ivPart, dataPart] = value.split(".");
   if (!ivPart || !dataPart) return "";
   const key = createHmac("sha256", secret()).update("cueai-secret-key").digest();
@@ -106,6 +143,17 @@ export function maskSecret(value: string) {
   if (!value) return "";
   if (value.length <= 8) return "••••••••";
   return `${value.slice(0, 4)}••••••••${value.slice(-4)}`;
+}
+
+export function keyLast4(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.slice(-4);
+}
+
+export function maskKeyLast4(last4: string): string {
+  if (!last4) return "••••••••";
+  return `••••••••${last4}`;
 }
 
 export function sessionCookieOptions(maxAge = 60 * 60 * 24 * 14) {

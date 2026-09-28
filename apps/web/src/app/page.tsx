@@ -309,7 +309,7 @@ export default function LandingPage() {
                 </span>
               </Link>
               <Link
-                href="/dashboard"
+                href="/login?next=%2Fdashboard"
                 className="lp-product-card group"
                 aria-label="Open CueAI"
               >

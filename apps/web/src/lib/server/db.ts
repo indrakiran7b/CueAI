@@ -101,17 +101,82 @@ export type DbAiConfig = {
   models?: DbAiModel[];
 };
 
+export type DbKnowledgeChunk = {
+  id: string;
+  index: number;
+  text: string;
+  tokenCount?: number;
+  pageNumber?: number;
+  sectionTitle?: string;
+  vectorId?: string;
+};
+
 export type DbKnowledge = {
   id: string;
   workspaceId?: string;
+  /** When set, document is Meeting Knowledge for that meeting only. */
+  meetingId?: string | null;
+  /** Explicit scope; derived from meetingId when omitted. */
+  knowledgeScope?: "meeting" | "workspace";
+  /** Workspace folder category (not used for "All" filter). */
+  category?: "security" | "gtm" | "engineering" | "sales";
   title: string;
-  type: "pdf" | "docx" | "md" | "txt" | "url" | "note";
-  status: "indexed" | "processing" | "failed";
+  type: "pdf" | "docx" | "md" | "txt" | "url" | "note" | "csv";
+  status: "uploaded" | "processing" | "indexed" | "failed" | "deleting";
   sizeLabel: string;
   content: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  originalFilename?: string;
+  mimeType?: string;
+  fileSize?: number;
+  storagePath?: string;
+  checksum?: string;
+  chunkCount?: number;
+  pageCount?: number;
+  chunks?: DbKnowledgeChunk[];
+  /** Embedding generation status for this document. */
+  embeddingStatus?: "pending" | "ready" | "failed" | "skipped";
+  /** True when chunk vectors were upserted to Qdrant. */
+  vectorIndexed?: boolean;
+  processingError?: string;
+  processedAt?: string;
+  documentVersion?: number;
+};
+
+export type ApiCredentialCapability = "rag" | "live_session" | "general_ai";
+
+export type ApiCredentialStatus =
+  | "connected"
+  | "invalid"
+  | "error"
+  | "not_tested";
+
+/** User-owned BYOK credential (encrypted at rest). Never return decrypted key to clients. */
+export type DbUserApiCredential = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  /** User-facing label, e.g. "My OpenAI Key". */
+  name: string;
+  provider: AiProviderType;
+  model: string;
+  encryptedApiKey: string;
+  keyLast4: string;
+  status: ApiCredentialStatus;
+  capabilities: ApiCredentialCapability[];
+  /** Optional override base URL (OpenAI-compatible providers). */
+  endpoint?: string;
+  /** Optional OpenAI organization id. */
+  organizationId?: string;
+  /** Default/active for its capabilities within this user+workspace. */
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastVerifiedAt?: string;
+  lastUsedAt?: string;
+  lastError?: string;
 };
 
 export type DbUsageEvent = {
@@ -219,6 +284,11 @@ export type DbMeeting = {
   resumeName?: string;
   resumeText?: string;
   description?: string;
+  /**
+   * Workspace knowledge document ids attached to this meeting (reusable docs).
+   * Meeting-scoped uploads are linked via KnowledgeDocument.meetingId.
+   */
+  documentIds?: string[];
   transcript: DbMeetingLine[];
   answers: DbMeetingAnswer[];
   summary?: string;
@@ -232,6 +302,8 @@ export type WorkspaceStore = {
   usage: DbUsageEvent[];
   audit: DbAudit[];
   ai: DbAiConfig;
+  /** User BYOK credentials (encrypted). Scoped by userId + workspaceId. */
+  userApiCredentials?: DbUserApiCredential[];
   meetings?: DbMeeting[];
   devices?: DbDevice[];
   activeMeetingId?: string | null;
@@ -244,6 +316,10 @@ export type WorkspaceStore = {
     resumeName?: string;
     resumeText?: string;
     description?: string;
+    /** Meeting-scoped docs uploaded during prep (assigned meetingId on create). */
+    pendingKnowledgeIds?: string[];
+    /** Workspace docs to attach when the live meeting starts. */
+    documentIds?: string[];
     updatedAt: string;
   } | null;
 };
@@ -296,6 +372,7 @@ function defaultStore(): WorkspaceStore {
     meetings: [],
     devices: [],
     activeMeetingId: null,
+    userApiCredentials: [],
     ai: {
       provider: "groq",
       model: "openai/gpt-oss-20b",
@@ -326,6 +403,7 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
   if (memory && mtime && loadedMtimeMs && mtime <= loadedMtimeMs) {
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
+    if (!memory.userApiCredentials) memory.userApiCredentials = [];
     return memory;
   }
   try {
@@ -335,6 +413,7 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     loadedMtimeMs = mtime || Date.now();
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
+    if (!memory.userApiCredentials) memory.userApiCredentials = [];
     if (!memory.workspace.createdAt) {
       memory.workspace.createdAt = memory.users[0]?.createdAt || new Date().toISOString();
     }

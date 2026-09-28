@@ -2,7 +2,6 @@
 
 import {
   Bell,
-  Command,
   Moon,
   Search,
   Sun,
@@ -27,6 +26,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { withDesktopParam } from "@/lib/desktop-query";
 import { UpgradeButton } from "@/components/layout/upgrade-button";
+import { formatShortcut, isModKey } from "@/lib/shortcuts";
 
 type AppNotification = {
   id: string;
@@ -65,6 +65,7 @@ export function Topbar() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [meetingHits, setMeetingHits] = useState<{ id: string; title: string }[]>([]);
   const [macDesktop, setMacDesktop] = useState(false);
+  const [searchShortcut, setSearchShortcut] = useState("Ctrl + K");
   const commandInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLElement>(null);
 
@@ -72,7 +73,10 @@ export function Topbar() {
     let cancelled = false;
     void (async () => {
       const { isMacDesktopApp } = await import("@/lib/desktop");
-      if (!cancelled) setMacDesktop(isMacDesktopApp());
+      if (!cancelled) {
+        setMacDesktop(isMacDesktopApp());
+        setSearchShortcut(formatShortcut("mod", "K"));
+      }
     })();
     return () => {
       cancelled = true;
@@ -162,7 +166,7 @@ export function Topbar() {
         if (!cancelled) setMeetingHits([]);
       });
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (isModKey(e) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         closeMenus();
         setCommandOpen(true);
@@ -183,13 +187,12 @@ export function Topbar() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === "k") {
+      if (isModKey(e) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen(true);
         setCommandQuery("");
       }
-      if (macDesktop && e.metaKey && e.key === ",") {
+      if (isModKey(e) && e.key === ",") {
         e.preventDefault();
         router.push("/settings");
       }
@@ -206,7 +209,7 @@ export function Topbar() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [macDesktop, router]);
+  }, [router]);
 
   const displayName = session?.name || "Guest";
   const workspace =
@@ -330,7 +333,7 @@ export function Topbar() {
         <Search className="h-4 w-4" />
         <span className="flex-1 text-left">Search meetings, docs, answers…</span>
         <kbd className="hidden items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-[10px] font-medium text-subtle sm:inline-flex">
-          <Command className="h-2.5 w-2.5" />K
+          {searchShortcut}
         </kbd>
       </button>
 

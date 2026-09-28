@@ -113,11 +113,40 @@ export async function POST(request: NextRequest) {
 
   const groqKey = resolveGroqApiKey();
   const credentials = await resolveGeminiCredentials();
-  if (!groqKey && !credentials) {
+
+  // Resolve optional user BYOK for live session (never returned to client).
+  let byok: Awaited<
+    ReturnType<(typeof import("@/lib/server/credential-resolver"))["resolveCredential"]>
+  > = null;
+  try {
+    const { getSessionFromRequest } = await import("@/lib/server/api-auth");
+    const { resolveCredential } = await import("@/lib/server/credential-resolver");
+    const session = await getSessionFromRequest();
+    byok = await resolveCredential({
+      userId: session?.userId,
+      workspaceId: session?.workspaceId,
+      capability: "live_session",
+    });
+  } catch {
+    // optional
+  }
+
+  /** Active user BYOK takes precedence over env keys for text answers. */
+  const userByok = byok?.source === "user" ? byok : null;
+  const effectiveGroqKey =
+    userByok?.provider === "groq"
+      ? userByok.apiKey
+      : userByok
+        ? ""
+        : groqKey;
+  const byokGroqModel =
+    userByok?.provider === "groq" ? userByok.model : undefined;
+
+  if (!userByok && !effectiveGroqKey && !credentials) {
     return json(
       {
         error:
-          "No AI key is configured. Add GROQ_API_KEY (primary) and/or GEMINI_API_KEY to the server environment.",
+          "No API key is configured for this provider.\nPlease add an API key in Settings → API Keys.",
       },
       503,
     );
@@ -155,20 +184,35 @@ export async function POST(request: NextRequest) {
     let hasResume = sessionContext.includes("CANDIDATE RESUME");
     let profileContext = "";
 
-    // Stream path: enrich with light KB retrieval (keyword) without blocking on full profile merge.
-    if (wantStream && groqKey && !inlineImage) {
+    // Stream path: meeting-aware RAG without blocking on full profile merge.
+    if (wantStream && effectiveGroqKey && !inlineImage) {
       let knowledgeContext = "";
+      let knowledgeMeta: {
+        knowledgeUsed: boolean;
+        sourceType: string;
+        sources: unknown[];
+      } = { knowledgeUsed: false, sourceType: "general_ai", sources: [] };
       try {
-        const { retrieveKnowledgeForQuestion } = await import(
+        const { retrieveKnowledgeForMeeting } = await import(
           "@/lib/server/knowledge-retrieve"
         );
         const { getSessionFromRequest } = await import("@/lib/server/api-auth");
+        const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
         const session = await getSessionFromRequest();
-        knowledgeContext = await retrieveKnowledgeForQuestion(prompt, {
-          workspaceId: session?.workspaceId,
-          limit: 2,
+        const resolved = await resolveAnswerBriefing();
+        const kb = await retrieveKnowledgeForMeeting(prompt, {
+          workspaceId: session?.workspaceId || resolved.meeting?.workspaceId,
+          meetingId: resolved.meeting?.id,
+          documentIds: resolved.briefing.documentIds,
+          includeWorkspace: true,
           maxChars: 700,
         });
+        knowledgeContext = kb.context;
+        knowledgeMeta = {
+          knowledgeUsed: kb.knowledgeUsed,
+          sourceType: kb.sourceType,
+          sources: kb.sources.slice(0, 3),
+        };
       } catch {
         // KB is optional for latency.
       }
@@ -195,6 +239,8 @@ export async function POST(request: NextRequest) {
               maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
               signal: request.signal,
               onToken: (token) => send({ type: "token", text: token }),
+              apiKey: effectiveGroqKey,
+              model: byokGroqModel,
             });
             send({
               type: "done",
@@ -202,6 +248,9 @@ export async function POST(request: NextRequest) {
               confidence: 0.78,
               model: result.model,
               provider: "groq",
+              knowledgeUsed: knowledgeMeta.knowledgeUsed,
+              sourceType: knowledgeMeta.sourceType,
+              sources: knowledgeMeta.sources,
             });
             // Usage / history are best-effort and must not delay tokens.
             void (async () => {
@@ -274,6 +323,9 @@ export async function POST(request: NextRequest) {
                   confidence,
                   model: gemini.model,
                   provider: "gemini",
+                  knowledgeUsed: knowledgeMeta.knowledgeUsed,
+                  sourceType: knowledgeMeta.sourceType,
+                  sources: knowledgeMeta.sources,
                 });
                 void (async () => {
                   try {
@@ -356,15 +408,32 @@ export async function POST(request: NextRequest) {
     const system = buildSystemInstruction(profileContext, hasResume || Boolean(sessionContext));
 
     let knowledgeContext = "";
+    let knowledgeMeta: {
+      knowledgeUsed: boolean;
+      sourceType: string;
+      sources: unknown[];
+    } = { knowledgeUsed: false, sourceType: "general_ai", sources: [] };
     try {
-      const { retrieveKnowledgeForQuestion } = await import(
+      const { retrieveKnowledgeForMeeting } = await import(
         "@/lib/server/knowledge-retrieve"
       );
       const { getSessionFromRequest } = await import("@/lib/server/api-auth");
       const session = await getSessionFromRequest();
-      knowledgeContext = await retrieveKnowledgeForQuestion(prompt, {
-        workspaceId: session?.workspaceId,
+      const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
+      const resolved = await resolveAnswerBriefing();
+      meetingId = meetingId || resolved.meeting?.id || null;
+      const kb = await retrieveKnowledgeForMeeting(prompt, {
+        workspaceId: session?.workspaceId || resolved.meeting?.workspaceId,
+        meetingId,
+        documentIds: resolved.briefing.documentIds,
+        includeWorkspace: true,
       });
+      knowledgeContext = kb.context;
+      knowledgeMeta = {
+        knowledgeUsed: kb.knowledgeUsed,
+        sourceType: kb.sourceType,
+        sources: kb.sources.slice(0, 5),
+      };
     } catch {
       // optional
     }
@@ -383,7 +452,7 @@ export async function POST(request: NextRequest) {
       inputTokens: number;
       outputTokens: number;
     };
-    let provider: "groq" | "gemini" | "qwen" = "groq";
+    let provider = "groq";
 
     if (inlineImage && rawImage) {
       try {
@@ -409,11 +478,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Screen analysis needs vision — Groq chat cannot take the screenshot.
-    // Use the same Gemini credentials as Resume Analyzer.
+    // Screen analysis needs vision — chat providers cannot take the screenshot.
     const preferGemini = Boolean(inlineImage);
 
-    if (groqKey && !preferGemini) {
+    // Prefer active user BYOK (any provider + saved model) for non-vision answers.
+    if (userByok && !preferGemini) {
+      const { generateWithCredential } = await import("@/lib/server/llm-generate");
+      const byokResult = await generateWithCredential(userByok, {
+        system,
+        prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
+        temperature: 0.4,
+        maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+      });
+      result = {
+        text: byokResult.text,
+        model: byokResult.model,
+        inputTokens: byokResult.inputTokens,
+        outputTokens: byokResult.outputTokens,
+      };
+      provider = byokResult.provider;
+    } else if (effectiveGroqKey && !preferGemini) {
       try {
         console.log("[GROQ] Request started");
         result = await generateGroqText({
@@ -422,6 +506,8 @@ export async function POST(request: NextRequest) {
           temperature: 0.4,
           maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
           jsonObject: true,
+          apiKey: effectiveGroqKey,
+          model: byokGroqModel,
         });
       } catch (err) {
         if (!credentials) throw err;
@@ -443,7 +529,7 @@ export async function POST(request: NextRequest) {
         return json(
           {
             error:
-              "No AI key is configured. Add GROQ_API_KEY and/or GEMINI_API_KEY (same keys as Resume Analyzer).",
+              "No API key is configured for this provider.\nPlease add an API key in Settings → API Keys.",
           },
           503,
         );
@@ -513,9 +599,21 @@ export async function POST(request: NextRequest) {
       confidence,
       model: result.model,
       provider,
+      knowledgeUsed: knowledgeMeta.knowledgeUsed,
+      sourceType: knowledgeMeta.sourceType,
+      sources: knowledgeMeta.sources,
     });
   } catch (err) {
+    const { LlmAuthError, BYOK_AUTH_FAILED_MESSAGE } = await import(
+      "@/lib/server/llm-generate"
+    );
+    if (err instanceof LlmAuthError) {
+      return json({ error: err.message }, 401);
+    }
     if (err instanceof GroqError || err instanceof GeminiError) {
+      if (err.status === 401 || err.status === 403) {
+        return json({ error: BYOK_AUTH_FAILED_MESSAGE }, 401);
+      }
       const status = err.status === 429 ? 429 : err.status >= 500 ? 502 : err.status;
       return json({ error: err.message }, status);
     }

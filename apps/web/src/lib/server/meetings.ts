@@ -42,6 +42,7 @@ export function publicMeeting(
     jobLink: m.jobLink || null,
     resumeName: m.resumeName || null,
     description: m.description || null,
+    documentIds: m.documentIds || [],
     transcript: includeTranscript ? m.transcript : [],
     transcriptLocked: !includeTranscript,
     transcriptLineCount: m.transcript.length,
@@ -153,6 +154,8 @@ export type LiveBriefing = {
   resumeName?: string;
   resumeText?: string;
   description?: string;
+  pendingKnowledgeIds?: string[];
+  documentIds?: string[];
   updatedAt: string;
 };
 
@@ -192,6 +195,10 @@ export async function resolveAnswerBriefing() {
       resumeText: meeting?.resumeText || briefing?.resumeText,
       description: meeting?.description || briefing?.description,
       callTitle: meeting?.title,
+      documentIds: meeting?.documentIds?.length
+        ? meeting.documentIds
+        : briefing?.documentIds || [],
+      pendingKnowledgeIds: briefing?.pendingKnowledgeIds || [],
     },
   };
 }
@@ -207,9 +214,26 @@ export async function createMeeting(input: {
   resumeText?: string;
   description?: string;
   tags?: string[];
+  /** Workspace knowledge docs to attach (reusable). */
+  documentIds?: string[];
+  /** Meeting-prep uploads already in store (pending) — will receive this meetingId. */
+  pendingKnowledgeIds?: string[];
 }): Promise<DbMeeting> {
   const now = new Date().toISOString();
   const existing = await getLiveBriefing();
+  const documentIds = [
+    ...new Set([
+      ...(input.documentIds || []),
+      ...(existing?.documentIds || []),
+    ]),
+  ].filter(Boolean);
+  const pendingKnowledgeIds = [
+    ...new Set([
+      ...(input.pendingKnowledgeIds || []),
+      ...(existing?.pendingKnowledgeIds || []),
+    ]),
+  ].filter(Boolean);
+
   const meeting: DbMeeting = {
     id: `mtg_${randomUUID().slice(0, 10)}`,
     workspaceId: "",
@@ -227,9 +251,12 @@ export async function createMeeting(input: {
     resumeName: input.resumeName?.trim() || existing?.resumeName,
     resumeText: input.resumeText?.trim()?.slice(0, 20000) || existing?.resumeText,
     description: input.description?.trim() || undefined,
+    documentIds: documentIds.length ? documentIds : undefined,
     transcript: [],
     answers: [],
   };
+
+  const reboundIds: string[] = [];
 
   await updateStore(async (s) => {
     if (!s.meetings) s.meetings = [];
@@ -242,6 +269,18 @@ export async function createMeeting(input: {
       }
     }
     meeting.workspaceId = s.workspace.id;
+
+    // Bind pending meeting-prep uploads to this meeting.
+    const pendingSet = new Set(pendingKnowledgeIds);
+    for (const doc of s.knowledge) {
+      if (pendingSet.has(doc.id)) {
+        doc.meetingId = meeting.id;
+        doc.knowledgeScope = "meeting";
+        doc.updatedAt = now;
+        reboundIds.push(doc.id);
+      }
+    }
+
     s.meetings.unshift(meeting);
     s.meetings = s.meetings.slice(0, 200);
     s.activeMeetingId = meeting.id;
@@ -254,9 +293,20 @@ export async function createMeeting(input: {
       resumeName: meeting.resumeName,
       resumeText: meeting.resumeText || s.liveBriefing?.resumeText,
       description: meeting.description,
+      documentIds: meeting.documentIds,
+      pendingKnowledgeIds: [],
       updatedAt: now,
     };
   });
+
+  if (reboundIds.length) {
+    const { processKnowledgeDocument } = await import(
+      "@/lib/server/rag/document-processor"
+    );
+    for (const id of reboundIds) {
+      void processKnowledgeDocument(id);
+    }
+  }
 
   return meeting;
 }

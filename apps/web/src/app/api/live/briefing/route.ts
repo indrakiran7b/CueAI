@@ -33,6 +33,8 @@ export async function PUT(req: Request) {
         resumeName?: string;
         resumeText?: string;
         description?: string;
+        documentIds?: string[];
+        pendingKnowledgeIds?: string[];
       }
     | null;
 
@@ -44,6 +46,8 @@ export async function PUT(req: Request) {
     resumeName: body?.resumeName,
     resumeText: body?.resumeText,
     description: body?.description,
+    documentIds: body?.documentIds,
+    pendingKnowledgeIds: body?.pendingKnowledgeIds,
   });
 
   return NextResponse.json(

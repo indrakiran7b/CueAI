@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.node.json --noEmit && vite build && tsc -p tsconfig.electron.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder --win portable --x64"
+    "dist": "npm run build && electron-builder --win portable --x64",
+    "dist:setup": "npm run build && electron-builder --config electron-builder.setup.yml --win --x64"
   },
   "dependencies": {
     "clsx": "^2.1.1",

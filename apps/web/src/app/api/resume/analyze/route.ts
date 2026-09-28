@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/server/api-auth";
+import { requireAuth } from "@/lib/server/api-auth";
 import { extractDocumentText } from "@/lib/server/extract-document";
 
 export const runtime = "nodejs";
@@ -104,7 +104,7 @@ function parseModelJson(content: string): Record<string, unknown> {
 }
 
 export async function POST(request: NextRequest) {
-  const { error } = await requirePermission("admin.access", request);
+  const { error } = await requireAuth(request);
   if (error) return error;
 
   const apiKey = process.env.GROQ_API_KEY?.trim() || "";

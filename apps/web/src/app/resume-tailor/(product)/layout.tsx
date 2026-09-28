@@ -7,7 +7,7 @@ import { RequireResumeAccess } from "@/components/auth/require-resume-access";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Logo } from "@/components/ui/logo";
 
-/** Authenticated Resume Tailor workspace (Admin + Manager). */
+/** Authenticated Resume Tailor workspace (any CueAI role; web only). */
 export default function ResumeTailorProductLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>

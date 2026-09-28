@@ -197,12 +197,19 @@ def build_prompts(body: dict[str, Any]) -> tuple[str, str, str]:
         mode = infer_mode(prompt)
     transcript = body.get("transcript") if isinstance(body.get("transcript"), list) else []
     session_context = str(body.get("sessionContext") or "")
-    from app.modules.live.context import retrieve_knowledge
+    from app.modules.live.context import (
+        active_meeting_document_ids,
+        active_meeting_id,
+        retrieve_knowledge,
+    )
 
+    mid = active_meeting_id()
     knowledge = str(body.get("knowledgeContext") or "") or retrieve_knowledge(
         prompt,
         limit=2 if body.get("stream") is True else 3,
         max_chars=700 if body.get("stream") is True else 900,
+        meeting_id=mid,
+        document_ids=active_meeting_document_ids(),
     )
     system = build_system_instruction("", "CANDIDATE RESUME" in session_context or bool(session_context.strip()))
     user_prompt = build_user_prompt(

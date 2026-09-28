@@ -30,6 +30,7 @@ import {
 } from "@/lib/live-session-config";
 import Link from "next/link";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { formatShortcut } from "@/lib/shortcuts";
 import "./live-session.css";
 
 type TranscriptLine = {
@@ -103,6 +104,8 @@ export default function LiveMeetingPage() {
           resumeName: config.resumeName,
           resumeText: config.resumeText,
           description: config.description,
+          documentIds: config.documentIds,
+          pendingKnowledgeIds: config.pendingKnowledgeIds,
         }),
       });
     } catch {
@@ -121,6 +124,8 @@ export default function LiveMeetingPage() {
           resumeName: config.resumeName,
           resumeText: config.resumeText,
           description: config.description,
+          documentIds: config.documentIds,
+          pendingKnowledgeIds: config.pendingKnowledgeIds,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { meeting?: { id?: string } };
@@ -220,7 +225,8 @@ export default function LiveMeetingPage() {
           onComplete={(config) => void beginSession(config)}
         />
         <p className="mt-4 text-center text-xs text-subtle">
-          Starting a session opens the CueAI companion overlay (same as Ctrl+Shift+Space). Keep
+          Starting a session opens the CueAI companion overlay (same as{" "}
+          {formatShortcut("mod", "shift", "Space")}). Keep
           CueAI Desktop running for the pop-out window.
         </p>
       </div>
@@ -778,7 +784,7 @@ function ActiveLiveSession({
               </Button>
             </form>
             <p className="mt-2 text-center text-[11px] text-subtle">
-              Hotkey ⌘⇧Space · Privacy: audio only
+              Hotkey {formatShortcut("mod", "shift", "Space")} · Privacy: audio only
             </p>
           </div>
         </div>

@@ -12,7 +12,7 @@ export const DEFAULT_ENDPOINTS: Record<string, string> = {
   custom: "",
 };
 
-const PROVIDER_LABELS: Record<string, string> = {
+export const PROVIDER_LABELS: Record<string, string> = {
   groq: "Groq",
   openai: "OpenAI",
   anthropic: "Anthropic",

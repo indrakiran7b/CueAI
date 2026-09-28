@@ -19,8 +19,12 @@ export type LiveSessionConfig = {
   /** Regular */
   callTitle?: string;
   description?: string;
-  /** Shared */
+  /** Shared — legacy single-doc picker ("all" | doc id). */
   documentScope: "all" | string;
+  /** Workspace knowledge docs attached to this meeting. */
+  documentIds?: string[];
+  /** Meeting-prep uploads (pending until meeting create assigns meetingId). */
+  pendingKnowledgeIds?: string[];
   /** Step 2 — Preferences */
   guidance: LiveGuidanceLevel;
   startMode: "private" | "live";

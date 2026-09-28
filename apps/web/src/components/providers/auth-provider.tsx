@@ -50,7 +50,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const gen = ++syncGenRef.current;
     const next = await syncSessionFromServer();
     if (gen !== syncGenRef.current) return next;
-    setLocalSession(next);
+    // Never wipe a just-applied login session if /api/auth/me races the Set-Cookie.
+    // Only clear when the server explicitly confirms unauthenticated AND we had no
+    // optimistic session from applySession in this same generation path.
+    setLocalSession((prev) => {
+      if (next) return next;
+      // Keep optimistic session until a later successful sync or explicit logout.
+      return prev;
+    });
     setReady(true);
     return next;
   }, []);

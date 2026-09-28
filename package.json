@@ -24,6 +24,7 @@
     "build:desktop:mac": "npm run build -w @cueai/desktop-mac",
     "build:mac": "npm run build -w @cueai/desktop-mac",
     "dist:desktop": "node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop",
+    "dist:win": "npm run build -w @cueai/web && node scripts/prepare-desktop-web.cjs && npm run dist:setup -w @cueai/desktop",
     "dist:desktop:mac": "node scripts/assert-macos-packaging.cjs && node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop-mac",
     "dist:mac": "node scripts/generate-mac-icon.mjs && node scripts/assert-macos-packaging.cjs && node scripts/prepare-desktop-web.cjs && npm run dist -w @cueai/desktop-mac",
     "start": "npm run start -w @cueai/web",
@@ -31,6 +32,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ai-providers": "playwright test tests/web/e2e/ai-providers.spec.ts tests/web/e2e/ai-providers-visual.spec.ts",
     "test:e2e:license": "playwright test tests/web/e2e/license.spec.ts tests/web/e2e/license-api.spec.ts",
+    "test:rag": "node --test tests/rag/rag.test.mjs && python -m pytest tests/rag/test_knowledge_pipeline.py tests/rag/test_meeting_retrieval.py -q",
     "test:licenses": "node --test tests/licenses/licenses.test.mjs tests/licenses/keygate-mapping.test.mjs tests/licenses/access-policy.test.mjs",
     "test:billing": "node --test tests/billing/billing.test.mjs",
     "test:api": "node scripts/test-api.cjs",
@@ -55,7 +57,8 @@
   },
   "allowScripts": {
     "electron@37.10.3": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "sharp": true
   },
   "optionalDependencies": {
     "@next/swc-darwin-arm64": "16.3.0",

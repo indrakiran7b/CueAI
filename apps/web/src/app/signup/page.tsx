@@ -112,8 +112,8 @@ function SignupForm() {
       }
 
       applySession(result.session);
-      await refresh();
       router.replace(mac ? "/onboarding?desktop=mac" : withDesktopParam("/onboarding"));
+      void refresh();
     } catch {
       setError("Unable to reach auth server.");
     } finally {

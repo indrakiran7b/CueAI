@@ -29,9 +29,9 @@ export function isNormalUser(role?: string | null): boolean {
   return !canAccessAdmin(role);
 }
 
-/** Resume Tailor: Admin + Manager only (same permission as admin.access). */
-export function canAccessResumeTailor(role?: string | null): boolean {
-  return canAccessAdmin(role);
+/** Resume Tailor: any authenticated CueAI account (User, Manager, Admin). */
+export function canAccessResumeTailor(_role?: string | null): boolean {
+  return true;
 }
 
 function meetingFeedRedirect(pathname: string): string | null {
@@ -43,7 +43,7 @@ function meetingFeedRedirect(pathname: string): string | null {
 /**
  * Authenticated CueAI route policy.
  * Resume Tailor lives outside the CueAI app shell.
- * Knowledge Base is Admin-only.
+ * Knowledge Base / Admin / Translation / Screen Context are Admin+Manager via role guard.
  */
 export function restrictedCueAiPath(
   pathname: string,
@@ -86,8 +86,13 @@ export function isDesktopWebOnlyPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Electron shell blocks only web-only products (Resume Tailor).
+ * Role-gated routes (Admin Portal, Translation, Screen Context, Knowledge)
+ * remain available on Desktop for Admin/Manager — CueAiRouteGate enforces roles.
+ */
 export function isDesktopBlockedPath(pathname: string): boolean {
-  return isDesktopWebOnlyPath(pathname) || isUserBlockedPath(pathname);
+  return isDesktopWebOnlyPath(pathname);
 }
 
 export function canAccessCueaiPath(

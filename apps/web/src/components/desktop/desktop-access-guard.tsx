@@ -6,7 +6,8 @@ import { isDesktopApp } from "@/lib/desktop";
 import { isDesktopBlockedPath } from "@/lib/desktop-access";
 
 /**
- * On Windows Electron, block web-only routes (Resume Tailor, Knowledge, etc.).
+ * On Electron, block web-only routes (Resume Tailor).
+ * Admin Portal / Translation / Screen Context are role-gated, not desktop-blocked.
  * No-op in the browser so the web app is unchanged.
  */
 export function DesktopAccessGuard({ children }: { children: ReactNode }) {

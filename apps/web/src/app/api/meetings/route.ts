@@ -46,6 +46,8 @@ export async function POST(req: NextRequest) {
         resumeText?: string;
         description?: string;
         tags?: string[];
+        documentIds?: string[];
+        pendingKnowledgeIds?: string[];
       }
     | null;
 
@@ -73,6 +75,8 @@ export async function POST(req: NextRequest) {
     resumeText: body?.resumeText,
     description: body?.description,
     tags: body?.tags,
+    documentIds: body?.documentIds,
+    pendingKnowledgeIds: body?.pendingKnowledgeIds,
   });
 
   return NextResponse.json({ meeting: publicMeeting(meeting, true) }, { headers: CORS_HEADERS });

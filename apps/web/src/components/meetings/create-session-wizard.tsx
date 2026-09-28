@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Briefcase,
   ChevronDown,
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loadKnowledgeDocs } from "@/lib/knowledge-store";
+import { Badge } from "@/components/ui/badge";
 import {
   DEFAULT_LIVE_SESSION_CONFIG,
   type LiveGuidanceLevel,
@@ -31,6 +31,20 @@ const GUIDANCE_CHOICES =
   ONBOARDING_QUESTIONS.find((q) => q.id === "assistLevel")?.choices ?? [];
 
 type WizardStep = 1 | 2;
+
+type MeetingDoc = {
+  id: string;
+  name: string;
+  status: string;
+  processingError?: string | null;
+};
+
+function statusLabel(status: string) {
+  if (status === "indexed") return "Ready";
+  if (status === "processing" || status === "uploaded") return "Processing";
+  if (status === "failed") return "Failed";
+  return status;
+}
 
 function companyHintFromUrl(url: string): string {
   try {
@@ -59,20 +73,123 @@ export function CreateSessionWizard({
   const resumeInputRef = useRef<HTMLInputElement>(null);
 
   const [resumes, setResumes] = useState(loadSavedResumes);
-  const documents = useMemo(() => loadKnowledgeDocs(), []);
+  const [meetingDocs, setMeetingDocs] = useState<MeetingDoc[]>([]);
+  const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const knowledgeInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshMeetingDocs = async () => {
+    try {
+      const res = await fetch("/api/meetings/knowledge", { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as {
+        items?: Array<{
+          id: string;
+          originalFilename?: string;
+          title: string;
+          status: string;
+          processingError?: string | null;
+        }>;
+        pendingIds?: string[];
+        attachedDocumentIds?: string[];
+      };
+      if (!res.ok) return;
+      const items = (data.items || []).map((d) => ({
+        id: d.id,
+        name: d.originalFilename || d.title,
+        status: d.status,
+        processingError: d.processingError,
+      }));
+      setMeetingDocs(items);
+      patch({
+        pendingKnowledgeIds: data.pendingIds || items.map((d) => d.id),
+        documentIds: data.attachedDocumentIds || config.documentIds,
+      });
+    } catch {
+      // optional
+    }
+  };
+
+  useEffect(() => {
+    void refreshMeetingDocs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const pending = meetingDocs.some(
+      (d) => d.status === "processing" || d.status === "uploaded",
+    );
+    if (!pending) return;
+    const t = setInterval(() => {
+      void refreshMeetingDocs();
+    }, 2500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingDocs]);
 
   useEffect(() => {
     const first = resumes[0];
     if (!first) return;
     if (!config.resumeId) {
-      setConfig((c) => ({
-        ...c,
-        resumeId: first.id,
-        resumeName: first.name,
-        resumeText: first.text,
-      }));
+      queueMicrotask(() => {
+        setConfig((c) => ({
+          ...c,
+          resumeId: first.id,
+          resumeName: first.name,
+          resumeText: first.text,
+        }));
+      });
     }
   }, [config.resumeId, resumes]);
+
+  async function onKnowledgeUpload(files: FileList | null) {
+    if (!files?.length) return;
+    setKnowledgeBusy(true);
+    setKnowledgeError(null);
+    try {
+      const ids = [...(config.pendingKnowledgeIds || [])];
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/meetings/knowledge", {
+          method: "POST",
+          body: form,
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          item?: { id: string };
+          error?: { message?: string } | string;
+        };
+        if (!res.ok) {
+          const msg =
+            typeof body.error === "string"
+              ? body.error
+              : body.error?.message || "Upload failed.";
+          throw new Error(msg);
+        }
+        if (body.item?.id) ids.push(body.item.id);
+      }
+      patch({ pendingKnowledgeIds: [...new Set(ids)] });
+      await refreshMeetingDocs();
+    } catch (err) {
+      setKnowledgeError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setKnowledgeBusy(false);
+      if (knowledgeInputRef.current) knowledgeInputRef.current.value = "";
+    }
+  }
+
+  async function onRemoveMeetingDoc(id: string) {
+    try {
+      await fetch(`/api/meetings/knowledge?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      patch({
+        pendingKnowledgeIds: (config.pendingKnowledgeIds || []).filter((x) => x !== id),
+      });
+      await refreshMeetingDocs();
+    } catch {
+      setKnowledgeError("Could not remove document.");
+    }
+  }
 
   function patch(partial: Partial<LiveSessionConfig>) {
     setConfig((c) => ({ ...c, ...partial }));
@@ -341,10 +458,13 @@ export function CreateSessionWizard({
                       )}
                     </div>
 
-                    <DocumentSelect
-                      value={config.documentScope}
-                      documents={documents}
-                      onChange={(documentScope) => patch({ documentScope })}
+                    <MeetingKnowledgePanel
+                      docs={meetingDocs}
+                      busy={knowledgeBusy}
+                      error={knowledgeError}
+                      inputRef={knowledgeInputRef}
+                      onUpload={(files) => void onKnowledgeUpload(files)}
+                      onRemove={(id) => void onRemoveMeetingDoc(id)}
                     />
                   </fieldset>
                 </div>
@@ -372,11 +492,16 @@ export function CreateSessionWizard({
                   </div>
 
                   <fieldset className="space-y-3">
-                    <legend className="text-sm font-medium text-foreground/90">Context</legend>
-                    <DocumentSelect
-                      value={config.documentScope}
-                      documents={documents}
-                      onChange={(documentScope) => patch({ documentScope })}
+                    <legend className="text-sm font-medium text-foreground/90">
+                      Knowledge for this meeting
+                    </legend>
+                    <MeetingKnowledgePanel
+                      docs={meetingDocs}
+                      busy={knowledgeBusy}
+                      error={knowledgeError}
+                      inputRef={knowledgeInputRef}
+                      onUpload={(files) => void onKnowledgeUpload(files)}
+                      onRemove={(id) => void onRemoveMeetingDoc(id)}
                     />
                   </fieldset>
                 </div>
@@ -514,36 +639,96 @@ export function CreateSessionWizard({
   );
 }
 
-function DocumentSelect({
-  value,
-  documents,
-  onChange,
+function MeetingKnowledgePanel({
+  docs,
+  busy,
+  error,
+  inputRef,
+  onUpload,
+  onRemove,
 }: {
-  value: string;
-  documents: { id: string; name: string }[];
-  onChange: (next: string) => void;
+  docs: MeetingDoc[];
+  busy: boolean;
+  error: string | null;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onUpload: (files: FileList | null) => void;
+  onRemove: (id: string) => void;
 }) {
+  const stillProcessing = docs.some(
+    (d) => d.status === "processing" || d.status === "uploaded",
+  );
   return (
-    <div className="space-y-1.5">
-      <label htmlFor="doc-select" className="text-xs text-muted">
-        Documents
-      </label>
-      <div className="relative">
-        <select
-          id="doc-select"
-          className="ls-wizard-select"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+    <div className="space-y-3">
+      <p className="text-xs text-muted">
+        Upload documents for this meeting. CueAI retrieves from these first during the live
+        session.
+      </p>
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.txt,.md,.markdown,.csv,application/pdf,text/*"
+          className="hidden"
+          onChange={(e) => onUpload(e.target.files)}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          loading={busy}
+          onClick={() => inputRef.current?.click()}
         >
-          <option value="all">All documents</option>
-          {documents.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+          <Upload className="h-3.5 w-3.5" />
+          Upload Documents
+        </Button>
       </div>
+      {error && <p className="text-xs text-[var(--cue-danger)]">{error}</p>}
+      {stillProcessing && (
+        <p className="text-xs text-amber-400">
+          Some knowledge documents are still processing.
+        </p>
+      )}
+      {docs.length === 0 ? (
+        <p className="text-xs text-subtle">No documents have been added for this meeting yet.</p>
+      ) : (
+        <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
+          {docs.map((doc) => (
+            <li
+              key={doc.id}
+              className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium">{doc.name}</p>
+                {doc.processingError ? (
+                  <p className="text-xs text-red-300">{doc.processingError}</p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge
+                  variant={
+                    doc.status === "indexed"
+                      ? "success"
+                      : doc.status === "failed"
+                        ? "danger"
+                        : "warning"
+                  }
+                >
+                  {statusLabel(doc.status)}
+                </Badge>
+                <button
+                  type="button"
+                  className="text-subtle hover:text-red-300"
+                  aria-label={`Remove ${doc.name}`}
+                  onClick={() => onRemove(doc.id)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

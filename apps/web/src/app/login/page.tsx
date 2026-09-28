@@ -155,7 +155,8 @@ function LoginForm() {
       // Apply login session immediately so protected routes never see a stale null
       // from an in-flight startup /api/auth/me that raced ahead of this request.
       applySession(result.session);
-      await refresh();
+      // Do not await refresh() here — a null /me before the cookie is readable
+      // previously wiped the optimistic session and forced a manual reload.
 
       if (rememberMe) {
         localStorage.setItem("cueai-remember-email", String(data.get("email") || ""));
@@ -178,6 +179,8 @@ function LoginForm() {
       const dest =
         next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
       router.replace(withDesktopParam(dest));
+      // Best-effort sync in the background (never blocks navigation).
+      void refresh();
     } catch {
       setError("Unable to reach auth server.");
     } finally {
@@ -212,13 +215,13 @@ function LoginForm() {
                 return;
               }
               applySession(result.session);
-              await refresh();
               const next = searchParams.get("next");
               const dest =
                 next && next.startsWith("/") && !next.startsWith("//")
                   ? next
                   : "/dashboard";
               router.replace(withDesktopParam(dest));
+              void refresh();
             } catch {
               setError("Unable to reach auth server.");
             } finally {

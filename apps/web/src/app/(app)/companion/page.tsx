@@ -34,6 +34,15 @@ import {
   type MacPermissionsSnapshot,
   type MeetingSession,
 } from "@/lib/desktop";
+import { formatShortcut } from "@/lib/shortcuts";
+
+function companionToggleShortcut() {
+  return formatShortcut("mod", "shift", "Space");
+}
+
+function companionToggleAlias() {
+  return formatShortcut("mod", "shift", "C");
+}
 
 function permissionCopy(
   state: MacPermissionState | undefined,
@@ -68,7 +77,7 @@ type BridgeStatus = {
 
 type ListenSources = { mic: boolean; systemAudio: boolean };
 
-const features = [
+const featureBase = [
   {
     icon: Mic,
     title: "Mic audio listening",
@@ -100,16 +109,23 @@ const features = [
     desc: "Overlay lives in the Desktop process until you hit End Session or Close — closing the website does not dismiss it.",
   },
   {
-    icon: Keyboard,
-    title: "Global hotkey",
-    desc: "Toggle with ⌘⇧Space on Mac or Ctrl+Shift+Space on Windows without leaving your meeting.",
-  },
-  {
     icon: Sparkles,
     title: "Live AI answers",
     desc: "Transcript, mic indicators, pin/copy/regenerate, presenter mode.",
   },
-];
+] as const;
+
+function companionFeatures() {
+  return [
+    ...featureBase.slice(0, 6),
+    {
+      icon: Keyboard,
+      title: "Global hotkey",
+      desc: `Toggle with ${companionToggleShortcut()} without leaving your meeting.`,
+    },
+    featureBase[6],
+  ];
+}
 
 function ControlCard({
   icon: Icon,
@@ -447,8 +463,8 @@ export default function CompanionPage() {
                 ? overlayStatusLine
                 : desktopReady
                   ? overlayVisible
-                    ? "Native overlay is on screen. Use ⌘⇧Space or Ctrl+Shift+Space to hide or show it."
-                    : "Open the native system-wide overlay (same window as ⌘⇧Space / Ctrl+Shift+Space)."
+                    ? `Native overlay is on screen. Use ${companionToggleShortcut()} to hide or show it.`
+                    : `Open the native system-wide overlay (same window as ${companionToggleShortcut()}).`
                   : "Start Desktop so the Companion can float above meetings and stay hidden from capture."}
             </CardDescription>
           </div>
@@ -506,8 +522,8 @@ export default function CompanionPage() {
         {lastResult?.mode === "native" && !lastResult.issue && (
           <p className="text-xs text-muted">
             Native companion opened. It will keep running after this tab closes.
-            Use <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+Space</kbd>{" "}
-            or <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+C</kbd> to
+            Use <kbd className="rounded border border-[var(--border)] px-1">{companionToggleShortcut()}</kbd>{" "}
+            or <kbd className="rounded border border-[var(--border)] px-1">{companionToggleAlias()}</kbd> to
             toggle it anytime.
           </p>
         )}
@@ -522,7 +538,7 @@ export default function CompanionPage() {
         {lastResult?.mode === "native" && lastResult.issue === "not_visible" && (
           <p className="rounded-xl border border-[var(--border)] bg-[var(--primary-muted)] px-3 py-2 text-xs text-muted">
             Desktop received the open request but the overlay did not appear on screen. Try{" "}
-            <kbd className="rounded border border-[var(--border)] px-1">Ctrl+Shift+Space</kbd>,
+            <kbd className="rounded border border-[var(--border)] px-1">{companionToggleShortcut()}</kbd>,
             check the system tray for CueAI, or restart{" "}
             <code className="text-foreground">npm run dev:desktop</code>.
           </p>
@@ -794,7 +810,7 @@ export default function CompanionPage() {
 
       {!mac && (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {features.map((f) => (
+        {companionFeatures().map((f) => (
           <Card key={f.title} className="p-4">
             <f.icon className="mb-3 h-5 w-5 text-primary" />
             <h3 className="text-sm font-semibold">{f.title}</h3>
