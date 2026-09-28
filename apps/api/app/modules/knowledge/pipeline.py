@@ -1,18 +1,25 @@
 """Knowledge / RAG pipeline boundaries.
 
-Production RAG (upload, extract, chunk, embed, Qdrant, grounded query) lives in the
-Next.js admin knowledge API:
+Canonical Python RAG lives in:
+
+  app.modules.knowledge.rag
+
+Production web upload / live answers still use the Next.js RAG pipeline:
 
   apps/web/src/lib/server/rag/*
-  apps/web/src/app/api/admin/knowledge/*
 
-This FastAPI module keeps a thin protocol for future Celery workers. Do not add a
-second vector store or parallel knowledge database here.
+This module keeps a thin protocol for Celery/manual experiments and delegates
+chunking/retrieval helpers to rag.py where appropriate.
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol
+
+from .rag import (
+    chunk_document as rag_chunk_document,
+    retrieve as rag_retrieve,
+)
 
 
 class KnowledgeStore(Protocol):
@@ -25,48 +32,23 @@ def ingest_manual_upload(*, title: str, content: str) -> dict[str, str]:
 
 
 def chunk_document(text: str, *, size: int = 800, overlap: int = 100) -> list[str]:
-    """Simple paragraph-aware chunker for Celery/local experiments.
+    """Paragraph-aware chunker returning plain strings (pipeline-compatible).
 
-    Production chunking uses apps/web/src/lib/server/rag/chunker.ts
-    with RAG_CHUNK_SIZE / RAG_CHUNK_OVERLAP.
+    Uses the production chunker in rag.py (RAG_CHUNK_SIZE / RAG_CHUNK_OVERLAP
+    defaults apply when size/overlap match config; explicit args are honored).
     """
-    text = text.strip()
-    if not text:
-        return []
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    chunks: list[str] = []
-    buf = ""
-    for para in paragraphs:
-        candidate = f"{buf}\n\n{para}".strip() if buf else para
-        if len(candidate.split()) <= size:
-            buf = candidate
-            continue
-        if buf:
-            chunks.append(buf)
-            words = buf.split()
-            keep = max(1, int(len(words) * (overlap / max(size, 1))))
-            buf = " ".join(words[-keep:] + para.split())
-        else:
-            words = para.split()
-            step = max(1, size - overlap)
-            for i in range(0, len(words), step):
-                piece = " ".join(words[i : i + size])
-                if piece:
-                    chunks.append(piece)
-            buf = ""
-    if buf:
-        chunks.append(buf)
-    return chunks
+    chunks = rag_chunk_document(text, size=size, overlap=overlap)
+    return [c.text for c in chunks]
 
 
 def embed_chunks(chunks: list[str]) -> None:
-    """Embeddings run in the Next.js EmbeddingService (OpenAI/Gemini)."""
+    """Embeddings: use rag.embed_texts / index_document for production indexing."""
     raise NotImplementedError(
-        "Use the Next.js Knowledge Base RAG pipeline for embeddings and Qdrant indexing."
+        "Use app.modules.knowledge.rag.embed_texts / index_document "
+        "(or the Next.js Knowledge Base RAG pipeline) for embeddings and Qdrant indexing."
     )
 
 
 def retrieve(query: str, *, workspace_id: str) -> list[dict[str, str]]:
-    """Retrieval is implemented in Next.js rag-service (workspace-filtered)."""
-    _ = (query, workspace_id)
-    return []
+    """Workspace retrieve via rag.py (keyword/semantic depending on config)."""
+    return rag_retrieve(query, workspace_id=workspace_id)
