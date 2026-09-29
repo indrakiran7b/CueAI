@@ -6,6 +6,7 @@ import {
   finalizeMeeting,
   getMeeting,
   isLiveMeeting,
+  meetingQaForSession,
   publicMeeting,
 } from "@/lib/server/meetings";
 import type { DbMeetingLine } from "@/lib/server/db";
@@ -43,8 +44,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
+  const qa = await meetingQaForSession(session);
   return NextResponse.json(
-    { meeting: publicMeeting(stored, true) },
+    { meeting: publicMeeting(stored, true, qa) },
     { headers: CORS_HEADERS },
   );
 }
@@ -77,8 +79,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const fresh = await getMeeting(id);
+  const qa = await meetingQaForSession(session);
   return NextResponse.json(
-    { meeting: fresh ? publicMeeting(fresh, true) : null },
+    { meeting: fresh ? publicMeeting(fresh, true, qa) : null },
     { headers: CORS_HEADERS },
   );
 }

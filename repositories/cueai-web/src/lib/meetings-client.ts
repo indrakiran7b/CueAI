@@ -18,6 +18,8 @@ export type StoredMeeting = {
   transcriptLocked?: boolean;
   transcriptLineCount?: number;
   answers: { prompt: string; answer: string; at: string }[];
+  hasMore?: boolean;
+  fullSummaryAvailable?: boolean;
   summary?: string | null;
   questionCount?: number;
   answerCount?: number;
@@ -136,6 +138,8 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
       answerTe: answer.answer,
       pinned: index === 0,
     })),
+    hasMore: meeting.hasMore,
+    fullSummaryAvailable: meeting.fullSummaryAvailable,
     emailSubject: `Notes from ${meeting.title}`,
     emailBody,
   };

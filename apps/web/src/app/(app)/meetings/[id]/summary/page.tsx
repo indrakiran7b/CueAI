@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
-  Lock,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,10 +28,14 @@ export default function MeetingSummaryPage() {
   const { session } = useAuth();
 
   const entitlement = useMemo(
-    () => resolveMeetingEntitlement({ role: session?.role }),
-    [session?.role],
+    () =>
+      resolveMeetingEntitlement({
+        role: session?.role,
+        plan: session?.plan,
+      }),
+    [session?.role, session?.plan],
   );
-  const fullQa = canViewFullMeetingQa(entitlement);
+  const sessionFullQa = canViewFullMeetingQa(entitlement);
   const isAdmin = entitlement.source === "admin";
 
   const [cache, setCache] = useState<{
@@ -93,16 +96,24 @@ export default function MeetingSummaryPage() {
   }
 
   const openCount = meeting.actionItems.filter((item) => item.status === "open").length;
-  const allAnswers = meeting.aiAnswers || [];
-  const visibleAnswers = fullQa ? allAnswers : allAnswers.slice(0, FREE_MEETING_QA_LIMIT);
-  const hiddenCount = Math.max(0, allAnswers.length - visibleAnswers.length);
+  const answers = meeting.aiAnswers || [];
+  const flagsKnown =
+    typeof meeting.hasMore === "boolean" || typeof meeting.fullSummaryAvailable === "boolean";
+  const visibleAnswers = flagsKnown
+    ? answers
+    : sessionFullQa
+      ? answers
+      : answers.slice(0, FREE_MEETING_QA_LIMIT);
+  const showUpgrade =
+    meeting.hasMore === true ||
+    (!flagsKnown && !sessionFullQa && answers.length > FREE_MEETING_QA_LIMIT);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Badge variant="info" className="mb-2">
-            Completed
+            Meeting Summary
           </Badge>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
             {meeting.title}
@@ -115,9 +126,7 @@ export default function MeetingSummaryPage() {
       </div>
 
       <Card glow className="p-6">
-        <CardTitle className="mb-3">
-          {meeting.keyDecisions.length ? "Executive summary" : "Session briefing"}
-        </CardTitle>
+        <CardTitle className="mb-3">Overview</CardTitle>
         <p className="text-sm leading-relaxed text-muted">{meeting.executiveSummary}</p>
       </Card>
 
@@ -125,7 +134,7 @@ export default function MeetingSummaryPage() {
         {meeting.keyDecisions.length > 0 && (
           <Card className="p-5">
             <CardHeader>
-              <CardTitle>Key points</CardTitle>
+              <CardTitle>Key Points</CardTitle>
             </CardHeader>
             <ul className="space-y-3">
               {meeting.keyDecisions.map((decision) => (
@@ -138,15 +147,10 @@ export default function MeetingSummaryPage() {
           </Card>
         )}
 
-        {allAnswers.length > 0 && (
+        {visibleAnswers.length > 0 && (
           <Card className="p-5 md:col-span-2">
             <CardHeader>
-              <CardTitle>Questions &amp; answers</CardTitle>
-              {!fullQa && (
-                <Badge variant="warning">
-                  Showing {visibleAnswers.length} of {allAnswers.length}
-                </Badge>
-              )}
+              <CardTitle>Questions &amp; Answers</CardTitle>
             </CardHeader>
             <ul className="space-y-4">
               {visibleAnswers.map((answer, index) => (
@@ -158,39 +162,27 @@ export default function MeetingSummaryPage() {
                 </li>
               ))}
             </ul>
-            {hiddenCount > 0 && (
-              <div className="mt-5 rounded-2xl border border-teal-500/25 bg-teal-500/10 p-5">
-                <div className="flex items-start gap-3">
-                  <Lock className="mt-0.5 h-5 w-5 shrink-0 text-teal-300" />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold tracking-tight">
-                      Unlock complete meeting summary
-                    </h3>
-                    <p className="mt-1 text-sm text-muted">
-                      {hiddenCount} more question{hiddenCount === 1 ? "" : "s"} hidden on the free
-                      plan. Upgrade for full Q&amp;A and meeting insights.
-                    </p>
-                    <ul className="mt-3 space-y-1 text-sm text-foreground/90">
-                      <li className="flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                        All questions and answers
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                        Complete meeting details
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                        Full meeting insights
-                      </li>
-                    </ul>
-                    <Link href="/settings#billing" className="mt-4 inline-block">
-                      <Button variant="gradient" size="sm">
-                        Upgrade to Premium
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
+            {showUpgrade && (
+              <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background)]/50 p-5">
+                <p className="font-semibold tracking-tight">Want to view more Q&amp;A?</p>
+                <p className="mt-1 text-sm text-muted">
+                  Upgrade to unlock the rest of this meeting&apos;s questions and answers.
+                </p>
+                <ul className="mt-3 space-y-1 text-sm text-foreground/90">
+                  <li className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-teal-300" />
+                    All questions and answers
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-teal-300" />
+                    Full meeting insights
+                  </li>
+                </ul>
+                <Link href="/settings#billing" className="mt-4 inline-block">
+                  <Button variant="gradient" size="sm">
+                    Upgrade for more Q&amp;A
+                  </Button>
+                </Link>
               </div>
             )}
           </Card>
@@ -226,7 +218,6 @@ export default function MeetingSummaryPage() {
           </Card>
         )}
 
-        {/* Transcript: admins only — never for normal users */}
         {isAdmin && meeting.transcript.length > 0 && (
           <Card className="p-5">
             <CardHeader>

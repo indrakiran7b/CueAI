@@ -28,6 +28,7 @@ const cueDesktop = {
   isMac: true as const,
   minimize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MINIMIZE),
   maximize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MAXIMIZE),
+  restore: () => ipcRenderer.invoke(IpcChannels.WINDOW_RESTORE),
   close: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE),
   isMaximized: () => ipcRenderer.invoke(IpcChannels.WINDOW_IS_MAXIMIZED),
   onMaximizedChange: (cb: (maximized: boolean) => void) => {

@@ -77,6 +77,7 @@ export type CueDesktopAPI = {
   isMac?: boolean;
   minimize: () => Promise<void>;
   maximize: () => Promise<boolean>;
+  restore?: () => Promise<boolean>;
   close: () => Promise<void>;
   isMaximized: () => Promise<boolean>;
   onMaximizedChange: (cb: (maximized: boolean) => void) => () => void;

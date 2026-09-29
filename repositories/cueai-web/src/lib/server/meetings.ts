@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { clipMeetingAnswers } from "@/lib/entitlements";
 import {
   readStore,
   updateStore,
@@ -7,6 +8,15 @@ import {
 } from "@/lib/server/db";
 import type { SessionPayload } from "@/lib/server/session";
 import { normalizeRole } from "@/lib/roles";
+
+export async function meetingQaForSession(session: SessionPayload) {
+  const store = await readStore();
+  const user = store.users.find((u) => u.id === session.userId);
+  return {
+    role: session.role,
+    plan: user?.plan ?? null,
+  };
+}
 
 /** Meetings that belong in the Meetings history page. */
 export function isCompletedMeeting(m: DbMeeting): boolean {
@@ -27,7 +37,11 @@ export function publicMeeting(
   m: DbMeeting,
   includePrivate = false,
   includeTranscript = false,
+  qa?: { role?: string | null; plan?: string | null },
 ) {
+  const clipped = qa
+    ? clipMeetingAnswers(m.answers, qa)
+    : { answers: m.answers, hasMore: false, fullSummaryAvailable: true };
   return {
     id: m.id,
     title: m.title,
@@ -46,7 +60,9 @@ export function publicMeeting(
     transcript: includeTranscript ? m.transcript : [],
     transcriptLocked: !includeTranscript,
     transcriptLineCount: m.transcript.length,
-    answers: m.answers,
+    answers: clipped.answers,
+    hasMore: clipped.hasMore,
+    fullSummaryAvailable: clipped.fullSummaryAvailable,
     summary: m.summary || null,
     questionCount: m.answers.length,
     answerCount: m.answers.filter((a) => Boolean(a.answer?.trim())).length,

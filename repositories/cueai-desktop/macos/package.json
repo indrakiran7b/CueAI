@@ -62,11 +62,15 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "artifactName": "CueAI-${version}-${arch}.${ext}",
@@ -90,8 +94,14 @@
     "protocols": [
       {
         "name": "CueAI",
-        "schemes": ["cueai"]
+        "schemes": [
+          "cueai"
+        ]
       }
     ]
+  },
+  "allowScripts": {
+    "electron@37.10.3": true,
+    "esbuild@0.28.2": true
   }
 }

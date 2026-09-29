@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 /** Extract hostname (and optional port) from a public URL for Next allowedDevOrigins. */
 function hostFromUrl(value?: string): string | undefined {
@@ -31,6 +32,15 @@ const nextConfig: NextConfig = {
     "@cueai/transcription-service",
     "@cueai/gateway",
   ],
+  serverExternalPackages: ["@xenova/transformers"],
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias as Record<string, string>),
+      "@xenova/transformers": path.join(process.cwd(), "src/lib/stubs/xenova-transformers.ts"),
+    };
+    return config;
+  },
   // Standalone output is packaged inside the Electron app for offline testing builds.
   output: "standalone",
   // Electron loads via 127.0.0.1; ngrok clients load via *.ngrok-free.app.

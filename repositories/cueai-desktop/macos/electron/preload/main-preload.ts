@@ -6,6 +6,7 @@ export type CueDesktopAPI = {
   isMac: true;
   minimize: () => Promise<void>;
   maximize: () => Promise<boolean>;
+  restore: () => Promise<boolean>;
   close: () => Promise<void>;
   isMaximized: () => Promise<boolean>;
   onMaximizedChange: (cb: (maximized: boolean) => void) => () => void;
@@ -33,6 +34,7 @@ const api: CueDesktopAPI = {
   isMac: true,
   minimize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MINIMIZE),
   maximize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MAXIMIZE),
+  restore: () => ipcRenderer.invoke(IpcChannels.WINDOW_RESTORE),
   close: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE),
   isMaximized: () => ipcRenderer.invoke(IpcChannels.WINDOW_IS_MAXIMIZED),
   onMaximizedChange: (cb) => {

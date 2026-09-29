@@ -83,6 +83,28 @@ export function meetingQaLimit(input: {
   return FREE_MEETING_QA_LIMIT;
 }
 
+export function clipMeetingAnswers<T>(
+  answers: T[],
+  input: {
+    role?: string | null;
+    plan?: string | null;
+    entitlements?: Partial<MeetingEntitlements> | null;
+  },
+): { answers: T[]; hasMore: boolean; fullSummaryAvailable: boolean } {
+  const fullSummaryAvailable = canViewFullMeetingQa(input);
+  const max = meetingQaLimit(input);
+  if (fullSummaryAvailable || max < 0) {
+    return { answers, hasMore: false, fullSummaryAvailable: true };
+  }
+  const limit = max > 0 ? max : FREE_MEETING_QA_LIMIT;
+  const clipped = answers.slice(0, limit);
+  return {
+    answers: clipped,
+    hasMore: answers.length > clipped.length,
+    fullSummaryAvailable: false,
+  };
+}
+
 /**
  * Centralized SaaS entitlement check for account-level features.
  * Prefer this over scattering `user.plan === "pro"` checks.

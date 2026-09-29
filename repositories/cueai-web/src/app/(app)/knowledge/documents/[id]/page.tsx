@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { categoryLabel } from "@/lib/knowledge-categories";
 import {
   formatRelativeTime,
+  isUnsafeDocumentText,
   knowledgeApi,
   statusLabel,
   type KnowledgeDocument,
@@ -225,8 +226,8 @@ export default function KnowledgeDocumentDetailPage() {
             <dd>{doc.chunkCount ?? 0}</dd>
           </div>
           <div>
-            <dt className="text-subtle">Status</dt>
-            <dd>{statusLabel(doc.status)}</dd>
+            <dt className="text-subtle">RAG Index</dt>
+            <dd>{doc.vectorIndexed ? "Indexed" : statusLabel(doc.status)}</dd>
           </div>
           <div>
             <dt className="text-subtle">Uploaded</dt>
@@ -249,7 +250,9 @@ export default function KnowledgeDocumentDetailPage() {
           </p>
         ) : (
           <div className="max-h-[28rem] space-y-4 overflow-y-auto text-sm">
-            {content.pages.map((page) => (
+            {content.pages
+              .filter((page) => page.text && !isUnsafeDocumentText(page.text))
+              .map((page) => (
               <div key={page.pageNumber}>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-subtle">
                   Page {page.pageNumber}

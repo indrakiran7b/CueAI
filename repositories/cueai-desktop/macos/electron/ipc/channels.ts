@@ -3,6 +3,7 @@ export const IpcChannels = {
   // Window controls (main app)
   WINDOW_MINIMIZE: "window:minimize",
   WINDOW_MAXIMIZE: "window:maximize",
+  WINDOW_RESTORE: "window:restore",
   WINDOW_CLOSE: "window:close",
   WINDOW_IS_MAXIMIZED: "window:is-maximized",
   WINDOW_MAXIMIZED_CHANGED: "window:maximized-changed",

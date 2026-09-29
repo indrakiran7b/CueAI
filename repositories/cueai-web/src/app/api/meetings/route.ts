@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/server/api-auth";
 import {
   createMeeting,
   listCompletedMeetingsForUser,
+  meetingQaForSession,
   publicMeeting,
 } from "@/lib/server/meetings";
 import { sessionTitle, type LiveSessionKind } from "@/lib/live-session-config";
@@ -23,8 +24,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
 
+  const qa = await meetingQaForSession(session);
   const stored = (await listCompletedMeetingsForUser(session)).map((meeting) =>
-    publicMeeting(meeting),
+    publicMeeting(meeting, false, false, qa),
   );
   return NextResponse.json({ meetings: stored }, { headers: CORS_HEADERS });
 }
@@ -79,5 +81,9 @@ export async function POST(req: NextRequest) {
     pendingKnowledgeIds: body?.pendingKnowledgeIds,
   });
 
-  return NextResponse.json({ meeting: publicMeeting(meeting, true) }, { headers: CORS_HEADERS });
+  const qa = await meetingQaForSession(session);
+  return NextResponse.json(
+    { meeting: publicMeeting(meeting, true, false, qa) },
+    { headers: CORS_HEADERS },
+  );
 }

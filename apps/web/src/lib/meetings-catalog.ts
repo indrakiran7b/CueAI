@@ -52,6 +52,8 @@ export type MeetingRecord = {
   actionItems: MeetingActionItem[];
   transcript: TranscriptLine[];
   aiAnswers: MeetingAiAnswer[];
+  hasMore?: boolean;
+  fullSummaryAvailable?: boolean;
   emailSubject: string;
   emailBody: string;
 };

@@ -80,6 +80,14 @@ export function registerIpcHandlers() {
     return win.isMaximized();
   });
 
+  ipcMain.handle(IpcChannels.WINDOW_RESTORE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    if (win.isFullScreen()) win.setFullScreen(false);
+    if (win.isMaximized()) win.unmaximize();
+    return win.isMaximized();
+  });
+
   ipcMain.handle(IpcChannels.WINDOW_CLOSE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;

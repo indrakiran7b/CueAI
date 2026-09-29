@@ -55,30 +55,39 @@ export function DesktopWindowControls({
   const desktop = getDesktop();
   if (!desktop?.minimize || !desktop.maximize || !desktop.close) return null;
 
+  function onMaximizeOrRestore() {
+    if (maximized && desktop?.restore) {
+      void desktop.restore().then((stillMax) => {
+        if (typeof stillMax === "boolean") setMaximized(stillMax);
+      });
+      return;
+    }
+    void desktop?.maximize().then((nowMax) => {
+      if (typeof nowMax === "boolean") setMaximized(nowMax);
+    });
+  }
+
   if (variant === "mac") {
     return (
       <div
         className={cn("mac-titlebar-controls", className)}
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        <TrafficLight
-          kind="min"
-          glyph="−"
+        <MacChromeBtn
           label="Minimize window"
           onClick={() => void desktop.minimize()}
-        />
-        <TrafficLight
-          kind="max"
-          glyph={maximized ? "❐" : "□"}
+        >
+          −
+        </MacChromeBtn>
+        <MacChromeBtn
           label={maximized ? "Restore window" : "Maximize window"}
-          onClick={() => void desktop.maximize()}
-        />
-        <TrafficLight
-          kind="close"
-          glyph="×"
-          label="Close window"
-          onClick={() => void desktop.close()}
-        />
+          onClick={onMaximizeOrRestore}
+        >
+          {maximized ? "❐" : "□"}
+        </MacChromeBtn>
+        <MacChromeBtn label="Close window" danger onClick={() => void desktop.close()}>
+          ×
+        </MacChromeBtn>
       </div>
     );
   }
@@ -96,7 +105,7 @@ export function DesktopWindowControls({
       </WinChromeBtn>
       <WinChromeBtn
         label={maximized ? "Restore window" : "Maximize window"}
-        onClick={() => void desktop.maximize()}
+        onClick={onMaximizeOrRestore}
       >
         {maximized ? "❐" : "□"}
       </WinChromeBtn>
@@ -107,20 +116,29 @@ export function DesktopWindowControls({
   );
 }
 
-function TrafficLight({
-  kind,
-  glyph,
-  label,
+function MacChromeBtn({
+  children,
   onClick,
+  label,
+  danger,
 }: {
-  kind: "min" | "max" | "close";
-  glyph: string;
-  label: string;
+  children: React.ReactNode;
   onClick: () => void;
+  label: string;
+  danger?: boolean;
 }) {
   return (
-    <button type="button" aria-label={label} className={`mac-traffic ${kind}`} onClick={onClick}>
-      <span aria-hidden>{glyph}</span>
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={
+        danger
+          ? "mac-chrome-btn mac-chrome-btn-close"
+          : "mac-chrome-btn"
+      }
+    >
+      <span aria-hidden>{children}</span>
     </button>
   );
 }

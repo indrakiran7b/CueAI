@@ -50,7 +50,7 @@ html[data-desktop="mac"] .mac-titlebar {
   height: 40px;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 16px;
+  padding: 0 10px 0 16px;
   background: color-mix(in srgb, var(--background-elevated) 92%, transparent);
   border: 0;
   border-bottom: 1px solid var(--border);
@@ -73,21 +73,19 @@ html[data-desktop="mac"] .mac-titlebar {
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  height: 20px;
+  gap: 2px;
+  height: 28px;
+  margin-left: auto;
   padding: 0;
-  margin: 0;
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 
-.mac-traffic {
+.mac-chrome-btn {
   box-sizing: border-box;
-  flex: 0 0 20px;
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  min-height: 20px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -95,55 +93,25 @@ html[data-desktop="mac"] .mac-titlebar {
   background: transparent;
   color: var(--foreground-muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: default;
-  vertical-align: middle;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
   transition: background 120ms ease, color 120ms ease;
 }
 
-.mac-traffic span {
-  display: block;
-  line-height: 1;
-  transform: translateY(-0.5px);
+.mac-chrome-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
 }
 
-html[data-theme="light"] .mac-traffic {
-  color: var(--foreground-muted);
-}
-
-.mac-traffic.min:hover {
-  background: rgba(245, 197, 66, 0.28);
-  color: #c99500;
-}
-
-.mac-traffic.min:active {
-  background: rgba(245, 197, 66, 0.5);
-  color: #a67c00;
-}
-
-.mac-traffic.max:hover {
-  background: rgba(50, 215, 75, 0.28);
-  color: #1f9d3a;
-}
-
-.mac-traffic.max:active {
-  background: rgba(50, 215, 75, 0.5);
-  color: #14822c;
-}
-
-.mac-traffic.close:hover {
+.mac-chrome-btn-close:hover {
   background: rgba(255, 95, 87, 0.32);
   color: #ff5f57;
-}
-
-.mac-traffic.close:active {
-  background: rgba(255, 95, 87, 0.55);
-  color: #d94841;
 }
 
 html[data-desktop="mac"] .mac-shell {

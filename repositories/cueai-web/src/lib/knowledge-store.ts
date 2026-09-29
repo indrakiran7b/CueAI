@@ -255,6 +255,13 @@ export function formatRelativeTime(iso?: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+export function isUnsafeDocumentText(text: string | undefined | null): boolean {
+  const head = String(text || "")
+    .slice(0, 64)
+    .replace(/^\uFEFF/, "");
+  return head.startsWith("%PDF") || /%PDF-\d/.test(head);
+}
+
 /** Map API docs to the lightweight shape used by the live session wizard. */
 export function toWizardDocs(items: KnowledgeDocument[]): KnowledgeDoc[] {
   return items
@@ -266,7 +273,7 @@ export function toWizardDocs(items: KnowledgeDocument[]): KnowledgeDoc[] {
       tags: [statusLabel(d.status), d.category || "engineering"].filter(Boolean),
       updated: d.updatedAt?.slice(0, 10) || "",
       size: d.sizeLabel,
-      preview: d.preview || "",
+      preview: isUnsafeDocumentText(d.preview) ? "" : d.preview || "",
     }));
 }
 
