@@ -1,0 +1,189 @@
+import http from "node:http";
+import {
+  showCompanion,
+  hideCompanion,
+  toggleCompanion,
+  getCompanionBridgeStatus,
+} from "../services/overlay-window-manager";
+import { getCompanionWindow } from "../windows/companion-window";
+import { IpcChannels } from "../ipc/channels";
+import { setMeetingSession, getMeetingSession } from "./screen-share";
+import { capturePrimaryScreenshot, listCaptureDisplays } from "./screenshot";
+
+/** Loopback-only control port so the web UI (browser or Electron) can open the overlay. */
+export const CUEAI_BRIDGE_PORT = 39291;
+
+let server: http.Server | null = null;
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Access-Control-Request-Private-Network",
+  "Access-Control-Allow-Private-Network": "true",
+};
+
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: Record<string, unknown>
+) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    ...CORS_HEADERS,
+    "Content-Length": Buffer.byteLength(payload),
+  });
+  res.end(payload);
+}
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+export function startLocalBridge() {
+  if (server) return;
+
+  server = http.createServer(async (req, res) => {
+    const url = new URL(req.url || "/", `http://127.0.0.1:${CUEAI_BRIDGE_PORT}`);
+    const method = req.method || "GET";
+
+    if (method === "OPTIONS") {
+      res.writeHead(204, CORS_HEADERS);
+      res.end();
+      return;
+    }
+
+    try {
+      if (url.pathname === "/health" && method === "GET") {
+        sendJson(res, 200, { ok: true, service: "cueai-desktop-bridge" });
+        return;
+      }
+
+      if (url.pathname === "/companion/show" && method === "POST") {
+        await showCompanion();
+        sendJson(res, 200, { ok: true, action: "show", ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/companion/hide" && method === "POST") {
+        await hideCompanion();
+        sendJson(res, 200, { ok: true, action: "hide", ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/companion/toggle" && method === "POST") {
+        await toggleCompanion();
+        sendJson(res, 200, { ok: true, action: "toggle", ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/companion/status" && method === "GET") {
+        sendJson(res, 200, { ok: true, ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/displays" && method === "GET") {
+        sendJson(res, 200, { ok: true, displays: listCaptureDisplays() });
+        return;
+      }
+
+      if (url.pathname === "/screenshot" && method === "POST") {
+        const raw = await readBody(req);
+        const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        const displayId =
+          typeof payload.displayId === "number" ? payload.displayId : null;
+        const result = await capturePrimaryScreenshot({
+          save: false,
+          displayId,
+        });
+        sendJson(res, result.ok ? 200 : 500, {
+          ok: result.ok,
+          dataUrl: result.dataUrl,
+          error: result.error,
+          meta: result.meta,
+        });
+        return;
+      }
+
+      if (url.pathname === "/companion/answer" && method === "POST") {
+        const raw = await readBody(req);
+        const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        const answer = typeof payload.answer === "string" ? payload.answer.trim() : "";
+        if (!answer) {
+          sendJson(res, 400, { ok: false, error: "answer_required" });
+          return;
+        }
+        await showCompanion();
+        const companion = getCompanionWindow();
+        if (companion && !companion.isDestroyed()) {
+          companion.webContents.send(IpcChannels.COMPANION_PUSH_ANSWER, {
+            answer,
+            question:
+              typeof payload.question === "string" ? payload.question.trim() : undefined,
+            status: typeof payload.status === "string" ? payload.status : "ready",
+          });
+        }
+        sendJson(res, 200, { ok: true, ...getCompanionBridgeStatus() });
+        return;
+      }
+
+      if (url.pathname === "/meeting/session" && method === "POST") {
+        const raw = await readBody(req);
+        const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        setMeetingSession({
+          active: typeof payload.active === "boolean" ? payload.active : undefined,
+          screenSharing:
+            typeof payload.screenSharing === "boolean" ? payload.screenSharing : undefined,
+          meetingId: typeof payload.meetingId === "string" ? payload.meetingId : undefined,
+          title: typeof payload.title === "string" ? payload.title : undefined,
+          cueAiMode:
+            payload.cueAiMode === "inactive" ||
+            payload.cueAiMode === "private" ||
+            payload.cueAiMode === "live"
+              ? payload.cueAiMode
+              : undefined,
+        });
+        if (payload.showCompanion === true) {
+          await showCompanion();
+        }
+        if (payload.hideCompanion === true) {
+          await hideCompanion();
+        }
+        sendJson(res, 200, { ok: true, session: getMeetingSession() });
+        return;
+      }
+
+      if (url.pathname === "/meeting/session" && method === "GET") {
+        sendJson(res, 200, { ok: true, session: getMeetingSession() });
+        return;
+      }
+
+      sendJson(res, 404, { ok: false, error: "not_found" });
+    } catch (err) {
+      sendJson(res, 500, {
+        ok: false,
+        error: err instanceof Error ? err.message : "bridge_error",
+      });
+    }
+  });
+
+  server.on("error", (err) => {
+    console.error("[cueai-bridge]", err);
+  });
+
+  server.listen(CUEAI_BRIDGE_PORT, "127.0.0.1", () => {
+    console.log(`[cueai-bridge] listening on http://127.0.0.1:${CUEAI_BRIDGE_PORT}`);
+  });
+}
+
+export function stopLocalBridge() {
+  if (!server) return;
+  server.close();
+  server = null;
+}

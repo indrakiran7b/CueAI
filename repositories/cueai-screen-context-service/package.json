@@ -1,0 +1,10 @@
+{
+  "name": "@cueai/screen-context-service",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./screen-context": "./src/screen-context.ts",
+    "./qwen-vl": "./src/qwen-vl.ts",
+    "./routes/screen": "./src/routes/screen.ts"
+  }
+}

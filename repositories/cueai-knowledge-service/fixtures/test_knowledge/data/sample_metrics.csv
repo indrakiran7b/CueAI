@@ -1,0 +1,4 @@
+metric,value,notes
+retrieval_ms_p50,85,development test knowledge
+llm_ms_p50,420,development test knowledge
+knowledge_hit_rate,0.72,development test knowledge

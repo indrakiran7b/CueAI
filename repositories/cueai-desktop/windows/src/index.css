@@ -1,0 +1,356 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+  font-family: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #e8e8ea;
+  user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+.header-drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.ov-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  gap: 8px;
+  container-type: inline-size;
+  container-name: overlay;
+}
+
+.ov-bar,
+.ov-ask,
+.ov-menu,
+.ov-card {
+  background: rgba(20, 20, 22, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ov-bar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 6px 0 10px;
+  border-radius: 8px;
+  overflow: visible;
+}
+
+.ov-brand {
+  flex: none;
+  margin-right: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #f4f4f5;
+  white-space: nowrap;
+}
+
+.ov-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #d4d4d8;
+  white-space: nowrap;
+}
+
+.ov-root.is-narrow .ov-btn {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+
+.ov-root.is-narrow .ov-btn-label {
+  display: none;
+}
+
+.ov-btn:hover,
+.ov-btn.is-on,
+.ov-icon:hover,
+.ov-icon.is-on,
+.ov-card header button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fafafa;
+}
+
+.ov-timer {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.ov-icon {
+  display: inline-flex;
+  flex: none;
+  height: 26px;
+  width: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: #a1a1aa;
+}
+
+.ov-more {
+  position: relative;
+  flex: none;
+}
+
+.ov-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  width: 168px;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.ov-menu button,
+.ov-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: #e4e4e7;
+  text-align: left;
+}
+
+.ov-menu button:hover,
+.ov-menu label:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ov-menu .is-danger {
+  color: #f4f4f5;
+}
+
+.ov-ask {
+  display: flex;
+  flex: 1 1 120px;
+  align-items: center;
+  min-width: 72px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.ov-ask input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  outline: none;
+  font-size: 13px;
+  color: #fafafa;
+  text-overflow: ellipsis;
+}
+
+.ov-ask input::placeholder {
+  color: #71717a;
+}
+
+.ov-card {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.ov-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ov-card header p {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ov-card header div {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.ov-card header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.ov-error {
+  margin: 0;
+  font-size: 12px;
+  color: #d4d4d8;
+}
+
+.ov-muted {
+  margin: 0;
+  font-size: 13px;
+  color: #71717a;
+}
+
+.ov-answer {
+  min-height: 0;
+  overflow: auto;
+}
+
+.ov-answer p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  user-select: text;
+}
+
+.ov-answer p + p {
+  margin-top: 10px;
+}
+
+.resize-edge {
+  position: absolute;
+  z-index: 50;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+
+.resize-edge-n {
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.resize-edge-s {
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.resize-edge-e {
+  top: 10px;
+  right: 0;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.resize-edge-w {
+  top: 10px;
+  left: 0;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.resize-edge-ne {
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.resize-edge-nw {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.resize-edge-se {
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.resize-edge-sw {
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}

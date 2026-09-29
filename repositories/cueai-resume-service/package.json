@@ -1,0 +1,14 @@
+{
+  "name": "@cueai/resume-service",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@cueai/shared-libraries": "file:../cueai-shared-libraries",
+    "next": "16.3.0"
+  },
+  "exports": {
+    "./routes/analyze": "./src/routes/analyze.ts",
+    "./routes/extract": "./src/routes/extract.ts",
+    "./applyResumeRewrites": "./src/applyResumeRewrites.ts"
+  }
+}

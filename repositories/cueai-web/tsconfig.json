@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@cueai/knowledge-service/rag/*": ["../cueai-knowledge-service/src/rag/*"],
+      "@cueai/knowledge-service/src/routes/admin/route": ["../cueai-knowledge-service/src/routes/admin/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/query/route": ["../cueai-knowledge-service/src/routes/admin/query/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/[id]/route": ["../cueai-knowledge-service/src/routes/admin/[id]/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/[id]/status/route": ["../cueai-knowledge-service/src/routes/admin/[id]/status/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/[id]/reindex/route": ["../cueai-knowledge-service/src/routes/admin/[id]/reindex/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/[id]/file/route": ["../cueai-knowledge-service/src/routes/admin/[id]/file/route.ts"],
+      "@cueai/knowledge-service/src/routes/admin/[id]/content/route": ["../cueai-knowledge-service/src/routes/admin/[id]/content/route.ts"],
+      "@cueai/knowledge-service/src/routes/meetings/knowledge": ["../cueai-knowledge-service/src/routes/meetings/knowledge.ts"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts",
+    "../cueai-knowledge-service/src/**/*.ts",
+    "../cueai-resume-service/src/**/*.ts",
+    "../cueai-translation-service/src/**/*.ts",
+    "../cueai-transcription-service/src/**/*.ts",
+    "../cueai-screen-context-service/src/**/*.ts",
+    "../cueai-notification-service/src/**/*.ts",
+    "../cueai-export-service/src/**/*.ts",
+    "../cueai-ai-orchestrator/src/**/*.ts",
+    "../cueai-shared-libraries/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "_local_backup"]
+}

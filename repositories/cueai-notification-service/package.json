@@ -1,0 +1,9 @@
+{
+  "name": "@cueai/notification-service",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./email": "./src/email.ts",
+    "./routes/notifications": "./src/routes/notifications.ts"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "name": "@cueai/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:desktop": "next dev --port 3000 --hostname 127.0.0.1",
+    "dev:mac": "next dev --port 3002 --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@cueai/ai-orchestrator": "file:../cueai-ai-orchestrator",
+    "@cueai/export-service": "file:../cueai-export-service",
+    "@cueai/knowledge-service": "file:../cueai-knowledge-service",
+    "@cueai/notification-service": "file:../cueai-notification-service",
+    "@cueai/resume-service": "file:../cueai-resume-service",
+    "@cueai/screen-context-service": "file:../cueai-screen-context-service",
+    "@cueai/shared-libraries": "file:../cueai-shared-libraries",
+    "@cueai/transcription-service": "file:../cueai-transcription-service",
+    "@cueai/translation-service": "file:../cueai-translation-service",
+    "@cueai/gateway": "file:../cueai-gateway",
+    "@xenova/transformers": "^2.17.2",
+    "clsx": "^2.1.1",
+    "framer-motion": "^13.0.0",
+    "lucide-react": "^1.28.0",
+    "mammoth": "^1.12.1",
+    "next": "16.3.0",
+    "next-auth": "^5.0.0-beta.32",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "^3.10.1",
+    "sharp": "^0.32.6",
+    "stripe": "^22.6.2",
+    "tailwind-merge": "^3.6.0",
+    "unpdf": "^1.8.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "base": "http://127.0.0.1:8000",
+  "tokenPresent": false,
+  "results": [
+    {
+      "name": "health",
+      "path": "/health",
+      "status": 200,
+      "ok": true,
+      "body": {
+        "status": "ok",
+        "environment": "development"
+      }
+    },
+    {
+      "name": "ready",
+      "path": "/health/ready",
+      "status": 200,
+      "ok": true,
+      "body": {
+        "status": "ok",
+        "database": true
+      }
+    },
+    {
+      "name": "auth_status",
+      "path": "/api/auth/status",
+      "status": 200,
+      "ok": true,
+      "body": {
+        "configured": true,
+        "issuer": "http://localhost:8080/realms/cueai",
+        "realm": "cueai",
+        "audience": "cueai-backend",
+        "client_id": "cueai-backend",
+        "jwks_configured": true
+      }
+    },
+    {
+      "name": "auth_me",
+      "skipped": true,
+      "reason": "no token"
+    },
+    {
+      "name": "auth_workspace",
+      "skipped": true,
+      "reason": "no token"
+    }
+  ]
+}

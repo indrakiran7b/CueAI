@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+*.tsbuildinfo
+.venv/
+__pycache__/
+*.pyc
+dist/
+coverage/
+llm-benchmark/.env
+!llm-benchmark/.env.example

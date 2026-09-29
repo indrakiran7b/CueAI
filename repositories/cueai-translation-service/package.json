@@ -1,0 +1,11 @@
+{
+  "name": "@cueai/translation-service",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./translate": "./src/translate.ts",
+    "./translate-request": "./src/translate-request.ts",
+    "./routes/translate": "./src/routes/translate.ts",
+    "./routes/admin-translate": "./src/routes/admin-translate.ts"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@cueai/ai-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./server/gemini": "./src/server/gemini.ts",
+    "./server/groq": "./src/server/groq.ts",
+    "./server/llm-generate": "./src/server/llm-generate.ts",
+    "./server/ai-config": "./src/server/ai-config.ts",
+    "./server/credential-resolver": "./src/server/credential-resolver.ts"
+  }
+}

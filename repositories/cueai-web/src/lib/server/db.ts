@@ -1,0 +1,519 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { WorkspaceRole } from "@/lib/roles";
+import type { OnboardingProfile } from "@/lib/onboarding";
+import { hashPassword } from "@/lib/server/session";
+
+export type UserStatus = "Active" | "Invited" | "Deactivated";
+
+export type DbUser = {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: WorkspaceRole;
+  status: UserStatus;
+  workspaceId: string;
+  createdAt: string;
+  lastActiveAt?: string;
+  /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
+  onboarding?: OnboardingProfile;
+  /** Optional billing entitlement. Absent means free. */
+  plan?: "free" | "premium";
+  /** Stripe Customer id (cus_…). Never expose secret keys. */
+  stripeCustomerId?: string;
+  /** Active Stripe Subscription id (sub_…). */
+  stripeSubscriptionId?: string;
+  /** Stripe Price id currently attached. */
+  stripePriceId?: string;
+  /** Mapped CueAI plan key: free | pro | team | enterprise */
+  billingPlanId?: string;
+  /** Stripe-like status: active | trialing | past_due | canceled | unpaid | incomplete | incomplete_expired */
+  billingStatus?: string;
+  billingPeriodStart?: string;
+  billingPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
+  /** Keygate license id created after successful payment (if Keygate admin mint succeeded). */
+  keygateLicenseId?: string;
+};
+
+export type DbInvite = {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  invitedBy: string;
+  /** Legacy field; unused in immediate-invite flow (kept for store compatibility). */
+  token?: string;
+  status: "sent" | "active" | "revoked" | "expired" | "pending" | "accepted";
+  createdAt: string;
+  expiresAt?: string;
+  acceptedAt?: string;
+  sentAt?: string;
+  workspaceId?: string;
+};
+
+export type AiProviderType =
+  | "groq"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "openrouter"
+  | "deepseek"
+  | "perplexity"
+  | "custom";
+
+export type DbAiProvider = {
+  id: string;
+  name: string;
+  type: AiProviderType;
+  enabled: boolean;
+  endpoint: string;
+  apiKeyEnc?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type DbAiModel = {
+  id: string;
+  name: string;
+  providerId: string;
+  capability: "chat" | "stt" | "embedding" | "other";
+  enabled: boolean;
+  isDefault: boolean;
+  contextWindow?: number;
+  updatedAt?: string;
+};
+
+export type DbAiConfig = {
+  provider: AiProviderType;
+  model: string;
+  enabledProviders: AiProviderType[];
+  enabledModels: string[];
+  defaultModel: string;
+  endpoint?: string;
+  apiKeyEnc?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  /** Structured provider catalog (preferred). */
+  providers?: DbAiProvider[];
+  /** Structured model catalog (preferred). */
+  models?: DbAiModel[];
+};
+
+export type DbKnowledgeChunk = {
+  id: string;
+  index: number;
+  text: string;
+  tokenCount?: number;
+  pageNumber?: number;
+  sectionTitle?: string;
+  vectorId?: string;
+};
+
+export type DbKnowledge = {
+  id: string;
+  workspaceId?: string;
+  /** When set, document is Meeting Knowledge for that meeting only. */
+  meetingId?: string | null;
+  /** Explicit scope; derived from meetingId when omitted. */
+  knowledgeScope?: "meeting" | "workspace";
+  /** Workspace folder category (not used for "All" filter). */
+  category?: "security" | "gtm" | "engineering" | "sales";
+  title: string;
+  type: "pdf" | "docx" | "md" | "txt" | "url" | "note" | "csv";
+  status: "uploaded" | "processing" | "indexed" | "failed" | "deleting";
+  sizeLabel: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  originalFilename?: string;
+  mimeType?: string;
+  fileSize?: number;
+  storagePath?: string;
+  checksum?: string;
+  chunkCount?: number;
+  pageCount?: number;
+  chunks?: DbKnowledgeChunk[];
+  /** Embedding generation status for this document. */
+  embeddingStatus?: "pending" | "ready" | "failed" | "skipped";
+  /** True when chunk vectors were upserted to Qdrant. */
+  vectorIndexed?: boolean;
+  processingError?: string;
+  processedAt?: string;
+  documentVersion?: number;
+};
+
+export type ApiCredentialCapability = "rag" | "live_session" | "general_ai";
+
+export type ApiCredentialStatus =
+  | "connected"
+  | "invalid"
+  | "error"
+  | "not_tested";
+
+/** User-owned BYOK credential (encrypted at rest). Never return decrypted key to clients. */
+export type DbUserApiCredential = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  /** User-facing label, e.g. "My OpenAI Key". */
+  name: string;
+  provider: AiProviderType;
+  model: string;
+  encryptedApiKey: string;
+  keyLast4: string;
+  status: ApiCredentialStatus;
+  capabilities: ApiCredentialCapability[];
+  /** Optional override base URL (OpenAI-compatible providers). */
+  endpoint?: string;
+  /** Optional OpenAI organization id. */
+  organizationId?: string;
+  /** Default/active for its capabilities within this user+workspace. */
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastVerifiedAt?: string;
+  lastUsedAt?: string;
+  lastError?: string;
+};
+
+export type DbUsageEvent = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  userName: string;
+  type: "tokens" | "meeting_minutes" | "resume_rewrite";
+  quantity: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  provider?: string;
+  model?: string;
+  metadata?: Record<string, string | number | boolean>;
+  createdAt: string;
+};
+
+export type DbAudit = {
+  id: string;
+  workspaceId: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  createdAt: string;
+};
+
+export type DbWorkspace = {
+  id: string;
+  name: string;
+  seats: number;
+  createdAt?: string;
+  privacy: {
+    shareTranscriptsWithTeam: boolean;
+    allowAiTrainingOptIn: boolean;
+    redactPiiInExports: boolean;
+    requireInviteForJoin: boolean;
+  };
+  retention: {
+    meetingDays: number;
+    transcriptDays: number;
+    notesDays: number;
+    resumeDays: number;
+    knowledgeDays: number;
+    autoDeleteEnabled: boolean;
+  };
+};
+
+export type DbMeetingLine = {
+  who: string;
+  text: string;
+  at?: string;
+  source?: "system" | "microphone" | "screen" | "user" | "cueai";
+};
+
+export type DbMeetingAnswer = {
+  prompt: string;
+  answer: string;
+  at: string;
+  provider?: string;
+  model?: string;
+  latencyMs?: number;
+  source?: "auto" | "manual" | "screen";
+  status?: "ok" | "failed";
+  questionWho?: string;
+};
+
+export type DeviceStatus = "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED";
+
+export type DbDevice = {
+  id: string;
+  userId: string;
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  appVersion: string;
+  status: Exclude<DeviceStatus, "NEW">;
+  registeredAt: string;
+  lastVerifiedAt?: string;
+  updatedAt?: string;
+  revokedAt?: string;
+  blockedAt?: string;
+  /** SHA-256 of the one-time device credential. Never store the plaintext. */
+  credentialHash?: string;
+};
+
+export type DbMeeting = {
+  id: string;
+  workspaceId: string;
+  userId?: string;
+  title: string;
+  kind: "interview" | "regular";
+  /** live = active session (hidden from history). completed/summary = history. incomplete = interrupted. */
+  status: "live" | "summary" | "completed" | "incomplete";
+  startedAt: string;
+  endedAt?: string;
+  durationSec: number;
+  attendees: number;
+  tags: string[];
+  company?: string;
+  jobDescription?: string;
+  jobLink?: string;
+  resumeName?: string;
+  resumeText?: string;
+  description?: string;
+  /**
+   * Workspace knowledge document ids attached to this meeting (reusable docs).
+   * Meeting-scoped uploads are linked via KnowledgeDocument.meetingId.
+   */
+  documentIds?: string[];
+  transcript: DbMeetingLine[];
+  answers: DbMeetingAnswer[];
+  summary?: string;
+};
+
+export type WorkspaceStore = {
+  workspace: DbWorkspace;
+  users: DbUser[];
+  invites: DbInvite[];
+  knowledge: DbKnowledge[];
+  usage: DbUsageEvent[];
+  audit: DbAudit[];
+  ai: DbAiConfig;
+  /** User BYOK credentials (encrypted). Scoped by userId + workspaceId. */
+  userApiCredentials?: DbUserApiCredential[];
+  meetings?: DbMeeting[];
+  devices?: DbDevice[];
+  activeMeetingId?: string | null;
+  /** Latest resume / job briefing for live answers, even before a meeting starts. */
+  liveBriefing?: {
+    kind?: "interview" | "regular";
+    company?: string;
+    jobDescription?: string;
+    jobLink?: string;
+    resumeName?: string;
+    resumeText?: string;
+    description?: string;
+    /** Meeting-scoped docs uploaded during prep (assigned meetingId on create). */
+    pendingKnowledgeIds?: string[];
+    /** Workspace docs to attach when the live meeting starts. */
+    documentIds?: string[];
+    updatedAt: string;
+  } | null;
+};
+
+// Packaged desktop builds set CUEAI_DATA_DIR because their working directory
+// is a throwaway extraction folder.
+const DATA_DIR = process.env.CUEAI_DATA_DIR?.trim() || path.join(process.cwd(), ".data");
+const STORE_PATH = path.join(DATA_DIR, "workspace-store.json");
+
+function defaultStore(): WorkspaceStore {
+  const workspaceId = "ws_default";
+  const adminId = "usr_bootstrap_admin";
+  return {
+    workspace: {
+      id: workspaceId,
+      name: "CueAI Workspace",
+      seats: 25,
+      privacy: {
+        shareTranscriptsWithTeam: false,
+        allowAiTrainingOptIn: false,
+        redactPiiInExports: true,
+        requireInviteForJoin: true,
+      },
+      retention: {
+        meetingDays: 365,
+        transcriptDays: 365,
+        notesDays: 365,
+        resumeDays: 180,
+        knowledgeDays: 730,
+        autoDeleteEnabled: false,
+      },
+    },
+    users: [
+      {
+        id: adminId,
+        name: "Workspace Admin",
+        email: "admin@cueai.local",
+        passwordHash: hashPassword("admin123"),
+        role: "Admin",
+        status: "Active",
+        workspaceId,
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      },
+    ],
+    invites: [],
+    knowledge: [],
+    usage: [],
+    audit: [],
+    meetings: [],
+    devices: [],
+    activeMeetingId: null,
+    userApiCredentials: [],
+    ai: {
+      provider: "groq",
+      model: "openai/gpt-oss-20b",
+      enabledProviders: ["groq"],
+      enabledModels: ["openai/gpt-oss-20b", "llama-3.3-70b-versatile", "whisper-large-v3"],
+      defaultModel: "openai/gpt-oss-20b",
+      endpoint: "https://api.groq.com/openai/v1",
+      apiKeyEnc: "",
+    },
+  };
+}
+
+let memory: WorkspaceStore | null = null;
+let writeQueue: Promise<void> = Promise.resolve();
+let loadedMtimeMs = 0;
+
+async function storeFileMtime(): Promise<number> {
+  try {
+    const st = await fs.stat(STORE_PATH);
+    return st.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+async function ensureLoaded(): Promise<WorkspaceStore> {
+  const mtime = await storeFileMtime();
+  if (memory && mtime && loadedMtimeMs && mtime <= loadedMtimeMs) {
+    const { ensureAiCatalog } = await import("@/lib/server/ai-config");
+    ensureAiCatalog(memory.ai);
+    if (!memory.userApiCredentials) memory.userApiCredentials = [];
+    return memory;
+  }
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const raw = await fs.readFile(STORE_PATH, "utf8");
+    memory = JSON.parse(raw) as WorkspaceStore;
+    loadedMtimeMs = mtime || Date.now();
+    const { ensureAiCatalog } = await import("@/lib/server/ai-config");
+    ensureAiCatalog(memory.ai);
+    if (!memory.userApiCredentials) memory.userApiCredentials = [];
+    if (!memory.workspace.createdAt) {
+      memory.workspace.createdAt = memory.users[0]?.createdAt || new Date().toISOString();
+    }
+    if (!memory.devices) memory.devices = [];
+    for (const device of memory.devices) {
+      if (!device.updatedAt) device.updatedAt = device.lastVerifiedAt || device.registeredAt;
+    }
+    return memory;
+  } catch {
+    memory = defaultStore();
+    const { ensureAiCatalog } = await import("@/lib/server/ai-config");
+    ensureAiCatalog(memory.ai);
+    memory.workspace.createdAt = new Date().toISOString();
+    await persist(memory);
+    loadedMtimeMs = await storeFileMtime();
+    return memory;
+  }
+}
+
+async function persist(store: WorkspaceStore) {
+  memory = store;
+  writeQueue = writeQueue.then(async () => {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
+    loadedMtimeMs = await storeFileMtime();
+  });
+  await writeQueue;
+}
+
+export async function readStore() {
+  return ensureLoaded();
+}
+
+/** Drop in-memory cache so the next read picks up disk changes (e.g. purge). */
+export function invalidateStoreCache() {
+  memory = null;
+  loadedMtimeMs = 0;
+}
+
+export async function updateStore(mutator: (store: WorkspaceStore) => void | Promise<void>) {
+  const store = await ensureLoaded();
+  await mutator(store);
+  await persist(store);
+  return store;
+}
+
+export async function appendAudit(
+  store: WorkspaceStore,
+  entry: Omit<DbAudit, "id" | "createdAt" | "workspaceId"> & { workspaceId?: string },
+) {
+  store.audit.unshift({
+    id: `aud_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+    workspaceId: entry.workspaceId || store.workspace.id,
+    actorId: entry.actorId,
+    actorName: entry.actorName,
+    action: entry.action,
+    resourceType: entry.resourceType,
+    resourceId: entry.resourceId,
+    metadata: entry.metadata,
+  });
+  store.audit = store.audit.slice(0, 500);
+}
+
+export async function appendUsage(
+  store: WorkspaceStore,
+  entry: Omit<DbUsageEvent, "id" | "createdAt" | "workspaceId"> & { workspaceId?: string },
+) {
+  store.usage.unshift({
+    id: `use_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+    workspaceId: entry.workspaceId || store.workspace.id,
+    userId: entry.userId,
+    userName: entry.userName,
+    type: entry.type,
+    quantity: entry.quantity,
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+    provider: entry.provider,
+    model: entry.model,
+    metadata: entry.metadata,
+  });
+  store.usage = store.usage.slice(0, 2000);
+}
+
+export function publicUser(user: DbUser) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    workspaceId: user.workspaceId,
+    createdAt: user.createdAt,
+    lastActiveAt: user.lastActiveAt || null,
+    onboardingCompleted: Boolean(user.onboarding?.completedAt),
+    plan: user.plan === "premium" ? "premium" : "free",
+    billingPlanId: user.billingPlanId || (user.plan === "premium" ? "pro" : "free"),
+    billingStatus: user.billingStatus || (user.plan === "premium" ? "active" : "none"),
+    billingPeriodEnd: user.billingPeriodEnd || null,
+    cancelAtPeriodEnd: Boolean(user.cancelAtPeriodEnd),
+  };
+}

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["../cueai-web/src/*"],
+      "@/lib/server/gemini": ["../cueai-ai-orchestrator/src/server/gemini.ts"],
+      "@/lib/server/groq": ["../cueai-ai-orchestrator/src/server/groq.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

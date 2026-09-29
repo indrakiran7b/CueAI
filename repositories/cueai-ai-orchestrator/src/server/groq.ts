@@ -1,0 +1,239 @@
+/**
+ * Groq chat client (OpenAI-compatible). Primary live-answer and resume model.
+ * Docs: https://console.groq.com/docs/api-reference
+ */
+
+export const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+export const GROQ_DEFAULT_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
+
+const MODEL_FALLBACKS = [
+  GROQ_DEFAULT_MODEL,
+  "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile",
+].filter((v, i, arr) => arr.indexOf(v) === i);
+
+/** Prefer low-latency models for live overlay streaming. */
+const STREAM_MODEL_FALLBACKS = [
+  process.env.GROQ_STREAM_MODEL?.trim() || "llama-3.1-8b-instant",
+  "llama-3.3-70b-versatile",
+  GROQ_DEFAULT_MODEL,
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+export class GroqError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "GroqError";
+    this.status = status;
+  }
+}
+
+export function resolveGroqApiKey(): string {
+  return process.env.GROQ_API_KEY?.trim() || "";
+}
+
+export type GroqResult = {
+  text: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export async function generateGroqText(req: {
+  system?: string;
+  prompt: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  jsonObject?: boolean;
+  /** Override env key (BYOK / resolver). */
+  apiKey?: string;
+  /** Prefer this model first when provided. */
+  model?: string;
+}): Promise<GroqResult> {
+  const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
+  if (!apiKey) {
+    throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
+  }
+
+  let lastStatus = 502;
+  let lastMessage = "Groq did not return an answer.";
+  const preferredModel = req.model?.trim() || "";
+  const models = preferredModel
+    ? [preferredModel, ...MODEL_FALLBACKS.filter((m) => m !== preferredModel)]
+    : MODEL_FALLBACKS;
+
+  for (const model of models) {
+    console.log("[GROQ] Request started");
+    const res = await fetch(GROQ_CHAT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: req.temperature ?? 0.4,
+        max_completion_tokens: req.maxOutputTokens ?? 700,
+        ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
+        messages: [
+          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+          { role: "user" as const, content: req.prompt },
+        ],
+      }),
+    });
+
+    const payload = (await res.json().catch(() => ({}))) as {
+      choices?: { message?: { content?: string | null } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      error?: { message?: string };
+      model?: string;
+    };
+
+    if (!res.ok) {
+      lastStatus = res.status;
+      lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
+      console.error("groq_generate_failed", model, res.status, lastMessage.slice(0, 300));
+      if (res.status === 401 || res.status === 403 || res.status === 429) {
+        throw new GroqError(lastMessage, res.status);
+      }
+      continue;
+    }
+
+    const text = payload.choices?.[0]?.message?.content?.trim() || "";
+    if (!text) {
+      lastMessage = "Groq returned an empty answer.";
+      continue;
+    }
+
+    console.log("[GROQ] First token received");
+    console.log("[GROQ] Stream completed");
+    return {
+      text,
+      model: payload.model || model,
+      inputTokens: payload.usage?.prompt_tokens || 0,
+      outputTokens: payload.usage?.completion_tokens || 0,
+    };
+  }
+
+  throw new GroqError(lastMessage, lastStatus);
+}
+
+/**
+ * Stream plain-text tokens from Groq (OpenAI-compatible SSE).
+ * Prefer this for live overlay latency; caller accumulates the full answer.
+ */
+export async function streamGroqText(req: {
+  system?: string;
+  prompt: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  signal?: AbortSignal;
+  onToken: (token: string) => void;
+  apiKey?: string;
+  model?: string;
+}): Promise<GroqResult> {
+  const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
+  if (!apiKey) {
+    throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
+  }
+
+  let lastStatus = 502;
+  let lastMessage = "Groq did not return an answer.";
+  const preferredStreamModel = req.model?.trim() || "";
+  const models = preferredStreamModel
+    ? [
+        preferredStreamModel,
+        ...STREAM_MODEL_FALLBACKS.filter((m) => m !== preferredStreamModel),
+      ]
+    : STREAM_MODEL_FALLBACKS;
+
+  for (const model of models) {
+    const res = await fetch(GROQ_CHAT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      signal: req.signal,
+      body: JSON.stringify({
+        model,
+        temperature: req.temperature ?? 0.3,
+        max_completion_tokens: req.maxOutputTokens ?? 160,
+        stream: true,
+        messages: [
+          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+          { role: "user" as const, content: req.prompt },
+        ],
+      }),
+    });
+
+    if (!res.ok || !res.body) {
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      lastStatus = res.status;
+      lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
+      console.error("groq_stream_failed", model, res.status, lastMessage.slice(0, 300));
+      if (res.status === 401 || res.status === 403 || res.status === 429) {
+        throw new GroqError(lastMessage, res.status);
+      }
+      continue;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let full = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let usedModel = model;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n");
+      buffer = parts.pop() || "";
+      for (const rawLine of parts) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const json = JSON.parse(data) as {
+            choices?: { delta?: { content?: string | null } }[];
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
+            model?: string;
+          };
+          const token = json.choices?.[0]?.delta?.content || "";
+          if (token) {
+            full += token;
+            req.onToken(token);
+          }
+          if (json.model) usedModel = json.model;
+          if (json.usage) {
+            inputTokens = json.usage.prompt_tokens || inputTokens;
+            outputTokens = json.usage.completion_tokens || outputTokens;
+          }
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
+
+    if (!full.trim()) {
+      lastMessage = "Groq returned an empty streamed answer.";
+      continue;
+    }
+
+    return {
+      text: full.trim(),
+      model: usedModel,
+      inputTokens,
+      outputTokens,
+    };
+  }
+
+  throw new GroqError(lastMessage, lastStatus);
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@cueai/export-service",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./exportDocument": "./src/exportDocument.ts"
+  }
+}

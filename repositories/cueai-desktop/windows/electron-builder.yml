@@ -1,0 +1,25 @@
+appId: com.cueai.desktop
+productName: CueAI
+copyright: Copyright © CueAI
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: CueAI-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: CueAI
+portable:
+  artifactName: CueAI-Portable-${version}.${ext}

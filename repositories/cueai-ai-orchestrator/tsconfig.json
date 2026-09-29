@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["../cueai-web/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

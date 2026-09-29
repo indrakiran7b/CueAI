@@ -1,0 +1,16 @@
+{
+  "name": "@cueai/knowledge-service",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@cueai/shared-libraries": "file:../cueai-shared-libraries",
+    "@cueai/ai-orchestrator": "file:../cueai-ai-orchestrator",
+    "next": "16.3.0"
+  },
+  "exports": {
+    "./src/*": "./src/*",
+    "./rag/*": "./src/rag/*",
+    "./routes/*": "./src/routes/*",
+    "./knowledge-retrieve": "./src/knowledge-retrieve.ts"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["../cueai-web/src/*"],
+      "@/lib/server/gemini": ["../cueai-ai-orchestrator/src/server/gemini.ts"],
+      "@cueai/shared-libraries/extract-document": ["../cueai-shared-libraries/src/extract-document.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

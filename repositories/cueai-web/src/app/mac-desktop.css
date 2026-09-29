@@ -1,0 +1,272 @@
+/* CueAI for Mac — keep the original CueAI chrome. Overlay HUD is unchanged.
+   This file only adds window chrome (title bar, drag regions) on top of globals.css. */
+
+.mac-only {
+  display: none !important;
+}
+
+html[data-desktop="mac"] .mac-only {
+  display: block !important;
+}
+
+html[data-desktop="mac"] button.mac-only,
+html[data-desktop="mac"] a.mac-only {
+  display: inline-flex !important;
+}
+
+html[data-desktop="mac"] span.mac-only {
+  display: inline !important;
+}
+
+html[data-desktop="mac"] .not-mac {
+  display: none !important;
+}
+
+html[data-desktop="mac"] button,
+html[data-desktop="mac"] a,
+html[data-desktop="mac"] input,
+html[data-desktop="mac"] textarea,
+html[data-desktop="mac"] select {
+  -webkit-app-region: no-drag;
+}
+
+.mac-titlebar {
+  display: none;
+}
+
+html[data-desktop="mac"] {
+  --sidebar-width: 208px;
+}
+
+html[data-desktop="mac"] .mac-titlebar {
+  position: fixed;
+  top: 0;
+  /* Start after native traffic lights so this layer cannot intercept their clicks. */
+  left: 78px;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  width: auto;
+  height: 40px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--background-elevated) 92%, transparent);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+.mac-titlebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 20px;
+  color: var(--foreground);
+  pointer-events: none;
+  user-select: none;
+}
+
+.mac-titlebar-controls {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.mac-traffic {
+  box-sizing: border-box;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  vertical-align: middle;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.mac-traffic span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-0.5px);
+}
+
+html[data-theme="light"] .mac-traffic {
+  color: var(--foreground-muted);
+}
+
+.mac-traffic.min:hover {
+  background: rgba(245, 197, 66, 0.28);
+  color: #c99500;
+}
+
+.mac-traffic.min:active {
+  background: rgba(245, 197, 66, 0.5);
+  color: #a67c00;
+}
+
+.mac-traffic.max:hover {
+  background: rgba(50, 215, 75, 0.28);
+  color: #1f9d3a;
+}
+
+.mac-traffic.max:active {
+  background: rgba(50, 215, 75, 0.5);
+  color: #14822c;
+}
+
+.mac-traffic.close:hover {
+  background: rgba(255, 95, 87, 0.32);
+  color: #ff5f57;
+}
+
+.mac-traffic.close:active {
+  background: rgba(255, 95, 87, 0.55);
+  color: #d94841;
+}
+
+html[data-desktop="mac"] .mac-shell {
+  background: var(--background) !important;
+  height: 100vh !important;
+  padding-top: 40px !important;
+  box-sizing: border-box !important;
+}
+
+html[data-desktop="mac"] .mac-workspace {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  background: var(--background);
+}
+
+html[data-desktop="mac"] .mac-sidebar {
+  height: 100% !important;
+  background: color-mix(in srgb, var(--background-elevated) 96%, transparent) !important;
+}
+
+html[data-desktop="mac"] .mac-sidebar-brand {
+  height: 48px;
+}
+
+html[data-desktop="mac"] .mac-nav-item {
+  min-height: 32px;
+}
+
+html[data-desktop="mac"] .mac-nav-active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+html[data-desktop="mac"] .mac-toolbar {
+  height: 44px !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+html[data-desktop="mac"] .mac-toolbar-search {
+  height: 32px !important;
+  max-width: 420px !important;
+  border-radius: 10px !important;
+}
+
+html[data-desktop="mac"] .mac-stage main {
+  padding: 18px 20px 24px !important;
+}
+
+html[data-desktop="mac"] .mac-stage .rounded-2xl,
+html[data-desktop="mac"] .mac-stage .rounded-xl {
+  border-radius: 12px !important;
+}
+
+html[data-desktop="mac"] .cue-web-companion {
+  font-family: inherit;
+}
+
+.mac-spotlight {
+  position: fixed;
+  top: 40px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 18vh;
+  background: var(--overlay);
+  backdrop-filter: blur(18px);
+}
+
+.mac-spotlight-card {
+  width: min(560px, calc(100vw - 32px));
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--background-elevated);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(28px) saturate(160%);
+}
+
+.mac-spotlight-card input {
+  height: 52px;
+  width: 100%;
+  padding: 0 8px;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+  outline: none;
+  background: transparent;
+  color: inherit;
+}
+
+.mac-spotlight-card kbd {
+  color: inherit;
+  opacity: 0.55;
+  border-color: currentColor;
+}
+
+.mac-spotlight-card input::placeholder,
+.mac-spotlight-card .text-subtle,
+.mac-spotlight-card .text-muted,
+.mac-spotlight-row svg {
+  color: var(--foreground-muted);
+}
+
+.mac-spotlight-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+  color: inherit;
+}
+
+.mac-spotlight-row:hover,
+.mac-spotlight-row:focus {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}

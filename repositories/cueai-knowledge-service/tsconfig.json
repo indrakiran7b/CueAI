@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["../cueai-web/src/*"],
+      "@/lib/server/rag/*": ["./src/rag/*"],
+      "@cueai/shared-libraries/extract-document": ["../cueai-shared-libraries/src/extract-document.ts"],
+      "@cueai/shared-libraries/rag-types": ["../cueai-shared-libraries/src/rag-types.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
