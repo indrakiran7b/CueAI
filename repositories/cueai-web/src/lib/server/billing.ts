@@ -15,7 +15,6 @@ import {
   isStripeBillingConfigured,
   listBillingPlans,
   publicBillingCatalog,
-  resolveCheckoutPlan,
   trialDays,
   type BillingPlanDefinition,
 } from "@/lib/server/billing-plans";
@@ -35,10 +34,25 @@ import { getStripe, getStripeWebhookSecret } from "@/lib/server/stripe";
 import { entitlementsForPlan, resolvePlan, type CuePlan } from "@/lib/entitlements";
 
 function logBilling(event: string, meta: Record<string, unknown>) {
-  const safe = { ...meta };
-  delete safe.licenseKey;
-  delete safe.rawKey;
-  delete safe.client_secret;
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    const k = key.toLowerCase();
+    if (
+      k.includes("secret") ||
+      k.includes("api_key") ||
+      k.includes("apikey") ||
+      k === "licensekey" ||
+      k === "rawkey" ||
+      k === "client_secret" ||
+      k === "authorization"
+    ) {
+      continue;
+    }
+    if (typeof value === "string" && /^(sk|rk|whsec)_(test|live)_/i.test(value)) {
+      continue;
+    }
+    safe[key] = value;
+  }
   console.info(`[billing] ${event}`, safe);
 }
 
@@ -98,11 +112,32 @@ export const ACCESS_GRANTING_STATUSES = new Set([
 
 function appBaseUrl(): string {
   return (
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.APP_BASE_URL?.trim() ||
     process.env.AUTH_URL?.trim() ||
     process.env.NEXTAUTH_URL?.trim() ||
-    "http://localhost:3000"
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    "http://127.0.0.1:3000"
   ).replace(/\/+$/, "");
+}
+
+function trustedAppUrl(pathname: string): string {
+  return `${appBaseUrl()}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+}
+
+/** Same-origin only. Client-supplied URLs from other origins are ignored. */
+function sameOriginReturnUrl(candidate: string | undefined, fallbackPath: string): string {
+  const fallback = trustedAppUrl(fallbackPath);
+  const raw = String(candidate || "").trim();
+  if (!raw) return fallback;
+  try {
+    const allowed = new URL(appBaseUrl());
+    const url = new URL(raw);
+    if (url.origin !== allowed.origin) return fallback;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return fallback;
+    return url.toString();
+  } catch {
+    return fallback;
+  }
 }
 
 function unixToIso(seconds: number | null | undefined): string | undefined {
@@ -212,43 +247,46 @@ export async function ensureStripeCustomer(user: DbUser): Promise<string> {
 export async function createCheckoutSession(input: {
   userId: string;
   planId?: string;
-  priceId?: string;
-  successUrl?: string;
-  cancelUrl?: string;
 }): Promise<{ url: string; sessionId: string; changed?: boolean }> {
   if (!isStripeBillingConfigured()) {
+    logBilling("checkout.blocked", {
+      category: "missing_config",
+      reason: "secret_key_unset",
+    });
     throw new BillingUserError(
       "Payments are temporarily unavailable. Please try again later.",
+      503,
     );
   }
 
-  // Resolve from CueAI plan id only when provided — map to Stripe Price ID server-side.
-  const plan = resolveCheckoutPlan({
-    planId: input.planId,
-    // Ignore client price ids unless no planId was sent (legacy). Prefer planId.
-    priceId: input.planId ? undefined : input.priceId,
-  });
-  if (!plan || plan.id === "free" || !plan.stripePriceId) {
-    throw new BillingUserError(
-      "Payments are temporarily unavailable. Please try again later.",
-    );
+  const requested = String(input.planId || "").trim();
+  if (!requested) {
+    throw new BillingUserError("planId is required.", 400);
   }
-  // Reject arbitrary price ids that are not in the CueAI allow-list.
-  if (input.priceId && !input.planId && plan.stripePriceId !== input.priceId.trim()) {
+
+  const plan = getBillingPlan(requested);
+  if (!plan) {
+    logBilling("checkout.blocked", { category: "invalid_plan", planId: requested });
+    throw new BillingUserError("Invalid plan.", 400);
+  }
+  if (plan.id === "free") {
+    throw new BillingUserError("Free plan does not require payment.", 400);
+  }
+  if (!plan.stripePriceId) {
+    logBilling("checkout.blocked", { category: "missing_price", planId: plan.id });
     throw new BillingUserError(
       "Payments are temporarily unavailable. Please try again later.",
+      503,
     );
   }
 
   const user = await findUserById(input.userId);
   if (!user || user.status === "Deactivated") {
-    throw new BillingUserError("Unable to start checkout.");
+    throw new BillingUserError("Unable to start checkout.", 403);
   }
 
-  const base = appBaseUrl();
-  const successUrl =
-    input.successUrl || `${base}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = input.cancelUrl || `${base}/settings#billing`;
+  const successUrl = trustedAppUrl("/billing/success?session_id={CHECKOUT_SESSION_ID}");
+  const cancelUrl = trustedAppUrl("/billing/cancelled");
 
   // Existing active subscription → change plan (no second subscription).
   if (user.stripeSubscriptionId && user.billingStatus && ACCESS_GRANTING_STATUSES.has(user.billingStatus)) {
@@ -263,7 +301,7 @@ export async function createCheckoutSession(input: {
         status: changed.status,
       });
       return {
-        url: `${base}/billing/success?updated=1`,
+        url: trustedAppUrl("/billing/success?updated=1"),
         sessionId: user.stripeSubscriptionId,
         changed: true,
       };
@@ -280,30 +318,47 @@ export async function createCheckoutSession(input: {
   const stripe = getStripe();
   const trial = trialDays();
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    client_reference_id: user.id,
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    allow_promotion_codes: true,
-    billing_address_collection: "auto",
-    // Payment methods (card, Apple Pay, Link, ACH, etc.) come from Stripe Dashboard.
-    line_items: [{ price: plan.stripePriceId, quantity: 1 }],
-    subscription_data: {
-      ...(trial > 0 ? { trial_period_days: trial } : {}),
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      client_reference_id: user.id,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      allow_promotion_codes: true,
+      billing_address_collection: "auto",
+      line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+      subscription_data: {
+        ...(trial > 0 ? { trial_period_days: trial } : {}),
+        metadata: {
+          cueai_user_id: user.id,
+          cueai_plan_id: plan.id,
+        },
+      },
       metadata: {
         cueai_user_id: user.id,
         cueai_plan_id: plan.id,
       },
-    },
-    metadata: {
-      cueai_user_id: user.id,
-      cueai_plan_id: plan.id,
-    },
-  });
+    });
+  } catch (err) {
+    const stripeErr = err as { type?: string; code?: string; message?: string };
+    logBilling("checkout.stripe_api", {
+      category: "stripe_api",
+      userId: user.id,
+      planId: plan.id,
+      type: stripeErr.type || "unknown",
+      code: stripeErr.code || "unknown",
+      message: stripeErr.message || "stripe_error",
+    });
+    throw new BillingUserError(
+      "Payments are temporarily unavailable. Please try again later.",
+      503,
+    );
+  }
 
   if (!session.url) {
+    logBilling("checkout.blocked", { category: "missing_checkout_url", userId: user.id });
     throw new BillingUserError("Unable to start checkout.");
   }
 
@@ -321,15 +376,15 @@ export async function createPortalSession(input: {
   returnUrl?: string;
 }): Promise<{ url: string }> {
   if (!isStripeBillingConfigured()) {
-    throw new BillingUserError("Billing service is temporarily unavailable.");
+    throw new BillingUserError("Billing service is temporarily unavailable.", 503);
   }
   const user = await findUserById(input.userId);
-  if (!user) throw new BillingUserError("Unable to open billing portal.");
+  if (!user) throw new BillingUserError("Unable to open billing portal.", 401);
   const customerId = user.stripeCustomerId || (await ensureStripeCustomer(user));
   const stripe = getStripe();
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: input.returnUrl || `${appBaseUrl()}/settings#billing`,
+    return_url: sameOriginReturnUrl(input.returnUrl, "/settings#billing"),
   });
   return { url: session.url };
 }
@@ -609,8 +664,15 @@ async function resolveUserIdFromSubscription(sub: Stripe.Subscription): Promise<
 export async function handleStripeWebhookEvent(
   event: Stripe.Event,
 ): Promise<{ handled: boolean; duplicate?: boolean }> {
-  const store = await readBillingStore();
-  if (store.processedEventIds.includes(event.id)) {
+  let duplicate = false;
+  await updateBillingStore((store) => {
+    if (store.processedEventIds.includes(event.id)) {
+      duplicate = true;
+      return;
+    }
+    store.processedEventIds.push(event.id);
+  });
+  if (duplicate) {
     logBilling("webhook.duplicate", { eventId: event.id, type: event.type });
     return { handled: true, duplicate: true };
   }
@@ -623,6 +685,16 @@ export async function handleStripeWebhookEvent(
           session.client_reference_id ||
           session.metadata?.cueai_user_id ||
           null;
+        const paymentOk =
+          session.payment_status === "paid" ||
+          session.payment_status === "no_payment_required";
+        if (!paymentOk) {
+          logBilling("webhook.checkout_unpaid", {
+            eventId: event.id,
+            paymentStatus: session.payment_status,
+          });
+          break;
+        }
         if (session.mode === "subscription" && session.subscription && userId) {
           const stripe = getStripe();
           const subId =
@@ -694,6 +766,9 @@ export async function handleStripeWebhookEvent(
         logBilling("webhook.ignored", { eventId: event.id, type: event.type });
     }
   } catch (err) {
+    await updateBillingStore((s) => {
+      s.processedEventIds = s.processedEventIds.filter((id) => id !== event.id);
+    });
     logBilling("webhook.error", {
       eventId: event.id,
       type: event.type,
@@ -701,12 +776,6 @@ export async function handleStripeWebhookEvent(
     });
     throw err;
   }
-
-  await updateBillingStore((s) => {
-    if (!s.processedEventIds.includes(event.id)) {
-      s.processedEventIds.push(event.id);
-    }
-  });
 
   return { handled: true };
 }

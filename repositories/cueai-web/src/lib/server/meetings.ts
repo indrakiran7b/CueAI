@@ -6,15 +6,17 @@ import {
   type DbMeeting,
   type DbMeetingLine,
 } from "@/lib/server/db";
+import { hasEntitlement } from "@/lib/server/billing";
 import type { SessionPayload } from "@/lib/server/session";
 import { normalizeRole } from "@/lib/roles";
 
 export async function meetingQaForSession(session: SessionPayload) {
   const store = await readStore();
   const user = store.users.find((u) => u.id === session.userId);
+  const paid = user ? hasEntitlement(user, "meeting.full_summary") : false;
   return {
     role: session.role,
-    plan: user?.plan ?? null,
+    plan: paid ? "premium" : "free",
   };
 }
 

@@ -25,8 +25,12 @@ export type BillingPlanDefinition = {
   currency: "usd";
 };
 
-function env(name: string): string {
-  return process.env[name]?.trim() || "";
+function env(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return "";
 }
 
 function displayCents(name: string, fallback = 0): number {
@@ -72,7 +76,7 @@ export function listBillingPlans(): BillingPlanDefinition[] {
       name: "Pro",
       description: "Full meeting insights for professionals.",
       interval: "month",
-      stripePriceId: env("STRIPE_PRICE_PRO_MONTHLY"),
+      stripePriceId: env("STRIPE_PRICE_PRO_MONTHLY", "STRIPE_PRO_PRICE_ID"),
       keygatePlanId: env("KEYGATE_PLAN_ID_PRO") || env("KEYGATE_PLAN_ID_PRO_MONTHLY"),
       cuePlan: "premium",
       entitlementLevel: "pro",
@@ -114,7 +118,7 @@ export function listBillingPlans(): BillingPlanDefinition[] {
       name: "Team",
       description: "Collaboration for growing teams.",
       interval: "month",
-      stripePriceId: env("STRIPE_PRICE_TEAM_MONTHLY"),
+      stripePriceId: env("STRIPE_PRICE_TEAM_MONTHLY", "STRIPE_TEAM_PRICE_ID"),
       keygatePlanId: env("KEYGATE_PLAN_ID_TEAM") || env("KEYGATE_PLAN_ID_TEAM_MONTHLY"),
       cuePlan: "premium",
       entitlementLevel: "team",

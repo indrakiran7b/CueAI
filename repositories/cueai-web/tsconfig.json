@@ -62,6 +62,7 @@
     "node_modules",
     "_local_backup",
     "../cueai-shared-libraries/src/licensing/**",
-    "scripts/test-device-auth.mts"
+    "scripts/test-device-auth.mts",
+    "scripts/test-billing.mts"
   ]
 }

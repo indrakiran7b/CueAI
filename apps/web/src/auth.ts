@@ -30,7 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           Google({
             clientId: process.env.AUTH_GOOGLE_ID!,
             clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-            allowDangerousEmailAccountLinking: true,
+            allowDangerousEmailAccountLinking: false,
           }),
         ]
       : []),
@@ -39,7 +39,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           GitHub({
             clientId: process.env.AUTH_GITHUB_ID!,
             clientSecret: process.env.AUTH_GITHUB_SECRET!,
-            allowDangerousEmailAccountLinking: true,
+            allowDangerousEmailAccountLinking: false,
           }),
         ]
       : []),
@@ -49,6 +49,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/login",
   },
   callbacks: {
+    async signIn({ account, profile }) {
+      if (account?.provider === "google") {
+        const verified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
+        const email = (profile as { email?: string } | undefined)?.email;
+        if (!email || verified !== true) return false;
+      }
+      return true;
+    },
     async jwt({ token, user, account }) {
       if (user) {
         token.name = user.name;

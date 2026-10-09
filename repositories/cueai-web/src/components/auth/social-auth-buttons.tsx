@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { MacGlassButton } from "@/components/mac";
+import { oauthBridgeCallbackUrl } from "@/lib/oauth-complete";
 
 type ProviderId = "google" | "github" | "apple";
 type ProviderStatus = { google: boolean; github: boolean; apple: boolean };
@@ -48,7 +49,7 @@ const loadingLabel: Record<ProviderId, string> = {
 };
 
 export function SocialAuthButtons({
-  callbackUrl = "/dashboard",
+  callbackUrl = oauthBridgeCallbackUrl("/dashboard"),
   appearance = "default",
   providers: visibleProviders = ["google", "apple"],
 }: {
@@ -65,7 +66,7 @@ export function SocialAuthButtons({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/providers")
+    fetch("/api/auth/providers", { cache: "no-store" })
       .then((r) => r.json())
       .then((data: ProviderStatus) =>
         setProviders({

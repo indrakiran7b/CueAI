@@ -11,6 +11,7 @@ import { signupWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
+import { oauthBridgeCallbackUrl } from "@/lib/oauth-complete";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import { persistProductFromSearch } from "@/lib/product-mode";
 import { isMacDesktopApp } from "@/lib/desktop";
@@ -134,7 +135,7 @@ function SignupForm() {
         <MacAuthDivider />
         <SocialAuthButtons
           appearance="mac"
-          callbackUrl="/onboarding?desktop=mac"
+          callbackUrl={oauthBridgeCallbackUrl("/onboarding?desktop=mac")}
           providers={["google", "apple"]}
         />
       </MacAuthShell>
@@ -170,7 +171,7 @@ function SignupForm() {
         </>
       }
     >
-      <SocialAuthButtons callbackUrl="/onboarding" providers={["google", "apple"]} />
+      <SocialAuthButtons callbackUrl={oauthBridgeCallbackUrl("/onboarding")} providers={["google", "apple"]} />
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">

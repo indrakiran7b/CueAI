@@ -1,8 +1,10 @@
 import Stripe from "stripe";
 
 let stripeSingleton: Stripe | null = null;
+let stripeTestOverride: Stripe | null = null;
 
 export function getStripe(): Stripe {
+  if (stripeTestOverride) return stripeTestOverride;
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not configured.");
@@ -22,6 +24,12 @@ export function getStripeWebhookSecret(): string {
   return secret;
 }
 
+export function setStripeClientForTests(client: Stripe | null) {
+  stripeTestOverride = client;
+  stripeSingleton = null;
+}
+
 export function resetStripeClientForTests() {
   stripeSingleton = null;
+  stripeTestOverride = null;
 }

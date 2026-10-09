@@ -11,6 +11,7 @@ import { loginWithEmailApi, AUTH_BYPASS } from "@/lib/auth";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SocialAuthButtons, MacAuthDivider } from "@/components/auth/social-auth-buttons";
+import { oauthBridgeCallbackUrl } from "@/lib/oauth-complete";
 import { canAccessAdmin } from "@/lib/roles";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import {
@@ -136,12 +137,16 @@ function LoginForm() {
       setError(
         "OAuth is not configured on the server. Add the Google or Apple keys and restart CueAI."
       );
-    } else if (authError === "AccessDenied" || authError === "OAuthCallbackError") {
+    } else if (authError === "AccessDenied") {
+      setError("Google denied access, or this Google account email is not verified.");
+    } else if (authError === "OAuthCallbackError") {
       setError("Sign-in was cancelled.");
     } else if (authError === "OAuthAccountNotLinked") {
       setError("An account already exists with this email. Sign in with email, then use the same verified address.");
     } else if (authError === "Callback" || authError === "OAuthCallback") {
-      setError("OAuth failed. Check your connection and try again.");
+      setError(
+        "OAuth callback failed. In Google Cloud, add http://localhost:3000/api/auth/callback/google (and http://127.0.0.1:3000/api/auth/callback/google) — not an Appwrite URL.",
+      );
     } else {
       setError("Sign-in failed. Please try again or use email.");
     }
@@ -249,7 +254,9 @@ function LoginForm() {
         <MacAuthDivider />
         <SocialAuthButtons
           appearance="mac"
-          callbackUrl={resumeFlow ? "/resume-tailor?product=resume" : "/dashboard?desktop=mac"}
+          callbackUrl={withDesktopParam(
+            oauthBridgeCallbackUrl(resumeFlow ? "/resume-tailor?product=resume" : "/dashboard"),
+          )}
           providers={["google", "apple"]}
         />
       </MacAuthShell>
@@ -274,7 +281,9 @@ function LoginForm() {
       }
     >
       <SocialAuthButtons
-        callbackUrl={resumeFlow ? "/resume-tailor?product=resume" : "/dashboard"}
+        callbackUrl={withDesktopParam(
+          oauthBridgeCallbackUrl(resumeFlow ? "/resume-tailor?product=resume" : "/dashboard"),
+        )}
         providers={["google", "apple"]}
       />
 

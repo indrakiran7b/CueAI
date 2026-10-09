@@ -90,13 +90,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // OAuth authenticated but no CueAI cookie yet — link membership by verified email.
+      // OAuth authenticated but no CueAI cookie yet — sync membership.
       if (nextSession?.user?.email) {
         const linked = await syncOAuthMembership();
         if (cancelled || gen !== syncGenRef.current) return;
-        if (linked) {
-          setLocalSession(linked);
+        if (linked.ok) {
+          setLocalSession(linked.session);
           setReady(true);
+          return;
+        }
+        if (linked.code === "OAuthAccountNotLinked" && typeof window !== "undefined") {
+          await nextAuthSignOut({ redirect: false });
+          const next = new URL("/login", window.location.origin);
+          next.searchParams.set("error", "OAuthAccountNotLinked");
+          window.location.assign(next.pathname + next.search);
           return;
         }
       }

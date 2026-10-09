@@ -6,6 +6,7 @@ import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
+import { oauthBridgeCallbackUrl } from "@/lib/oauth-complete";
 import { loginAdmin, type AdminSession } from "@/lib/admin-auth";
 
 export function AdminLoginForm({
@@ -69,7 +70,7 @@ export function AdminLoginForm({
             Access the workspace administration console.
           </p>
           <div className="mt-8 space-y-6">
-            <SocialAuthButtons callbackUrl="/admin" />
+            <SocialAuthButtons callbackUrl={oauthBridgeCallbackUrl("/admin")} />
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">

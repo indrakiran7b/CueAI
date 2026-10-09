@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
     if (err instanceof BillingUserError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    console.error("[billing] webhook.error", err instanceof Error ? err.message : err);
+    console.error("[billing] webhook.error", {
+      category: "unexpected",
+      message: err instanceof Error ? err.message : "unknown",
+    });
     return NextResponse.json(
       { error: "Webhook processing failed." },
       { status: 500 },

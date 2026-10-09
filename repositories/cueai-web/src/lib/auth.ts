@@ -220,16 +220,33 @@ export async function syncSessionFromServer(): Promise<CueSession | null> {
   }
 }
 
-/** Link OAuth identity to CueAI membership cookie (preserves invited role). */
-export async function syncOAuthMembership(): Promise<CueSession | null> {
+export type OAuthSyncResult =
+  | { ok: true; session: CueSession }
+  | { ok: false; error: string; code?: string };
+
+/** Bridge a verified NextAuth identity onto the CueAI membership cookie. */
+export async function syncOAuthMembership(): Promise<OAuthSyncResult> {
   try {
-    const res = await fetch("/api/auth/oauth-sync", { method: "POST", cache: "no-store" });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { user?: ApiUser };
-    if (!data.user) return null;
-    return sessionFromApiUser(data.user);
+    const res = await fetch("/api/auth/oauth-sync", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "include",
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      user?: ApiUser;
+      error?: string;
+      code?: string;
+    };
+    if (res.ok && data.user) {
+      return { ok: true, session: sessionFromApiUser(data.user) };
+    }
+    return {
+      ok: false,
+      error: data.error || "Could not finish Google sign-in.",
+      code: data.code,
+    };
   } catch {
-    return null;
+    return { ok: false, error: "Could not finish Google sign-in." };
   }
 }
 
