@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   const pending = new Set(store.liveBriefing?.pendingKnowledgeIds || []);
 
   let items = store.knowledge.filter((k) => {
-    if (k.workspaceId && k.workspaceId !== session.workspaceId) return false;
+    if (!k.workspaceId || k.workspaceId !== session.workspaceId) return false;
     if (meetingId) return k.meetingId === meetingId;
     // Prep list: pending uploads by this user, or docs for active meeting.
     if (pending.has(k.id) && k.createdBy === session.userId) return true;
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   // Also surface workspace docs eligible for attach (indexed only).
   const workspaceDocs = store.knowledge.filter(
     (k) =>
-      (!k.workspaceId || k.workspaceId === session.workspaceId) &&
+      k.workspaceId === session.workspaceId &&
       !k.meetingId &&
       k.status === "indexed" &&
       (k.knowledgeScope === "workspace" || !k.knowledgeScope),
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
   const dup = store.knowledge.find(
     (k) =>
       k.checksum === checksum &&
-      (!k.workspaceId || k.workspaceId === session.workspaceId) &&
+      k.workspaceId === session.workspaceId &&
       (meetingId ? k.meetingId === meetingId : !k.meetingId || store.liveBriefing?.pendingKnowledgeIds?.includes(k.id)) &&
       k.status !== "failed",
   );
@@ -226,7 +226,7 @@ export async function DELETE(req: NextRequest) {
 
   const store = await readStore();
   const doc = store.knowledge.find((k) => k.id === id);
-  if (!doc || (doc.workspaceId && doc.workspaceId !== session.workspaceId)) {
+  if (!doc || doc.workspaceId !== session.workspaceId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   // Users may delete their own meeting-scoped docs; Admin/Manager can delete any in workspace.

@@ -9,10 +9,11 @@ export function configureMeetingPersist(base: string) {
   if (base) apiBase = base.replace(/\/$/, "");
 }
 
-function postEvent(body: Record<string, unknown>) {
+async function postEvent(body: Record<string, unknown>) {
+  const { deviceAuthHeaders } = await import("../../../shared/device-auth-headers");
   void fetch(`${apiBase}/api/live/meeting-event`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await deviceAuthHeaders()) },
     body: JSON.stringify(body),
   }).catch((err) => {
     console.error("[MEETING] Persist failed", err instanceof Error ? err.message : err);

@@ -114,7 +114,7 @@ function LoginForm() {
     persistDesktopQuery();
     persistProductFromSearch(searchParams.toString());
     persistProductMode(resumeFlow ? "resume" : "cueai");
-    setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
+    setMac(isMacDesktopApp());
   }, [searchParams, resumeFlow]);
 
   useEffect(() => {

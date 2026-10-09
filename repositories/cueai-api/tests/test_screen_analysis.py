@@ -11,10 +11,25 @@ from celery.contrib.testing.worker import start_worker
 from fastapi.testclient import TestClient
 
 from app.core.celery import TASK_QUEUES, celery_app
+from app.core.session import SESSION_COOKIE, sign_session
 from app.main import create_app
 from app.modules.live.gemini import gemini_generate_json
 from app.modules.live.screen_service import ScreenAnalysisError, validate_screen_request
 from app.modules.live.screen_vision import analyze_screen_with_gemini
+
+
+def auth_cookies() -> dict[str, str]:
+    token = sign_session(
+        {
+            "userId": "usr_test",
+            "email": "test@cueai.local",
+            "name": "Test",
+            "role": "User",
+            "workspaceId": "ws_default",
+            "workspace": "Test",
+        }
+    )
+    return {SESSION_COOKIE: token}
 
 PNG_DATA_URL = (
     "data:image/png;base64,"
@@ -89,6 +104,7 @@ def test_screen_post_returns_job_id(monkeypatch, redis_settings) -> None:
         res = client.post(
             "/v1/live/screen",
             json={"image": PNG_DATA_URL, "prompt": "What is on screen?"},
+            cookies=auth_cookies(),
         )
     assert res.status_code == 200
     body = res.json()
@@ -99,14 +115,18 @@ def test_screen_missing_gemini_key(monkeypatch, redis_settings) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("VERTEX_API_KEY", raising=False)
     with TestClient(create_app(redis_settings)) as client:
-        res = client.post("/v1/live/screen", json={"image": PNG_DATA_URL})
+        res = client.post(
+            "/v1/live/screen",
+            json={"image": PNG_DATA_URL},
+            cookies=auth_cookies(),
+        )
     assert res.status_code == 503
 
 
 @pytest.mark.redis
 def test_job_status_not_found(redis_settings) -> None:
     with TestClient(create_app(redis_settings)) as client:
-        res = client.get("/v1/jobs/does-not-exist")
+        res = client.get("/v1/jobs/does-not-exist", cookies=auth_cookies())
     assert res.status_code == 404
 
 
@@ -132,10 +152,11 @@ def test_screen_end_to_end_celery_redis(monkeypatch, redis_settings) -> None:
             res = client.post(
                 "/v1/live/screen",
                 json={"image": PNG_DATA_URL, "prompt": "Read screen"},
+                cookies=auth_cookies(),
             )
             assert res.status_code == 200
             job_id = res.json()["jobId"]
-            job_res = client.get(f"/v1/jobs/{job_id}")
+            job_res = client.get(f"/v1/jobs/{job_id}", cookies=auth_cookies())
             job = job_res.json()
     finally:
         celery_app.conf.task_always_eager = False
@@ -173,6 +194,7 @@ def test_screen_end_to_end_with_worker(monkeypatch, redis_settings) -> None:
             res = client.post(
                 "/v1/live/screen",
                 json={"image": PNG_DATA_URL, "prompt": "Read screen"},
+                cookies=auth_cookies(),
             )
             assert res.status_code == 200
             job_id = res.json()["jobId"]
@@ -180,7 +202,7 @@ def test_screen_end_to_end_with_worker(monkeypatch, redis_settings) -> None:
             deadline = time.time() + 25
             job = None
             while time.time() < deadline:
-                job_res = client.get(f"/v1/jobs/{job_id}")
+                job_res = client.get(f"/v1/jobs/{job_id}", cookies=auth_cookies())
                 job = job_res.json()
                 if job.get("status") in {"completed", "failed"}:
                     break

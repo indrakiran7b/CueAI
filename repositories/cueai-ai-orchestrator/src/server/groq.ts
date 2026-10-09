@@ -10,13 +10,13 @@ export const GROQ_DEFAULT_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-
 const MODEL_FALLBACKS = [
   GROQ_DEFAULT_MODEL,
   "openai/gpt-oss-20b",
-  "llama-3.3-70b-versatile",
+  "openai/gpt-oss-120b",
 ].filter((v, i, arr) => arr.indexOf(v) === i);
 
-/** Prefer low-latency models for live overlay streaming. */
+/** Live overlay streaming uses the same configured Groq family (retired Llama IDs 404). */
 const STREAM_MODEL_FALLBACKS = [
-  process.env.GROQ_STREAM_MODEL?.trim() || "llama-3.1-8b-instant",
-  "llama-3.3-70b-versatile",
+  process.env.GROQ_STREAM_MODEL?.trim() || GROQ_DEFAULT_MODEL,
+  "openai/gpt-oss-20b",
   GROQ_DEFAULT_MODEL,
 ].filter((v, i, arr) => v && arr.indexOf(v) === i);
 
@@ -53,7 +53,7 @@ export async function generateGroqText(req: {
 }): Promise<GroqResult> {
   const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
-    throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
+    throw new GroqError("AI provider is not configured.", 503);
   }
 
   let lastStatus = 502;
@@ -135,7 +135,7 @@ export async function streamGroqText(req: {
 }): Promise<GroqResult> {
   const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
-    throw new GroqError("GROQ_API_KEY is not configured on the server.", 503);
+    throw new GroqError("AI provider is not configured.", 503);
   }
 
   let lastStatus = 502;

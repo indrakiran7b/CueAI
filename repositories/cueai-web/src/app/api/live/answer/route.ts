@@ -9,6 +9,7 @@ import {
   type LiveAnswerMode,
   type LiveTranscriptLine,
 } from "@/lib/live-answer";
+import { requireAuthOrDevice, upstreamSessionCookieHeader } from "@/lib/server/api-auth";
 import {
   GeminiError,
   generateGeminiText,
@@ -16,17 +17,14 @@ import {
   type GeminiJsonSchema,
 } from "@/lib/server/gemini";
 import { GroqError, generateGroqText, resolveGroqApiKey, streamGroqText } from "@/lib/server/groq";
+import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-// The desktop overlay runs on its own origin (Vite dev server or file://),
-// so it needs the same permissive CORS as /api/transcribe.
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept",
-};
+// Overlay uses header auth from a different origin. CORS * is paired with
+// device headers, not credentialed cookies.
+const CORS_HEADERS = liveCorsHeaders("POST, OPTIONS");
 
 function sseHeaders() {
   return {
@@ -85,6 +83,14 @@ function parseTranscript(input: unknown): LiveTranscriptLine[] {
 }
 
 export async function POST(request: NextRequest) {
+  const { error, session } = await requireAuthOrDevice(request);
+  if (error || !session) {
+    return withLiveCors(
+      error || NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      "POST, OPTIONS",
+    );
+  }
+
   if (process.env.CUEAI_LIVE_ANSWER_LOCAL !== "1") {
     const base = (process.env.CUEAI_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
     try {
@@ -93,15 +99,20 @@ export async function POST(request: NextRequest) {
         headers: {
           "content-type": request.headers.get("content-type") || "application/json",
           accept: request.headers.get("accept") || "*/*",
-          ...(request.headers.get("cookie")
-            ? { cookie: request.headers.get("cookie") as string }
-            : {}),
+          cookie: upstreamSessionCookieHeader(session, request.headers.get("cookie")),
         },
         body: await request.arrayBuffer(),
       });
       const headers = new Headers(CORS_HEADERS);
       const type = upstream.headers.get("content-type");
       if (type) headers.set("content-type", type);
+      if (upstream.status === 401) {
+        console.log("[AUTH] Unauthorized", {
+          method: "POST",
+          path: "/v1/live/answer",
+          source: "fastapi-upstream",
+        });
+      }
       return new Response(upstream.body, { status: upstream.status, headers });
     } catch {
       return json(
@@ -119,12 +130,10 @@ export async function POST(request: NextRequest) {
     ReturnType<(typeof import("@/lib/server/credential-resolver"))["resolveCredential"]>
   > = null;
   try {
-    const { getSessionFromRequest } = await import("@/lib/server/api-auth");
     const { resolveCredential } = await import("@/lib/server/credential-resolver");
-    const session = await getSessionFromRequest();
     byok = await resolveCredential({
-      userId: session?.userId,
-      workspaceId: session?.workspaceId,
+      userId: session.userId,
+      workspaceId: session.workspaceId,
       capability: "live_session",
     });
   } catch {
@@ -145,8 +154,7 @@ export async function POST(request: NextRequest) {
   if (!userByok && !effectiveGroqKey && !credentials) {
     return json(
       {
-        error:
-          "No API key is configured for this provider.\nPlease add an API key in Settings → API Keys.",
+        error: "AI provider is not configured.",
       },
       503,
     );
@@ -161,6 +169,7 @@ export async function POST(request: NextRequest) {
           sessionContext?: unknown;
           image?: unknown;
           stream?: unknown;
+          skipKnowledge?: unknown;
         }
       | null;
 
@@ -184,7 +193,6 @@ export async function POST(request: NextRequest) {
     let hasResume = sessionContext.includes("CANDIDATE RESUME");
     let profileContext = "";
 
-    // Stream path: meeting-aware RAG without blocking on full profile merge.
     if (wantStream && effectiveGroqKey && !inlineImage) {
       let knowledgeContext = "";
       let knowledgeMeta: {
@@ -193,31 +201,31 @@ export async function POST(request: NextRequest) {
         sources: unknown[];
       } = { knowledgeUsed: false, sourceType: "general_ai", sources: [] };
       try {
-        const { retrieveKnowledgeForMeeting } = await import(
+        const { needsLiveKnowledge, retrieveKnowledgeForMeeting } = await import(
           "@/lib/server/knowledge-retrieve"
         );
-        const { getSessionFromRequest } = await import("@/lib/server/api-auth");
-        const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-        const session = await getSessionFromRequest();
-        const resolved = await resolveAnswerBriefing();
-        const kb = await retrieveKnowledgeForMeeting(prompt, {
-          workspaceId: session?.workspaceId || resolved.meeting?.workspaceId,
-          meetingId: resolved.meeting?.id,
-          documentIds: resolved.briefing.documentIds,
-          includeWorkspace: true,
-          maxChars: 700,
-        });
-        knowledgeContext = kb.context;
-        knowledgeMeta = {
-          knowledgeUsed: kb.knowledgeUsed,
-          sourceType: kb.sourceType,
-          sources: kb.sources.slice(0, 3),
-        };
+        if (body?.skipKnowledge !== true && needsLiveKnowledge(prompt)) {
+          const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
+          const resolved = await resolveAnswerBriefing(session);
+          const kb = await retrieveKnowledgeForMeeting(prompt, {
+            workspaceId: session.workspaceId,
+            meetingId: resolved.meeting?.id,
+            documentIds: resolved.briefing.documentIds,
+            includeWorkspace: true,
+            maxChars: 700,
+          });
+          knowledgeContext = kb.context;
+          knowledgeMeta = {
+            knowledgeUsed: kb.knowledgeUsed,
+            sourceType: kb.sourceType,
+            sources: kb.sources.slice(0, 3),
+          };
+        }
       } catch {
         // KB is optional for latency.
       }
 
-      const system = buildSystemInstruction("", hasResume || Boolean(sessionContext));
+      const system = buildSystemInstruction("", Boolean(sessionContext));
       const userPrompt = buildUserPrompt({
         prompt,
         transcript,
@@ -256,12 +264,10 @@ export async function POST(request: NextRequest) {
             void (async () => {
               try {
                 const { randomUUID } = await import("node:crypto");
-                const { getSessionFromRequest } = await import("@/lib/server/api-auth");
                 const { recordUsageEvent } = await import("@/lib/server/usage");
-                const { getActiveMeeting, appendMeetingExchange } = await import(
+                const { getActiveMeetingForSession, appendMeetingExchange } = await import(
                   "@/lib/server/meetings"
                 );
-                const session = await getSessionFromRequest();
                 const total = Math.max(1, result.inputTokens + result.outputTokens);
                 await recordUsageEvent(session, {
                   type: "tokens",
@@ -273,7 +279,7 @@ export async function POST(request: NextRequest) {
                   idempotencyKey: `tokens:live_answer_stream:${randomUUID()}`,
                   metadata: { feature: "live_answer_stream", mode },
                 });
-                const active = await getActiveMeeting();
+                const active = await getActiveMeetingForSession(session);
                 if (active?.id && result.text.trim()) {
                   await appendMeetingExchange(active.id, prompt, result.text, {
                     provider: "groq",
@@ -329,10 +335,10 @@ export async function POST(request: NextRequest) {
                 });
                 void (async () => {
                   try {
-                    const { getActiveMeeting, appendMeetingExchange } = await import(
+                    const { getActiveMeetingForSession, appendMeetingExchange } = await import(
                       "@/lib/server/meetings"
                     );
-                    const active = await getActiveMeeting();
+                    const active = await getActiveMeetingForSession(session);
                     if (active?.id && answer.trim()) {
                       await appendMeetingExchange(active.id, prompt, answer, {
                         provider: "gemini",
@@ -369,9 +375,8 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const { getSessionFromRequest } = await import("@/lib/server/api-auth");
       const { getProfileContext } = await import("@/lib/server/user-profile");
-      profileContext = await getProfileContext((await getSessionFromRequest())?.userId);
+      profileContext = await getProfileContext(session.userId);
     } catch {
       // Personalization is best-effort; never block a live answer.
     }
@@ -379,7 +384,7 @@ export async function POST(request: NextRequest) {
     try {
       const { describeLiveSessionContext } = await import("@/lib/live-session-config");
       const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-      const resolved = await resolveAnswerBriefing();
+      const resolved = await resolveAnswerBriefing(session);
       meetingId = resolved.meeting?.id || null;
       hasResume = Boolean(resolved.briefing.resumeText?.trim()) || hasResume;
       const fromStore = describeLiveSessionContext({
@@ -417,13 +422,11 @@ export async function POST(request: NextRequest) {
       const { retrieveKnowledgeForMeeting } = await import(
         "@/lib/server/knowledge-retrieve"
       );
-      const { getSessionFromRequest } = await import("@/lib/server/api-auth");
-      const session = await getSessionFromRequest();
       const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-      const resolved = await resolveAnswerBriefing();
+      const resolved = await resolveAnswerBriefing(session);
       meetingId = meetingId || resolved.meeting?.id || null;
       const kb = await retrieveKnowledgeForMeeting(prompt, {
-        workspaceId: session?.workspaceId || resolved.meeting?.workspaceId,
+        workspaceId: session.workspaceId,
         meetingId,
         documentIds: resolved.briefing.documentIds,
         includeWorkspace: true,
@@ -452,7 +455,7 @@ export async function POST(request: NextRequest) {
       inputTokens: number;
       outputTokens: number;
     };
-    let provider = "groq";
+    let provider = "gemini";
 
     if (inlineImage && rawImage) {
       try {
@@ -497,6 +500,34 @@ export async function POST(request: NextRequest) {
         outputTokens: byokResult.outputTokens,
       };
       provider = byokResult.provider;
+    } else if (credentials && !preferGemini) {
+      try {
+        console.log("[GEMINI] Request started");
+        result = await generateGeminiText({
+          credentials,
+          system,
+          prompt: userPrompt,
+          temperature: 0.4,
+          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+          thinkingLevel: "MINIMAL",
+          jsonSchema: ANSWER_SCHEMA,
+        });
+        provider = "gemini";
+      } catch (err) {
+        if (!effectiveGroqKey) throw err;
+        console.error("live_answer_gemini_fallback", err instanceof Error ? err.message : err);
+        console.log("[GROQ] Fallback started");
+        result = await generateGroqText({
+          system,
+          prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
+          temperature: 0.4,
+          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+          jsonObject: true,
+          apiKey: effectiveGroqKey,
+          model: byokGroqModel,
+        });
+        provider = "groq";
+      }
     } else if (effectiveGroqKey && !preferGemini) {
       try {
         console.log("[GROQ] Request started");
@@ -509,6 +540,7 @@ export async function POST(request: NextRequest) {
           apiKey: effectiveGroqKey,
           model: byokGroqModel,
         });
+        provider = "groq";
       } catch (err) {
         if (!credentials) throw err;
         console.error("live_answer_groq_fallback", err instanceof Error ? err.message : err);
@@ -561,9 +593,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const { randomUUID } = await import("node:crypto");
-      const { getSessionFromRequest } = await import("@/lib/server/api-auth");
       const { recordUsageEvent } = await import("@/lib/server/usage");
-      const session = await getSessionFromRequest();
       const total = Math.max(1, result.inputTokens + result.outputTokens);
       await recordUsageEvent(session, {
         type: "tokens",

@@ -1,5 +1,12 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { normalizeRole } from "@/lib/roles";
 import { appendAudit, readStore, updateStore, type DbDevice, type DeviceStatus } from "@/lib/server/db";
+import type { SessionPayload } from "@/lib/server/session";
+
+export const DEVICE_ID_HEADER = "x-cueai-device-id";
+export const DEVICE_CREDENTIAL_HEADER = "x-cueai-device-credential";
+
+export type DeviceSession = SessionPayload & { deviceId: string };
 
 export function maskDeviceId(deviceId: string) {
   const id = deviceId.replace(/[^a-zA-Z0-9]/g, "");
@@ -44,6 +51,65 @@ export async function getDeviceForUser(userId: string, deviceId: string) {
   const store = await readStore();
   const devices = store.devices || [];
   return devices.find((d) => d.userId === userId && d.deviceId === deviceId) || null;
+}
+
+export async function getDeviceByDeviceId(deviceId: string) {
+  const id = deviceId.trim();
+  if (!id) return null;
+  const store = await readStore();
+  return (store.devices || []).find((d) => d.deviceId === id) || null;
+}
+
+/**
+ * Session-less device authentication. Missing credentialHash always fails.
+ * userId / workspaceId come only from the stored device → user row.
+ */
+export async function resolveDeviceSession(
+  deviceId: string,
+  credential: string,
+): Promise<DeviceSession | null> {
+  const id = String(deviceId || "").trim();
+  const token = String(credential || "").trim();
+  if (!id || !token) return null;
+
+  const storeForDevice = await readStore();
+  const matches = (storeForDevice.devices || []).filter((d) => d.deviceId === id);
+  const device = matches.find(
+    (d) => d.status === "ACTIVE" && d.credentialHash && credentialMatches(token, d.credentialHash),
+  );
+  if (!device) {
+    const statuses = [...new Set(matches.map((d) => d.status))];
+    console.log("[AUTH] device session failed", {
+      reason: matches.length ? "credential-mismatch" : "unknown-device",
+      rows: matches.length,
+      statuses,
+    });
+    return null;
+  }
+
+  const store = await readStore();
+  const user = store.users.find((u) => u.id === device.userId);
+  if (!user || user.status === "Deactivated") return null;
+
+  const now = new Date().toISOString();
+  await updateStore((s) => {
+    const row = (s.devices || []).find((d) => d.id === device.id);
+    if (row) {
+      row.lastVerifiedAt = now;
+      row.updatedAt = now;
+    }
+  });
+
+  return {
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    role: normalizeRole(user.role),
+    workspaceId: user.workspaceId || store.workspace.id,
+    workspace: store.workspace.name,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14,
+    deviceId: device.deviceId,
+  };
 }
 
 export async function registerDevice(input: {
@@ -131,10 +197,11 @@ export async function verifyDeviceForAccount(
   const device = await getDeviceForUser(userId, deviceId);
   if (!device) return { status: "NEW", authorized: false };
 
-  let credentialValid = true;
-  if (device.credentialHash) {
-    credentialValid = Boolean(credential && credentialMatches(credential, device.credentialHash));
-  }
+  const credentialValid = Boolean(
+    device.credentialHash &&
+      credential &&
+      credentialMatches(credential, device.credentialHash),
+  );
 
   if (device.status === "ACTIVE" && credentialValid) {
     await updateStore((s) => {

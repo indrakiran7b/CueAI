@@ -8,6 +8,7 @@ import {
 } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import { normalizeRole } from "@/lib/roles";
+import { isCueaiProduction, resolveAuthSecret } from "@/lib/runtime-env";
 
 export const SESSION_COOKIE = "cueai_admin_session";
 
@@ -22,7 +23,7 @@ export type SessionPayload = {
 };
 
 function secret() {
-  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "cueai-dev-secret-change-me";
+  return resolveAuthSecret();
 }
 
 function b64url(input: Buffer | string) {
@@ -160,7 +161,8 @@ export function sessionCookieOptions(maxAge = 60 * 60 * 24 * 14) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    // NODE_ENV=production is normal inside the web image. Product policy is CUEAI_ENV.
+    secure: isCueaiProduction(),
     path: "/",
     maxAge,
   };

@@ -14,6 +14,7 @@ from app.core.session import (
     verify_password,
 )
 from app.modules.auth.bypass import generate_bypass_signup_email, resolve_bypass_user
+from app.core.security import is_bootstrap_admin_email
 from app.persistence.store import append_audit, public_user, read_store, update_store
 
 
@@ -211,11 +212,16 @@ def signup(
             return
 
         active_users = [
-            u for u in s["users"] if u.get("status") == "Active" and u["email"] != "admin@cueai.local"
+            u
+            for u in s["users"]
+            if u.get("status") == "Active" and not is_bootstrap_admin_email(u.get("email"))
         ]
         only_bootstrap = (
             len([u for u in s["users"] if u.get("status") == "Active"]) == 1
-            and any(u["email"] == "admin@cueai.local" and u.get("status") == "Active" for u in s["users"])
+            and any(
+                is_bootstrap_admin_email(u.get("email")) and u.get("status") == "Active"
+                for u in s["users"]
+            )
         )
         role = "Admin" if len(active_users) == 0 or only_bootstrap else "User"
         user_id = f"usr_{uuid.uuid4().hex[:10]}"

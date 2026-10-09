@@ -36,17 +36,13 @@ def _should_retrieve(question: str) -> bool:
         return False
     if re.match(r"^(let'?s move on|moving on|next question|continue)\b", lower):
         return False
-    if "?" in q:
-        return True
-    if re.match(
-        r"^(what|why|how|when|where|who|which|can you|could you|tell me|describe|explain)\b",
-        lower,
-    ):
-        return True
+    # Only retrieve when the question is about this user's work / docs.
     if re.search(
-        r"\b(project|architecture|technolog|stack|experience|implement|integrat|requirement|client)\b",
+        r"\b((my|our|this|the)\s+)?(project|resume|experience|background|company|knowledge base|codebase|policy|onboarding|handbook|document|wiki)\b",
         lower,
     ):
+        return True
+    if re.search(r"\b(i|we)\s+(used|built|implemented|worked)\b", lower):
         return True
     return False
 

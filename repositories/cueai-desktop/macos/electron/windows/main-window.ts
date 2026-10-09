@@ -60,14 +60,33 @@ function showWorkspaceError(win: BrowserWindow, target: string, detail: string) 
   }
 }
 
+function withMacDesktopQuery(pathOrUrl: string) {
+  try {
+    const parsed = new URL(pathOrUrl, "http://127.0.0.1");
+    if (!parsed.searchParams.get("desktop")) {
+      parsed.searchParams.set("desktop", "mac");
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return pathOrUrl.includes("?") ? `${pathOrUrl}&desktop=mac` : `${pathOrUrl}?desktop=mac`;
+  }
+}
+
 async function loadRenderer(win: BrowserWindow, target: string) {
   const origin = getWebOrigin().replace(/\/$/, "");
   console.log("[ELECTRON] Renderer URL:", target);
   console.log("[WEB] Waiting for web server");
   try {
-    await waitForWebServer(origin, 15000);
+    await waitForWebServer(origin, 45000);
     console.log("[WEB] Web server ready");
-    if (win.isDestroyed()) return;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    // Same as Windows: still try loadURL. A failed health probe must not
+    // trap the window on the error page while the workspace is actually up.
+    console.warn("[WEB] Health probe failed, loading renderer anyway:", detail);
+  }
+  if (win.isDestroyed()) return;
+  try {
     console.log("[ELECTRON] Loading renderer");
     await win.loadURL(target);
   } catch (err) {
@@ -135,7 +154,10 @@ export function createMainWindow(): BrowserWindow {
     const initialPath = license.resolveStartupPath
       ? await license.resolveStartupPath()
       : license.resolveInitialPath();
-    target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
+    const path = withMacDesktopQuery(
+      initialPath.startsWith("/") ? initialPath : `/${initialPath}`
+    );
+    target = `${origin}${path}`;
     void loadRenderer(win, target);
   })();
 

@@ -4,13 +4,13 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from app.core.roles import WorkspaceRole, normalize_role
+from app.core.security import is_cueai_production, resolve_auth_secret
 
 SESSION_COOKIE = "cueai_admin_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
@@ -28,12 +28,7 @@ class SessionPayload:
 
 
 def _secret() -> bytes:
-    raw = (
-        os.environ.get("AUTH_SECRET")
-        or os.environ.get("NEXTAUTH_SECRET")
-        or "cueai-dev-secret-change-me"
-    )
-    return raw.encode("utf-8")
+    return resolve_auth_secret().encode("utf-8")
 
 
 def _b64url(data: bytes) -> str:
@@ -115,15 +110,12 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def session_cookie_kwargs(max_age: int = SESSION_TTL_SECONDS) -> dict[str, Any]:
-    secure = os.environ.get("NODE_ENV") == "production" or os.environ.get(
-        "CUEAI_ENV",
-        "",
-    ).lower() in {"production", "prod"}
+    # NODE_ENV=production is normal inside images. Secure cookies follow CUEAI_ENV.
     return {
         "key": SESSION_COOKIE,
         "httponly": True,
         "samesite": "lax",
-        "secure": secure,
+        "secure": is_cueai_production(),
         "path": "/",
         "max_age": max_age,
     }

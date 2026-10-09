@@ -29,6 +29,14 @@ export async function retrieveKnowledgeForQuestion(
   return result.context;
 }
 
+/** Generic interview facts do not need Qdrant/RAG. */
+export function needsLiveKnowledge(question: string) {
+  const q = question.toLowerCase();
+  return /\b((my|our|this|the)\s+)?(project|resume|experience|background|company|knowledge base|codebase|policy|onboarding|handbook|document|wiki)\b|\b(i|we)\s+(used|built|implemented|worked)\b/.test(
+    q,
+  );
+}
+
 export async function retrieveKnowledgeForMeeting(
   question: string,
   opts?: {
@@ -40,7 +48,7 @@ export async function retrieveKnowledgeForMeeting(
   },
 ): Promise<LiveKnowledgeResult> {
   const q = question.trim();
-  if (!q) {
+  if (!q || !needsLiveKnowledge(q)) {
     return {
       context: "",
       knowledgeUsed: false,

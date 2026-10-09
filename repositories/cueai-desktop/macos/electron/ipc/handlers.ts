@@ -145,7 +145,11 @@ export function registerIpcHandlers() {
     const blob = new Blob([Buffer.from(payload.data)], { type: payload.mime || "audio/webm" });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
-    const res = await fetch(`${origin}/api/transcribe`, { method: "POST", body });
+    const res = await fetch(`${origin}/api/transcribe`, {
+      method: "POST",
+      headers: macDeviceService.getAuthHeaders(),
+      body,
+    });
     const data = (await res.json()) as { text?: string; who?: string; error?: string };
     if (!res.ok) return { error: data.error || "Transcription failed" };
     return data;
@@ -292,6 +296,9 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(IpcChannels.DEVICE_CLEAR_SESSION, () => {
     return macDeviceService.clearDeviceSession();
+  });
+  ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, () => {
+    return macDeviceService.getAuthHeaders();
   });
 
   ipcMain.handle(

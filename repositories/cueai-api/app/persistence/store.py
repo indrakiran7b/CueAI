@@ -8,7 +8,13 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
-from app.core.session import hash_password
+from app.core.security import (
+    DEV_ONLY_BOOTSTRAP_EMAIL,
+    DEV_ONLY_BOOTSTRAP_PASSWORD,
+    is_cueai_production,
+    resolve_bootstrap_admin,
+)
+from app.core.session import hash_password, verify_password
 
 _write_lock = threading.Lock()
 _memory: dict[str, Any] | None = None
@@ -22,17 +28,50 @@ def _data_dir() -> Path:
     web_data = os.environ.get("CUEAI_WEB_DATA_DIR", "").strip()
     if web_data:
         return Path(web_data)
-    repo_root = Path(__file__).resolve().parents[4]
-    return repo_root / "apps" / "web" / ".data"
+    # cueai-api/app/persistence/store.py → repository root is parents[2]
+    api_root = Path(__file__).resolve().parents[2]
+    return api_root / ".data"
 
 
 def store_path() -> Path:
     return _data_dir() / "workspace-store.json"
 
 
+def _default_users(workspace_id: str, now: str) -> list[dict[str, Any]]:
+    bootstrap = resolve_bootstrap_admin()
+    if not bootstrap:
+        return []
+    return [
+        {
+            "id": "usr_bootstrap_admin",
+            "name": bootstrap["name"],
+            "email": bootstrap["email"],
+            "passwordHash": hash_password(bootstrap["password"]),
+            "role": "Admin",
+            "status": "Active",
+            "workspaceId": workspace_id,
+            "createdAt": now,
+            "lastActiveAt": now,
+        },
+    ]
+
+
+def _assert_no_default_bootstrap_in_production(store: dict[str, Any]) -> None:
+    if not is_cueai_production():
+        return
+    for user in store.get("users") or []:
+        if user.get("email") != DEV_ONLY_BOOTSTRAP_EMAIL:
+            continue
+        hashed = user.get("passwordHash") or ""
+        if hashed and verify_password(DEV_ONLY_BOOTSTRAP_PASSWORD, hashed):
+            raise RuntimeError(
+                "Production cannot start with the default development bootstrap credentials. "
+                "Change or remove that admin account.",
+            )
+
+
 def _default_store() -> dict[str, Any]:
     workspace_id = "ws_default"
-    admin_id = "usr_bootstrap_admin"
     now = _iso_now()
     return {
         "workspace": {
@@ -55,19 +94,7 @@ def _default_store() -> dict[str, Any]:
             },
             "createdAt": now,
         },
-        "users": [
-            {
-                "id": admin_id,
-                "name": "Workspace Admin",
-                "email": "admin@cueai.local",
-                "passwordHash": hash_password("admin123"),
-                "role": "Admin",
-                "status": "Active",
-                "workspaceId": workspace_id,
-                "createdAt": now,
-                "lastActiveAt": now,
-            },
-        ],
+        "users": _default_users(workspace_id, now),
         "invites": [],
         "knowledge": [],
         "usage": [],
@@ -124,11 +151,13 @@ def _load_store_locked() -> dict[str, Any]:
         store = json.loads(path.read_text(encoding="utf-8"))
         if not store.get("devices"):
             store["devices"] = []
+        _assert_no_default_bootstrap_in_production(store)
         _memory = store
         _loaded_mtime = mtime or _loaded_mtime
         return store
 
     store = _default_store()
+    _assert_no_default_bootstrap_in_production(store)
     _persist(store)
     return store
 

@@ -39,6 +39,13 @@ const nextConfig: NextConfig = {
       ...(config.resolve.alias as Record<string, string>),
       "@xenova/transformers": path.join(process.cwd(), "src/lib/stubs/xenova-transformers.ts"),
     };
+    // Sibling file: packages compile from ../cueai-*; resolve their deps from cueai-web.
+    config.resolve.modules = [
+      path.join(process.cwd(), "node_modules"),
+      ...(Array.isArray(config.resolve.modules)
+        ? config.resolve.modules
+        : ["node_modules"]),
+    ];
     return config;
   },
   // Standalone output is packaged inside the Electron app for offline testing builds.

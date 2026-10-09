@@ -75,6 +75,7 @@ export type MacDisplayInfo = CaptureDisplay;
 export type CueDesktopAPI = {
   isDesktop: true;
   isMac?: boolean;
+  isWindows?: boolean;
   minimize: () => Promise<void>;
   maximize: () => Promise<boolean>;
   restore?: () => Promise<boolean>;
@@ -128,11 +129,39 @@ export type CueDesktopAPI = {
   openPrivacySettings?: (
     pane?: "microphone" | "screen" | "systemAudio" | "privacy"
   ) => Promise<boolean>;
+  getAccountDevice?: () => Promise<{
+    deviceId: string;
+    maskedId: string;
+    deviceName: string;
+    platform: "macos" | "windows";
+    appVersion: string;
+    keychainAvailable: boolean;
+    hasCredential?: boolean;
+  }>;
+  registerAccountDevice?: () => Promise<{
+    ok: boolean;
+    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
+    authorized: boolean;
+    httpStatus?: number;
+    message?: string;
+  }>;
+  verifyAccountDevice?: () => Promise<{
+    ok: boolean;
+    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
+    authorized: boolean;
+    httpStatus?: number;
+    message?: string;
+  }>;
+  clearAccountDeviceSession?: () => Promise<{
+    cleared: boolean;
+    identityPreserved: boolean;
+  }>;
+  getDeviceAuthHeaders?: () => Promise<Record<string, string>>;
   getMacDevice?: () => Promise<{
     deviceId: string;
     maskedId: string;
     deviceName: string;
-    platform: "macos";
+    platform: "macos" | "windows";
     appVersion: string;
     keychainAvailable: boolean;
     hasCredential?: boolean;
@@ -221,9 +250,21 @@ export function isMacDesktopShellQuery(value: string | null | undefined) {
 
 export function isMacDesktopApp() {
   if (typeof window === "undefined") return false;
+  if (window.cueDesktop?.isWindows) return false;
   if (window.cueDesktop?.isMac) return true;
   if (document.documentElement.dataset.desktop === "mac") return true;
   return isMacDesktopShellQuery(new URLSearchParams(window.location.search).get("desktop"));
+}
+
+/** Windows Electron product shell. Never true for the Mac desktop app (`isMac`). */
+export function isWindowsDesktopApp() {
+  if (typeof window === "undefined") return false;
+  if (window.cueDesktop?.isMac) return false;
+  if (window.cueDesktop?.isWindows) return true;
+  if (document.documentElement.dataset.desktop === "windows") return true;
+  const q = new URLSearchParams(window.location.search).get("desktop");
+  if (q === "windows" || q === "win32" || q === "win") return true;
+  return isDesktopApp() && !isMacDesktopApp();
 }
 
 export function getDesktop() {

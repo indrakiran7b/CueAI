@@ -18,11 +18,11 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
-  const { error } = await requireAuth(request);
-  if (error) {
+  const { error, session } = await requireAuth(request);
+  if (error || !session) {
     return NextResponse.json(
       { error: "Sign in to use Resume Tailor." },
-      { status: error.status, headers: CORS_HEADERS },
+      { status: error?.status || 401, headers: CORS_HEADERS },
     );
   }
 
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const clipped = text.slice(0, 20000);
     try {
       const { saveLiveBriefing } = await import("@/lib/server/meetings");
-      await saveLiveBriefing({ resumeName: file.name, resumeText: clipped });
+      await saveLiveBriefing({ resumeName: file.name, resumeText: clipped }, session);
     } catch {
       // Briefing persist must not fail the upload.
     }

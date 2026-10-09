@@ -1,6 +1,6 @@
 /**
  * AI helpers for the web Companion overlay.
- * Uses Groq/Gemini via /api/live/answer — no offline sample answers.
+ * Uses Gemini (primary) / Groq (fallback) via /api/live/answer — no offline sample answers.
  */
 
 import type { LiveTranscriptLine } from "@/lib/live-answer";

@@ -134,8 +134,8 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-/** Internal helper for invite acceptance creating users — not exported route */
-export async function createInvitedUser(opts: {
+/** Internal helper for invite acceptance creating users — not a route export */
+async function createInvitedUser(opts: {
   email: string;
   name: string;
   password: string;

@@ -75,7 +75,7 @@ function SignupForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [mac, setMac] = useState(searchParams.get("desktop") === "mac");
+  const [mac, setMac] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -83,7 +83,7 @@ function SignupForm() {
     setMounted(true);
     persistDesktopQuery();
     persistProductFromSearch(searchParams.toString());
-    setMac(isMacDesktopApp() || searchParams.get("desktop") === "mac");
+    setMac(isMacDesktopApp());
   }, [searchParams]);
 
   useEffect(() => {

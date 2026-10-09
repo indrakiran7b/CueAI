@@ -22,11 +22,17 @@ export function scopeInvites(store: WorkspaceStore, workspaceId: string) {
   });
 }
 
+/** Workspace-scoped knowledge must have an explicit workspaceId. Legacy empty IDs are excluded, not deleted. */
+export function knowledgeBelongsToWorkspace(
+  item: { workspaceId?: string | null },
+  workspaceId: string,
+): boolean {
+  const wid = typeof item.workspaceId === "string" ? item.workspaceId.trim() : "";
+  return Boolean(wid) && wid === workspaceId;
+}
+
 export function scopeKnowledge(store: WorkspaceStore, workspaceId: string) {
-  return store.knowledge.filter((k) => {
-    const wid = (k as { workspaceId?: string }).workspaceId;
-    return !wid || wid === workspaceId;
-  });
+  return store.knowledge.filter((k) => knowledgeBelongsToWorkspace(k, workspaceId));
 }
 
 export function scopeUsage(store: WorkspaceStore, workspaceId: string) {

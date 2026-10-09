@@ -18,6 +18,18 @@ def test_parse_answer_json() -> None:
     assert confidence == 0.8
 
 
+def test_neither_provider_returns_503(monkeypatch) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("VERTEX_API_KEY", raising=False)
+    import asyncio
+
+    with pytest.raises(LiveAnswerError) as exc:
+        asyncio.run(generate_live_answer({"prompt": "What is Python?"}))
+    assert exc.value.status == 503
+    assert "not configured" in str(exc.value).lower()
+
+
 def test_missing_prompt() -> None:
     with pytest.raises(LiveAnswerError) as exc:
         import asyncio
@@ -71,7 +83,47 @@ def test_groq_success(monkeypatch) -> None:
     assert result["provider"] == "groq"
 
 
-def test_groq_falls_back_to_gemini(monkeypatch) -> None:
+def test_gemini_primary_when_both_configured(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    calls = {"urls": []}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "model": "gemini-2.5-flash",
+                "candidates": [{"content": {"parts": [{"text": json.dumps({"answer": "Primary", "confidence": 0.9})}]}}],
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, *args, **kwargs):
+            calls["urls"].append(str(url))
+            if "googleapis" not in str(url):
+                raise AssertionError("Groq must not be called when Gemini succeeds")
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    import asyncio
+
+    result = asyncio.run(generate_live_answer({"prompt": "What is Python?"}))
+    assert result["provider"] == "gemini"
+    assert result["answer"] == "Primary"
+    assert calls["urls"]
+    assert all("googleapis" in url for url in calls["urls"])
+
+
+def test_gemini_falls_back_to_groq(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
     calls = {"n": 0}
@@ -82,8 +134,8 @@ def test_groq_falls_back_to_gemini(monkeypatch) -> None:
 
         def json(self):
             return {
-                "model": "gemini-2.5-flash",
-                "candidates": [{"content": {"parts": [{"text": json.dumps({"answer": "Fallback", "confidence": 0.5})}]}}],
+                "model": "openai/gpt-oss-20b",
+                "choices": [{"message": {"content": json.dumps({"answer": "Fallback", "confidence": 0.5})}}],
             }
 
     class FakeClient:
@@ -98,15 +150,15 @@ def test_groq_falls_back_to_gemini(monkeypatch) -> None:
 
         async def post(self, url, *args, **kwargs):
             calls["n"] += 1
-            return FakeResponse("googleapis" in str(url))
+            return FakeResponse("groq.com" in str(url) or "api.groq.com" in str(url))
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
     import asyncio
 
     result = asyncio.run(generate_live_answer({"prompt": "Explain DNS"}))
-    assert result["provider"] == "gemini"
+    assert result["provider"] == "groq"
     assert result["answer"] == "Fallback"
-    assert calls["n"] == 2
+    assert calls["n"] >= 2
 
 
 def test_oversized_screenshot_is_ignored() -> None:

@@ -351,6 +351,70 @@ export async function keygateActivate(input: {
   };
 }
 
+/**
+ * Optional online confirmation after the local license store already passed.
+ * When KEYGATE_BASE_URL is unset, skip so local validation remains authoritative.
+ * When Keygate is configured, verify the key/device — never treat a failed
+ * or unreachable Keygate call as a valid license.
+ */
+export async function keygateValidateLicense(input: {
+  licenseKey?: string;
+  licenseId?: string;
+  deviceId: string;
+  platform?: string;
+}): Promise<{
+  skipped: boolean;
+  ok: boolean;
+  state?: KeygateMappedState;
+  message?: string;
+}> {
+  if (!isKeygateEnabled()) {
+    return { skipped: true, ok: true };
+  }
+
+  const licenseKey = input.licenseKey?.trim();
+  if (!licenseKey) {
+    return {
+      skipped: false,
+      ok: false,
+      state: "INVALID",
+      message: "A license key is required to validate with Keygate.",
+    };
+  }
+  if (!input.deviceId?.trim()) {
+    return {
+      skipped: false,
+      ok: false,
+      state: "INVALID",
+      message: "A device identifier is required to validate with Keygate.",
+    };
+  }
+
+  try {
+    const verified = await keygateVerify({
+      licenseKey,
+      deviceId: input.deviceId,
+    });
+    return {
+      skipped: false,
+      ok: verified.ok,
+      state: verified.state,
+      message: verified.message,
+    };
+  } catch (err) {
+    console.error(
+      "[keygate] validate_error",
+      err instanceof Error ? err.message : err,
+    );
+    return {
+      skipped: false,
+      ok: false,
+      state: "NETWORK_ERROR",
+      message: userMessageForKeygateState("NETWORK_ERROR"),
+    };
+  }
+}
+
 export async function keygateVerify(input: {
   licenseKey: string;
   deviceId: string;

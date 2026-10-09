@@ -3,6 +3,7 @@
  * Never holds API keys in the renderer.
  */
 
+import { deviceAuthHeaders } from "../../../shared/device-auth-headers";
 import { pollJobUntilDone } from "../../../shared/poll-job";
 import { createLatencyTracker, pipelineLog } from "./pipeline-log";
 
@@ -45,9 +46,10 @@ export async function requestScreenContext(input: {
 
   let res: Response;
   try {
+    const auth = await deviceAuthHeaders();
     res = await fetch(`${apiBase}/api/live/screen`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       signal: input.signal,
       body: JSON.stringify({
         image: input.imageDataUrl,
@@ -87,6 +89,7 @@ export async function requestScreenContext(input: {
       apiBase,
       jobId: data.jobId,
       signal: input.signal,
+      headers: auth,
     });
     const result = job.result;
     answer = result?.answer?.trim() || "";

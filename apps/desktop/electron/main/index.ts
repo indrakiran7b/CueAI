@@ -29,6 +29,9 @@ import {
 // Package name is "@cueai/desktop", which would put userData in "%APPDATA%/@cueai/desktop".
 // Set it before anything resolves userData paths (store, embedded web data dir).
 app.setName("CueAI");
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9229");
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -70,6 +73,9 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    console.log(`[DEVICE] process.platform = ${process.platform}`);
+    console.log("[DEVICE] selectedDevicePlatform = windows");
+    console.log("[DEVICE] selectedDeviceIdentity = windows");
     try {
       await startEmbeddedWebServer();
     } catch (err) {

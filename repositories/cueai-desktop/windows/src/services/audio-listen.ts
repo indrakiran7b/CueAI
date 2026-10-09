@@ -29,6 +29,20 @@ import {
   rmsLevel,
 } from "./audio-pcm";
 import { pipelineLog } from "./pipeline-log";
+import {
+  PREFIX_MS,
+  POST_ROLL_MS,
+  SPEECH_END_SILENCE_MS,
+  MIN_SPEECH_MS,
+  MAX_SPEECH_MS,
+  VOICE_THRESHOLD,
+  VOICE_HANGOVER_THRESHOLD,
+  adaptiveSilenceMs,
+  captureQuality,
+  looksTruncatedTranscript,
+  logCaptureMetrics,
+  wordCount,
+} from "./speech-capture";
 
 export type ListenActiveState = AudioSessionSnapshot;
 
@@ -39,6 +53,7 @@ export type LiveTranscribeConfig = {
     text: string;
     audioEndAt?: number;
     transcribedAt?: number;
+    transcribeStartedAt?: number;
     partial?: boolean;
   }) => void;
   onError: (msg: string) => void;
@@ -55,6 +70,7 @@ type CaptureLane = {
   ring: PcmRingBuffer;
   speechActive: boolean;
   speechStartAbs: number;
+  lastVoiceAbs: number;
   lastVoiceAt: number;
   speechStartedPerf: number | null;
   flushTimer: number | null;
@@ -62,14 +78,7 @@ type CaptureLane = {
   onEnded: (() => void) | null;
 };
 
-/** Voice activity threshold (post-gain RMS-ish). */
-const VOICE_THRESHOLD = 0.018;
-/** Keep audio before VAD fires so first words aren't lost. */
-const PREFIX_MS = 850;
-/** Wait after last voice before finalizing (includes natural silence tail). */
-const SILENCE_END_MS = 750;
-const MIN_SPEECH_MS = 400;
-const MAX_SPEECH_MS = 16_000;
+export { SPEECH_END_SILENCE_MS, PREFIX_MS, POST_ROLL_MS };
 const MIN_WAV_BYTES = 1600;
 const MAX_IN_FLIGHT = 2;
 
@@ -136,6 +145,7 @@ async function maybeTranscribeWav(blob: Blob, who: string, audioEndAt: number) {
   transcribeInFlight++;
   if (who === "You") setMicState("processing");
   else setSystemState("processing");
+  const transcribeStarted = performance.now();
   pipelineLog("transcription", "Finalizing speech segment (WAV→Groq)", {
     who,
     bytes: blob.size,
@@ -156,11 +166,23 @@ async function maybeTranscribeWav(blob: Blob, who: string, audioEndAt: number) {
         who: speaker,
         chars: line.text.length,
       });
+      const text = line.text.trim();
+      logCaptureMetrics("transcription", {
+        who: speaker,
+        transcription_latency: Math.round(transcribedAt - transcribeStarted),
+        transcript_length: text.length,
+        question_capture_quality: captureQuality({
+          transcriptChars: text.length,
+          words: wordCount(text),
+          truncated: looksTruncatedTranscript(text),
+        }),
+      });
       liveConfig.onResult({
         who: speaker,
-        text: line.text.trim(),
+        text,
         audioEndAt,
         transcribedAt,
+        transcribeStartedAt: transcribeStarted,
         partial: false,
       });
     }
@@ -196,15 +218,25 @@ function finalizeSpeech(lane: CaptureLane, reason: string) {
   }
 
   const durationMs = performance.now() - lane.speechStartedPerf;
-  const endAbs = lane.ring.endIndex;
   const prefixSamples = Math.floor((PREFIX_MS / 1000) * lane.ring.sampleRate);
+  const postRollSamples = Math.floor((POST_ROLL_MS / 1000) * lane.ring.sampleRate);
   const startAbs = Math.max(0, lane.speechStartAbs - prefixSamples);
+  const endAbs = Math.min(lane.ring.endIndex, Math.max(lane.lastVoiceAbs + postRollSamples, lane.ring.endIndex));
 
   lane.speechActive = false;
   lane.speechStartedPerf = null;
 
   if (durationMs < MIN_SPEECH_MS) {
-    pipelineLog("audio", "Speech too short — discarded", { who: lane.who, reason, durationMs });
+    pipelineLog("audio", "Speech too short — holding for continuation", {
+      who: lane.who,
+      reason,
+      durationMs: Math.round(durationMs),
+    });
+    logCaptureMetrics("audio", {
+      who: lane.who,
+      audio_duration: Math.round(durationMs),
+      question_capture_quality: captureQuality({ durationMs }),
+    });
     return;
   }
 
@@ -222,6 +254,17 @@ function finalizeSpeech(lane: CaptureLane, reason: string) {
     durationMs: Math.round(durationMs),
     samples: samples.length,
     wavBytes: wav.size,
+    pre_roll: PREFIX_MS,
+    post_roll: POST_ROLL_MS,
+  });
+  logCaptureMetrics("audio", {
+    who: lane.who,
+    speech_end: Math.round(audioEndAt),
+    audio_duration: Math.round(durationMs),
+    pre_roll: PREFIX_MS,
+    post_roll: POST_ROLL_MS,
+    vad_finalize_time: Math.round(durationMs),
+    question_capture_quality: captureQuality({ durationMs }),
   });
   void maybeTranscribeWav(wav, lane.who, audioEndAt);
 }
@@ -234,15 +277,18 @@ function onPcmChunk(lane: CaptureLane, mono: Float32Array) {
   emitLevelsThrottled(125);
 
   const now = performance.now();
-  const voiced = level >= VOICE_THRESHOLD;
+  const stayThreshold = lane.speechActive ? VOICE_HANGOVER_THRESHOLD : VOICE_THRESHOLD;
+  const voiced = level >= stayThreshold;
 
   if (voiced) {
     lane.lastVoiceAt = now;
+    lane.lastVoiceAbs = lane.ring.endIndex;
     if (!lane.speechActive) {
       lane.speechActive = true;
       lane.speechStartedPerf = now;
-      lane.speechStartAbs = lane.ring.endIndex;
-      pipelineLog("audio", "Speech segment started", { who: lane.who });
+      lane.speechStartAbs = Math.max(0, lane.ring.endIndex - mono.length);
+      pipelineLog("audio", "Speech segment started", { who: lane.who, pre_roll: PREFIX_MS });
+      logCaptureMetrics("audio", { who: lane.who, speech_start: Math.round(now), pre_roll: PREFIX_MS });
       if (lane.who === "System") {
         console.log("[SYSTEM-AUDIO] Speech started");
       }
@@ -257,11 +303,14 @@ function onPcmChunk(lane: CaptureLane, mono: Float32Array) {
     }
   } else if (lane.speechActive) {
     const silentFor = now - lane.lastVoiceAt;
-    if (silentFor >= SILENCE_END_MS && lane.flushTimer == null) {
+    const needed = adaptiveSilenceMs(
+      lane.speechStartedPerf != null ? now - lane.speechStartedPerf : 0,
+    );
+    if (silentFor >= needed && lane.flushTimer == null) {
       lane.flushTimer = window.setTimeout(() => {
         lane.flushTimer = null;
         finalizeSpeech(lane, "silence");
-      }, 16);
+      }, POST_ROLL_MS);
     }
   }
 }
@@ -274,7 +323,7 @@ function attachPcmLane(
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
   // Prefer stereo in → mix in onaudioprocess; works for mic (mono) and loopback.
-  const processor = ctx.createScriptProcessor(4096, 2, 1);
+  const processor = ctx.createScriptProcessor(2048, 2, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
   const ring = new PcmRingBuffer(ctx.sampleRate, 24);
@@ -290,6 +339,7 @@ function attachPcmLane(
     ring,
     speechActive: false,
     speechStartAbs: 0,
+    lastVoiceAbs: 0,
     lastVoiceAt: 0,
     speechStartedPerf: null,
     flushTimer: null,
@@ -297,6 +347,7 @@ function attachPcmLane(
     onEnded: null,
   };
 
+  let pcmChunks = 0;
   processor.onaudioprocess = (ev) => {
     const input = ev.inputBuffer;
     const channels: Float32Array[] = [];
@@ -304,6 +355,10 @@ function attachPcmLane(
       channels.push(input.getChannelData(c));
     }
     const mono = mixToMono(channels);
+    pcmChunks += 1;
+    if (lane.kind === "mic" && (pcmChunks === 1 || pcmChunks % 100 === 0)) {
+      console.log("audio chunks received:", pcmChunks);
+    }
     onPcmChunk(lane, mono);
   };
 
@@ -360,6 +415,12 @@ async function startMicListenInternal(): Promise<void> {
     let ok = false;
     try {
       setMicState("connecting");
+      try {
+        const perm = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+        console.log("mic permission:", perm?.state || "query-unavailable");
+      } catch {
+        console.log("mic permission:", "query-unavailable");
+      }
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -369,6 +430,10 @@ async function startMicListenInternal(): Promise<void> {
         },
         video: false,
       });
+      const tracks = micStream.getAudioTracks();
+      console.log("microphone stream created:", true);
+      console.log("audio track count:", tracks.length);
+      console.log("audio track state:", tracks.map((t) => t.readyState).join(",") || "none");
       micLane = attachPcmLane(micStream, "You", "mic");
       wireTrackEnded(micLane, () => {
         void stopMicListen();
@@ -377,6 +442,7 @@ async function startMicListenInternal(): Promise<void> {
       });
       setMicState("listening");
       clearAudioError();
+      console.log("recording started:", true);
       pipelineLog("audio", "Microphone capture started (continuous PCM)");
       ok = true;
     } catch (err) {
@@ -591,7 +657,9 @@ export async function transcribeAudioBlob(
   const mime = blob.type || "audio/wav";
 
   if (typeof window !== "undefined" && window.cueai?.transcribe) {
+    console.log("transcription request sent:", true);
     const data = await window.cueai.transcribe({ data: buffer, mime, label: who });
+    console.log("transcription response status:", data.error ? "error" : "ok");
     if (data.error) throw new Error(data.error);
     if (!data.text?.trim()) return null;
     return { who: data.who || who, text: data.text.trim() };
@@ -601,10 +669,14 @@ export async function transcribeAudioBlob(
   const ext = mime.includes("wav") ? "wav" : mime.includes("ogg") ? "ogg" : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  const { deviceAuthHeaders } = await import("./device-auth-headers");
+  console.log("transcription request sent:", true);
   const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
     method: "POST",
+    headers: await deviceAuthHeaders(),
     body,
   });
+  console.log("transcription response status:", res.status);
   const data = (await res.json()) as {
     text?: string;
     who?: string;

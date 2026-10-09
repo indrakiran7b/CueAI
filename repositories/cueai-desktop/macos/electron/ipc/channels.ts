@@ -57,6 +57,7 @@ export const IpcChannels = {
   DEVICE_REGISTER: "device:register",
   DEVICE_VERIFY: "device:verify",
   DEVICE_CLEAR_SESSION: "device:clear-session",
+  DEVICE_GET_AUTH_HEADERS: "device:get-auth-headers",
 
   LICENSE_GET_DEVICE: "license:get-device",
   LICENSE_GET_STATUS: "license:get-status",

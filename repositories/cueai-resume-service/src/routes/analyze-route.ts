@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     const resumeText = (await extractDocumentText(buffer, file.name, file.type || "")).trim();
     try {
       const { saveLiveBriefing } = await import("@/lib/server/meetings");
-      await saveLiveBriefing({ resumeName: file.name, resumeText: resumeText.slice(0, 20000) });
+      await saveLiveBriefing({ resumeName: file.name, resumeText: resumeText.slice(0, 20000) }, session);
     } catch {
       // ignore
     }

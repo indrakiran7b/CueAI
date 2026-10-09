@@ -6,8 +6,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @cueai/web",
-    "dev:web": "npm run dev -w @cueai/web",
+    "dev": "npm run dev:desktop --prefix repositories/cueai-web",
+    "dev:web": "npm run dev:desktop --prefix repositories/cueai-web",
     "dev:desktop": "npm run dev -w @cueai/desktop",
     "dev:mac": "node repositories/cueai-desktop/scripts/dev-mac.cjs",
     "dev:web:mac": "npm run dev:mac --prefix repositories/cueai-web",

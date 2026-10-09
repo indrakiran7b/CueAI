@@ -85,6 +85,18 @@ function getCredential() {
   return readIdentity()?.credential || null;
 }
 
+/** Main-process only. Renderer must request headers via IPC, not Keychain. */
+export function getDeviceAuthHeaders(): Record<string, string> {
+  const identity = readIdentity();
+  const deviceId = identity?.deviceId?.trim() || "";
+  const credential = identity?.credential?.trim() || "";
+  if (!deviceId || !credential) return {};
+  return {
+    "X-CueAI-Device-Id": deviceId,
+    "X-CueAI-Device-Credential": credential,
+  };
+}
+
 export function getOrCreateMacDeviceIdentity(): StoredIdentity {
   const existing = readIdentity();
   if (existing?.deviceId && existing.secret) return existing;
@@ -102,6 +114,10 @@ export function getPublicMacDevice(): MacPublicDevice {
   const identity = getOrCreateMacDeviceIdentity();
   const keychainAvailable = safeStorage.isEncryptionAvailable();
   const hasCredential = Boolean(identity.credential);
+  console.log(`[DEVICE] process.platform = ${process.platform}`);
+  console.log("[DEVICE] implementation = macos");
+  console.log(`[DEVICE] device identity available = ${Boolean(identity.deviceId)}`);
+  console.log(`[DEVICE] credential available = ${hasCredential}`);
   console.log(`[DEVICE] Keychain available = ${keychainAvailable}`);
   if (hasCredential) console.log("[DEVICE] Keychain credential found");
   return {
@@ -164,6 +180,10 @@ export class MacDeviceService {
 
   getPublicDevice() {
     return getPublicMacDevice();
+  }
+
+  getAuthHeaders() {
+    return getDeviceAuthHeaders();
   }
 
   getRegistrationState() {

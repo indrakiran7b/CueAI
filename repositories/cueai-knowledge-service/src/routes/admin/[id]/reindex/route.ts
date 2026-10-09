@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   let found = false;
   await updateStore(async (s) => {
     const doc = s.knowledge.find(
-      (k) => k.id === id && (!k.workspaceId || k.workspaceId === session.workspaceId),
+      (k) => k.id === id && k.workspaceId === session.workspaceId,
     );
     if (!doc) return;
     found = true;

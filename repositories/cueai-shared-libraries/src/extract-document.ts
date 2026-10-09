@@ -85,6 +85,7 @@ export async function extractDocument(
       lower.endsWith(".csv") ||
       lower.endsWith(".md") ||
       lower.endsWith(".markdown") ||
+      lower.endsWith(".json") ||
       mime.startsWith("text/") ||
       mime === "application/json" ||
       mime === "text/csv" ||
@@ -112,7 +113,7 @@ export async function extractDocument(
     return extractPdf(buffer);
   }
 
-  throw new Error("Unsupported file type. Upload PDF, DOCX, TXT, Markdown, or CSV.");
+  throw new Error("Unsupported file type. Upload PDF, DOCX, TXT, Markdown, CSV, or JSON.");
 }
 
 export async function extractDocumentText(

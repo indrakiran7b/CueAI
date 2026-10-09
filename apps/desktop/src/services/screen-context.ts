@@ -3,6 +3,7 @@
  * Never holds API keys in the renderer.
  */
 
+import { deviceAuthHeaders } from "./device-auth-headers";
 import { createLatencyTracker, pipelineLog } from "./pipeline-log";
 
 export type ScreenContextAnswer = {
@@ -44,9 +45,10 @@ export async function requestScreenContext(input: {
 
   let res: Response;
   try {
+    const auth = await deviceAuthHeaders();
     res = await fetch(`${apiBase}/api/live/screen`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       signal: input.signal,
       body: JSON.stringify({
         image: input.imageDataUrl,

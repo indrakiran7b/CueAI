@@ -16,7 +16,19 @@ import {
 import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
-import { configureAnswerApi } from "./services/live-answer";
+import { configureAnswerApi, requestLiveAnswerStream } from "./services/live-answer";
+import { createCueaiLatency } from "../../../shared/cueai-latency";
+import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "../../../shared/speech-capture";
+import {
+  assembleUtterance,
+  beginQuestionProcessing,
+  cleanQuestionText,
+  clearQuestionMemory,
+  endQuestionProcessing,
+  evaluateQuestion,
+  getRollingContext,
+  pushRollingTranscript,
+} from "./services/question-detection";
 import {
   configureLiveTranscription,
   stopAllListen,
@@ -97,6 +109,7 @@ export default function App() {
     systemError: null,
   });
   const lastAnsweredRef = useRef("");
+  const lastCompleteRef = useRef("");
   const startedAtRef = useRef(Date.now());
   const aiBusyRef = useRef(false);
   const autoAnswerRef = useRef(autoAnswer);
@@ -105,13 +118,13 @@ export default function App() {
   transcriptRef.current = transcript;
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
-  const pendingUtteranceRef = useRef({ text: "", who: "", timer: 0 });
   const runAskRef = useRef<(prompt: string, opts?: { image?: string; echoAsYou?: boolean }) => Promise<void>>(
     async () => undefined,
   );
   const askRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
+  const answerAbortRef = useRef<AbortController | null>(null);
 
   const privacyOn = capture?.requested !== false;
   const lastHeard = [...transcript].reverse().find((t) => t.who !== "CueAI");
@@ -179,31 +192,48 @@ export default function App() {
       apiBase: webApiBase,
       onResult: (line) => {
         appendTranscript(line);
+        pushRollingTranscript(line.who, line.text);
         setStatusMsg(null);
         const chunk = line.text.trim();
         if (!chunk) return;
-        const pending = pendingUtteranceRef.current;
-        const sameSpeaker = !pending.who || pending.who === line.who;
-        pending.text = sameSpeaker ? `${pending.text} ${chunk}`.trim() : chunk;
-        pending.who = line.who;
-        window.clearTimeout(pending.timer);
-        pending.timer = window.setTimeout(() => {
-          const finalQuestion = pending.text.trim();
-          pending.text = "";
-          pending.who = "";
-          pending.timer = 0;
-          if (finalQuestion.length < 8) return;
-          console.log("[TRANSCRIPT] Final transcript received");
-          if (!autoAnswerRef.current || aiBusyRef.current || streamingRef.current) return;
-          const key = finalQuestion.toLowerCase().replace(/\s+/g, " ");
-          if (key === lastAnsweredRef.current) return;
-          void runAskRef.current(`Brief response to: ${finalQuestion}`, { echoAsYou: false });
-        }, 1400);
+        assembleUtterance(
+          line.who,
+          chunk,
+          (utterance) => {
+            console.log("[TRANSCRIPT] Final transcript received");
+            const assembled = cleanQuestionText(utterance.text);
+            if (!looksTruncatedTranscript(assembled)) {
+              lastCompleteRef.current = assembled;
+              rememberQuestion(assembled);
+            }
+            if (!autoAnswerRef.current || aiBusyRef.current || streamingRef.current) return;
+            const decision = evaluateQuestion(utterance.text, {
+              who: utterance.who,
+              allowSelfQuestions: true,
+              finalized: true,
+              forceSystem: utterance.who === "System",
+            });
+            if (!decision.accept) return;
+            const questionText = cleanQuestionText(decision.question);
+            const key = questionText.toLowerCase().replace(/\s+/g, " ");
+            if (key === lastAnsweredRef.current) return;
+            const qid = decision.questionId || questionText;
+            if (!beginQuestionProcessing(qid)) return;
+            void runAskRef
+              .current(questionText, { echoAsYou: false })
+              .finally(() => endQuestionProcessing(qid));
+          },
+          {
+            audioEndAt: line.audioEndAt,
+            transcribedAt: line.transcribedAt,
+            partial: line.partial,
+          },
+        );
       },
       onError: (msg) => setStatusMsg(msg),
     });
     return () => {
-      window.clearTimeout(pendingUtteranceRef.current.timer);
+      clearQuestionMemory();
       configureLiveTranscription(null);
     };
   }, [appendTranscript, webApiBase]);
@@ -269,6 +299,8 @@ export default function App() {
     setMenuOpen(false);
     setCopied(false);
     clearTranscript();
+    clearQuestionMemory();
+    lastCompleteRef.current = "";
     startedAtRef.current = Date.now();
     setElapsedMs(0);
   }, [session.active, session.meetingId, clearTranscript]);
@@ -294,28 +326,75 @@ export default function App() {
   }
 
   async function runAsk(prompt: string, image?: string, opts?: { echoAsYou?: boolean }) {
-    const q = prompt.trim();
-    if (!q || (streamingRef.current && !image)) return;
+    const q = cleanQuestionText(prompt);
+    if (!q) return;
+    answerAbortRef.current?.abort();
+    const abort = new AbortController();
+    answerAbortRef.current = abort;
     bumpActivity();
-    const spoken = q.replace(/^Brief response to:\s*/i, "").trim();
-    if (!image) rememberQuestion(spoken || q);
+    if (!image) rememberQuestion(q);
     setStreaming(true);
+    streamingRef.current = true;
+    setAnswer("");
+    setStatusMsg(image ? null : "Answering...");
     aiBusyRef.current = true;
-    const context = transcriptRef.current.map((t) => `${t.who}: ${t.text}`);
+    const context = getRollingContext(3);
     if (!image && opts?.echoAsYou !== false) appendTranscript({ who: "You", text: q });
+    const cueLat = createCueaiLatency("01");
+    cueLat.mark("questionSent");
 
     try {
-      const result = await AIService.ask(q, { transcript: context, image }, { fallback: false });
+      if (image) {
+        const result = await AIService.ask(q, { transcript: context.map((t) => `${t.who}: ${t.text}`), image }, { fallback: false });
+        if (abort.signal.aborted) return;
+        setAnswer(result.answer);
+        setStatusMsg(null);
+        appendTranscript({ who: "CueAI", text: result.answer });
+        lastAnsweredRef.current = q.toLowerCase().replace(/\s+/g, " ");
+        return;
+      }
+      let flushTimer: number | null = null;
+      let pendingFull = "";
+      const result = await requestLiveAnswerStream(q, context, {
+        signal: abort.signal,
+        onConnected: () => cueLat.mark("llmConnected"),
+        onToken: (_token, full) => {
+          pendingFull = full;
+          if (!cueLat.marks.firstToken) {
+            cueLat.mark("firstToken");
+          }
+          if (!cueLat.marks.firstRender) {
+            if (!isFirstMeaningfulAnswer(full)) return;
+            setStatusMsg(null);
+            setAnswer(full);
+            cueLat.mark("firstRender");
+            return;
+          }
+          if (flushTimer != null) return;
+          flushTimer = window.setTimeout(() => {
+            flushTimer = null;
+            setAnswer(pendingFull);
+          }, 32);
+        },
+      });
+      if (abort.signal.aborted) return;
+      if (flushTimer != null) window.clearTimeout(flushTimer);
       setAnswer(result.answer);
       setStatusMsg(null);
       appendTranscript({ who: "CueAI", text: result.answer });
-      lastAnsweredRef.current = spoken.toLowerCase().replace(/\s+/g, " ");
+      lastAnsweredRef.current = q.toLowerCase().replace(/\s+/g, " ");
+      cueLat.mark("complete");
+      cueLat.report("macOS");
     } catch (err) {
+      if (abort.signal.aborted) return;
       lastAnsweredRef.current = "";
       setStatusMsg(err instanceof Error ? err.message : "Unable to generate an answer. Try again.");
     } finally {
-      setStreaming(false);
-      aiBusyRef.current = false;
+      if (!abort.signal.aborted) {
+        setStreaming(false);
+        streamingRef.current = false;
+        aiBusyRef.current = false;
+      }
     }
   }
   runAskRef.current = (prompt, opts) => runAsk(prompt, opts?.image, { echoAsYou: opts?.echoAsYou });
@@ -345,11 +424,11 @@ export default function App() {
   }
 
   async function generateAnswer() {
-    const last = lastHeard?.text;
+    const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
     await runAsk(
-      last
-        ? `Brief response to: ${last}`
-        : "Give me a ready-to-say self-introduction from my resume and the job briefing.",
+      last || "Give me a ready-to-say self-introduction from my resume and the job briefing.",
+      undefined,
+      { echoAsYou: false },
     );
   }
 

@@ -1,7 +1,31 @@
+# Development / integration compose for the actual CueAI process layout.
+# Libraries (orchestrator, gateway, *-service, shared-libraries) are not containers.
+# They are installed into the web image via file: sibling copies at build time.
+#
+# From this directory:
+#   cp .env.example .env   # AUTH_SECRET= REDIS_URL=redis://redis:6379/0
+#   docker compose config
+#   docker compose build
+#   docker compose up -d
+#
+# FastAPI is internal by default (http://api:8000). It has no host port.
+# Development host debug bind (127.0.0.1:${API_PORT:-8001}):
+#   COMPOSE_PROFILES=dev
+#   docker compose --profile dev up -d
+# Production-style (no FastAPI host port):
+#   unset COMPOSE_PROFILES
+#   docker compose up -d
+#
+# Default stack: redis, qdrant, api, web, celery-worker.
+# Optional: docker compose --profile postgres up
+# Optional: docker compose --profile keycloak up
+# Keycloak is Capacitor/root src/ OIDC only — not used by cueai-web or cueai-api.
+
 services:
   postgres:
+    profiles: ["postgres"]
     image: postgres:16-alpine
-    container_name: cueai-postgres
+    container_name: cueai-infra-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cueai}
       POSTGRES_USER: ${POSTGRES_USER:-cueai}
@@ -23,7 +47,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: cueai-redis
+    container_name: cueai-infra-redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -33,23 +57,9 @@ services:
       retries: 10
       start_period: 5s
 
-  celery-worker:
-    build:
-      context: ../cueai-api
-      dockerfile: Dockerfile.worker
-    container_name: cueai-celery-worker
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: http://localhost:3000
-      CUEAI_ENV: development
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
   qdrant:
     image: qdrant/qdrant:v1.13.2
-    container_name: cueai-qdrant
+    container_name: cueai-infra-qdrant
     ports:
       - "${QDRANT_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
@@ -62,9 +72,126 @@ services:
       retries: 20
       start_period: 10s
 
+  api:
+    build:
+      context: ../cueai-api
+      dockerfile: Dockerfile
+    container_name: cueai-infra-api
+    environment:
+      CUEAI_ENV: ${CUEAI_ENV:-development}
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DATABASE_URL: ${DATABASE_URL:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      CUEAI_DATA_DIR: ${CUEAI_DATA_DIR:-/app/.data}
+      CUEAI_BOOTSTRAP_ADMIN_ENABLED: ${CUEAI_BOOTSTRAP_ADMIN_ENABLED:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+    # Internal Docker DNS only. Host publish is added by the `dev` profile (api-host).
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # Development only: loopback proxy to internal FastAPI. Not used in production-style.
+  api-host:
+    profiles: ["dev"]
+    image: alpine/socat:1.8.0.1
+    container_name: cueai-infra-api-host
+    command: ["TCP-LISTEN:8000,fork,reuseaddr", "TCP:api:8000"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8001}:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: cueai-web/Dockerfile
+      args:
+        AUTH_SECRET: ${AUTH_SECRET:-}
+    container_name: cueai-infra-web
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      CUEAI_ENV: ${CUEAI_ENV:-development}
+      CUEAI_BOOTSTRAP_ADMIN_ENABLED: ${CUEAI_BOOTSTRAP_ADMIN_ENABLED:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      CUEAI_API_URL: http://api:8000
+      CUEAI_USE_FASTAPI: ${CUEAI_USE_FASTAPI:-}
+      CUEAI_LIVE_ANSWER_LOCAL: ${CUEAI_LIVE_ANSWER_LOCAL:-}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-cueai_knowledge}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-openai}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ../cueai-api
+      dockerfile: Dockerfile.worker
+    container_name: cueai-infra-celery-worker
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      CUEAI_ENV: ${CUEAI_ENV:-development}
+      # Screen path: Web → FastAPI → Celery → analyze_screen_with_gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   keycloak:
+    profiles: ["keycloak"]
     image: quay.io/keycloak/keycloak:26.1
-    container_name: cueai-keycloak
+    container_name: cueai-infra-keycloak
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}

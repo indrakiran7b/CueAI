@@ -18,16 +18,27 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
-  const { error } = await requireAuth(request);
-  if (error) {
+  const { error, session } = await requireAuth(request);
+  if (error || !session) {
     return NextResponse.json(
       { error: "Sign in to use Resume Tailor." },
-      { status: error.status, headers: CORS_HEADERS },
+      { status: error?.status || 401, headers: CORS_HEADERS },
     );
   }
 
   try {
-    const form = await request.formData();
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Content-Type was not one of")) {
+        return NextResponse.json(
+          { error: "Resume file is required." },
+          { status: 400, headers: CORS_HEADERS },
+        );
+      }
+      throw err;
+    }
     const file = form.get("resume");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "Resume file is required." }, { status: 400, headers: CORS_HEADERS });
@@ -48,7 +59,7 @@ export async function POST(request: NextRequest) {
     const clipped = text.slice(0, 20000);
     try {
       const { saveLiveBriefing } = await import("@/lib/server/meetings");
-      await saveLiveBriefing({ resumeName: file.name, resumeText: clipped });
+      await saveLiveBriefing({ resumeName: file.name, resumeText: clipped }, session);
     } catch {
       // Briefing persist must not fail the upload.
     }

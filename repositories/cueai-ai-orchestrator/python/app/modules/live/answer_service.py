@@ -231,7 +231,7 @@ async def generate_live_answer(body: dict[str, Any]) -> dict[str, Any]:
     gemini = gemini_api_key()
     if not groq and not gemini:
         raise LiveAnswerError(
-            "No AI key is configured. Add GROQ_API_KEY (primary) and/or GEMINI_API_KEY to the server environment.",
+            "AI provider is not configured.",
             503,
         )
 
@@ -260,18 +260,18 @@ async def generate_live_answer(body: dict[str, Any]) -> dict[str, Any]:
             except LiveAnswerError:
                 pass
 
-    provider = "groq"
-    if groq:
+    provider = "gemini"
+    if gemini:
         try:
-            result = await _groq_json(system, user_prompt)
-        except LiveAnswerError:
-            if not gemini:
-                raise
             result = await _gemini_json(system, user_prompt)
-            provider = "gemini"
+        except LiveAnswerError:
+            if not groq:
+                raise
+            result = await _groq_json(system, user_prompt)
+            provider = "groq"
     else:
-        result = await _gemini_json(system, user_prompt)
-        provider = "gemini"
+        result = await _groq_json(system, user_prompt)
+        provider = "groq"
 
     answer, confidence = parse_answer(result["text"])
     return {

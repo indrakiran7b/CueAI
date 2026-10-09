@@ -64,6 +64,14 @@ def get_settings() -> Settings:
             "REDIS_URL is required (example: redis://localhost:6379/0)",
         )
 
+    from app.core.security import (
+        assert_auth_bypass_not_enabled_in_production,
+        resolve_auth_secret,
+    )
+
+    resolve_auth_secret()
+    assert_auth_bypass_not_enabled_in_production()
+
     database_raw = os.environ.get("DATABASE_URL", "").strip()
     database_url = database_raw or None
 

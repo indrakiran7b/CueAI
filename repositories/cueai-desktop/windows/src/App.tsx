@@ -31,7 +31,9 @@ import {
   evaluateQuestion,
   getRollingContext,
   pushRollingTranscript,
+  cleanQuestionText,
 } from "./services/question-detection";
+import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "./services/speech-capture";
 import { createLatencyTracker, pipelineLog, prewarmAnswerApi } from "./services/pipeline-log";
 import { requestLiveAnswerStream } from "./services/live-answer";
 import {
@@ -108,6 +110,7 @@ export default function App() {
   const askRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
+  const lastCompleteRef = useRef("");
   const answerHeardRef = useRef<
     (
       questionText: string,
@@ -205,14 +208,20 @@ export default function App() {
           });
         }
 
-        // System Audio alone drives auto-answer — Mic is not required.
-        // Never auto-answer the candidate's own mic ("You").
-        if (line.who === "You") return;
-
         assembleUtterance(
           line.who,
           line.text,
           (utterance) => {
+            const assembled = cleanQuestionText(utterance.text);
+            if (!looksTruncatedTranscript(assembled)) {
+              lastCompleteRef.current = assembled;
+              rememberQuestion(assembled);
+            }
+
+            // System Audio alone drives auto-answer — Mic is not required.
+            // Never auto-answer the candidate's own mic ("You").
+            if (utterance.who === "You") return;
+
             console.log(
               "[SYSTEM-AUDIO] FINAL TRANSCRIPT:\n" + JSON.stringify(utterance.text),
             );
@@ -312,7 +321,7 @@ export default function App() {
       latency?: ReturnType<typeof createLatencyTracker>;
     },
   ) {
-    const q = questionText.trim();
+    const q = cleanQuestionText(questionText);
     if (!q) return;
 
     // Abort any in-flight stream so follow-ups / auto-answer are never
@@ -343,13 +352,18 @@ export default function App() {
       const result = await requestLiveAnswerStream(q, rolling, {
         signal: abort.signal,
         onToken: (_token, full) => {
-          setAnswer(full);
           if (!latency.marks.firstToken) {
             latency.mark("firstToken");
-            latency.mark("answerVisible");
             console.log("[GROQ] First token received");
             pipelineLog("response", "First token received");
           }
+          if (!latency.marks.answerVisible) {
+            if (!isFirstMeaningfulAnswer(full)) return;
+            setAnswer(full);
+            latency.mark("answerVisible");
+            return;
+          }
+          setAnswer(full);
         },
       });
       if (abort.signal.aborted) return;
@@ -410,7 +424,7 @@ export default function App() {
   }
 
   async function generateAnswer() {
-    const last = lastHeard?.text?.trim();
+    const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
     if (!last) {
       await answerHeardQuestion(
         "Give me a ready-to-say self-introduction from my resume and the job briefing.",
@@ -504,6 +518,7 @@ export default function App() {
     setCopied(false);
     clearTranscript();
     clearQuestionMemory();
+    lastCompleteRef.current = "";
     answerAbortRef.current?.abort();
     startedAtRef.current = Date.now();
     setElapsedMs(0);

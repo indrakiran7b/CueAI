@@ -1,19 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuthOrDevice } from "@/lib/server/api-auth";
+import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
 import {
   appendMeetingExchange,
   appendMeetingQuestionOnly,
   appendMeetingTranscript,
-  getActiveMeeting,
+  canAccessMeeting,
+  getActiveMeetingForSession,
   getMeeting,
 } from "@/lib/server/meetings";
 
 export const runtime = "nodejs";
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+const CORS_HEADERS = liveCorsHeaders("POST, OPTIONS");
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -26,7 +25,15 @@ export async function OPTIONS() {
  *  { type: "exchange", prompt, answer, provider?, model?, latencyMs?, source?, questionWho?, meetingId? }
  *  { type: "question", prompt, questionWho?, meetingId? }  // question with failed/empty answer
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const { error, session } = await requireAuthOrDevice(request);
+  if (error || !session) {
+    return withLiveCors(
+      error || NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      "POST, OPTIONS",
+    );
+  }
+
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body || typeof body.type !== "string") {
@@ -36,12 +43,16 @@ export async function POST(request: Request) {
       );
     }
 
+    void body.userId;
+    void body.account_id;
+    void body.workspaceId;
+
     let meetingId =
       typeof body.meetingId === "string" && body.meetingId.trim()
         ? body.meetingId.trim()
         : null;
     if (!meetingId) {
-      const active = await getActiveMeeting();
+      const active = await getActiveMeetingForSession(session);
       meetingId = active?.id || null;
     }
     if (!meetingId) {
@@ -52,7 +63,19 @@ export async function POST(request: Request) {
     }
 
     const meeting = await getMeeting(meetingId);
-    if (!meeting || meeting.status !== "live") {
+    if (!meeting) {
+      return NextResponse.json(
+        { ok: false, error: "meeting_not_found" },
+        { status: 404, headers: CORS_HEADERS },
+      );
+    }
+    if (!canAccessMeeting(meeting, session)) {
+      return NextResponse.json(
+        { ok: false, error: "forbidden" },
+        { status: 403, headers: CORS_HEADERS },
+      );
+    }
+    if (meeting.status !== "live") {
       return NextResponse.json(
         { ok: false, error: "meeting_not_live" },
         { status: 409, headers: CORS_HEADERS },

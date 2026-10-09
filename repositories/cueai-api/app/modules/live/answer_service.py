@@ -204,13 +204,16 @@ def build_prompts(body: dict[str, Any]) -> tuple[str, str, str]:
     )
 
     mid = active_meeting_id()
-    knowledge = str(body.get("knowledgeContext") or "") or retrieve_knowledge(
-        prompt,
-        limit=2 if body.get("stream") is True else 3,
-        max_chars=700 if body.get("stream") is True else 900,
-        meeting_id=mid,
-        document_ids=active_meeting_document_ids(),
-    )
+    if body.get("skipKnowledge") is True:
+        knowledge = ""
+    else:
+        knowledge = str(body.get("knowledgeContext") or "") or retrieve_knowledge(
+            prompt,
+            limit=2 if body.get("stream") is True else 3,
+            max_chars=700 if body.get("stream") is True else 900,
+            meeting_id=mid,
+            document_ids=active_meeting_document_ids(),
+        )
     system = build_system_instruction("", "CANDIDATE RESUME" in session_context or bool(session_context.strip()))
     user_prompt = build_user_prompt(
         prompt=prompt,
@@ -230,10 +233,7 @@ async def generate_live_answer(body: dict[str, Any]) -> dict[str, Any]:
     groq = _groq_key()
     gemini = gemini_api_key()
     if not groq and not gemini:
-        raise LiveAnswerError(
-            "No AI key is configured. Add GROQ_API_KEY (primary) and/or GEMINI_API_KEY to the server environment.",
-            503,
-        )
+        raise LiveAnswerError("AI provider is not configured.", 503)
 
     system, user_prompt, session_context = build_prompts(body)
 
@@ -260,18 +260,18 @@ async def generate_live_answer(body: dict[str, Any]) -> dict[str, Any]:
             except LiveAnswerError:
                 pass
 
-    provider = "groq"
-    if groq:
+    provider = "gemini"
+    if gemini:
         try:
-            result = await _groq_json(system, user_prompt)
-        except LiveAnswerError:
-            if not gemini:
-                raise
             result = await _gemini_json(system, user_prompt)
-            provider = "gemini"
+        except LiveAnswerError:
+            if not groq:
+                raise
+            result = await _groq_json(system, user_prompt)
+            provider = "groq"
     else:
-        result = await _gemini_json(system, user_prompt)
-        provider = "gemini"
+        result = await _groq_json(system, user_prompt)
+        provider = "groq"
 
     answer, confidence = parse_answer(result["text"])
     return {

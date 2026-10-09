@@ -10,23 +10,9 @@ const ADMIN_SESSION_KEY = "cueai-admin-session";
 const ADMIN_COOKIE = "cueai-admin";
 
 /**
- * Optional env-configured admin accounts for the legacy client-side admin form.
- * Prefer the real server session + RequireAdmin path (/admin).
- * Never hardcode passwords in source.
+ * Legacy client-side admin form helpers.
+ * Passwords are never read from NEXT_PUBLIC_* — use /login (server session).
  */
-const ADMIN_ACCOUNTS: Array<{
-  email: string;
-  password: string;
-  name: string;
-  role: AdminRole;
-}> = [
-  {
-    email: process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase() || "",
-    password: process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "",
-    name: "CueAI Admin",
-    role: "Admin" as AdminRole,
-  },
-].filter((a) => a.email && a.password);
 
 export function getAdminCookieName() {
   return ADMIN_COOKIE;
@@ -40,12 +26,8 @@ export function clearAdminCookie() {
   document.cookie = `${ADMIN_COOKIE}=; Path=/; Max-Age=0`;
 }
 
-function accountFor(email: string) {
-  return ADMIN_ACCOUNTS.find((a) => a.email === email.trim().toLowerCase());
-}
-
-export function isAdminEmail(email: string) {
-  return Boolean(accountFor(email));
+export function isAdminEmail(_email: string) {
+  return false;
 }
 
 export function getAdminSession(): AdminSession | null {
@@ -76,44 +58,16 @@ export type AdminAuthResult =
   | { ok: true; session: AdminSession }
   | { ok: false; error: string };
 
-export function loginAdmin(input: {
+export function loginAdmin(_input: {
   email: string;
   password: string;
 }): AdminAuthResult {
-  const email = input.email.trim().toLowerCase();
-  const password = input.password;
-
-  if (!email || !password) {
-    return { ok: false, error: "Email and password are required." };
-  }
-
-  const account = accountFor(email);
-  if (!account) {
-    return {
-      ok: false,
-      error: "This account is not an Admin. Use an Admin email to continue.",
-    };
-  }
-  if (password !== account.password) {
-    return { ok: false, error: "Incorrect password. Please try again." };
-  }
-
   return {
-    ok: true,
-    session: setAdminSession({
-      email: account.email,
-      name: account.name,
-      role: account.role,
-    }),
+    ok: false,
+    error: "Use the workspace sign-in page at /login. Client-side admin passwords are no longer supported.",
   };
 }
 
-export function grantAdminIfAllowed(email: string, name?: string): AdminSession | null {
-  const account = accountFor(email);
-  if (!account) return null;
-  return setAdminSession({
-    email: account.email,
-    name: name?.trim() || account.name,
-    role: account.role,
-  });
+export function grantAdminIfAllowed(_email: string, _name?: string): AdminSession | null {
+  return null;
 }

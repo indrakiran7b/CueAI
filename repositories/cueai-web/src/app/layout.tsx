@@ -54,7 +54,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col font-sans">
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var d=document.documentElement;var q=new URLSearchParams(location.search).get("desktop");if(q==="mac"||q==="macos"||(window.cueDesktop&&window.cueDesktop.isMac)){d.dataset.desktop="mac";document.title="CueAI"}var t=localStorage.getItem("cueai-theme");if(t==="light"||t==="dark")d.dataset.theme=t}catch(e){}`,
+            __html: `try{var d=document.documentElement;var q=new URLSearchParams(location.search).get("desktop");var w=window.cueDesktop;if(w&&w.isWindows){d.dataset.desktop="win"}else if(q==="mac"||q==="macos"||(w&&w.isMac)){d.dataset.desktop="mac";document.title="CueAI"}var t=localStorage.getItem("cueai-theme");if(t==="light"||t==="dark")d.dataset.theme=t}catch(e){}`,
           }}
         />
         <ThemeProvider>

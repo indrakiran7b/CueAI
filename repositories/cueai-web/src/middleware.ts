@@ -15,6 +15,7 @@ const PUBLIC_PREFIXES = [
   "/resume-tailor/login",
   "/api/auth",
   "/api/license",
+  "/api/billing/webhook",
   "/_next",
   "/favicon",
   "/icons",
@@ -38,9 +39,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Overlay uses device headers (not cookies). Auth is enforced in the route
+  // handlers via requireAuthOrDevice. Edge middleware cannot read the device store.
   if (
     pathname.startsWith("/api/live/") ||
     pathname.startsWith("/api/transcribe") ||
+    pathname.startsWith("/api/jobs/") ||
     pathname.startsWith("/api/health")
   ) {
     return NextResponse.next();

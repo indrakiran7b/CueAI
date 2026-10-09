@@ -4,6 +4,8 @@ export const env = {
   allowLocalModels: false,
 };
 
-export async function pipeline(): Promise<never> {
+export async function pipeline(
+  ..._args: unknown[]
+): Promise<never> {
   throw new Error("Local transformers embeddings are not loaded in this Next.js server.");
 }

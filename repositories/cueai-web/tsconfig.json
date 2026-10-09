@@ -13,6 +13,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
@@ -20,6 +21,14 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@cueai/shared-libraries": ["../cueai-shared-libraries/src/index.ts"],
+      "@cueai/shared-libraries/*": ["../cueai-shared-libraries/src/*"],
+      "@cueai/ai-orchestrator/*": ["../cueai-ai-orchestrator/src/*"],
+      "next": ["./node_modules/next"],
+      "next/*": ["./node_modules/next/*"],
+      "mammoth": ["./node_modules/mammoth"],
+      "unpdf": ["./node_modules/unpdf"],
+      "@xenova/transformers": ["./src/lib/stubs/xenova-transformers.ts"],
       "@cueai/knowledge-service/rag/*": ["../cueai-knowledge-service/src/rag/*"],
       "@cueai/knowledge-service/src/routes/admin/route": ["../cueai-knowledge-service/src/routes/admin/route.ts"],
       "@cueai/knowledge-service/src/routes/admin/query/route": ["../cueai-knowledge-service/src/routes/admin/query/route.ts"],
@@ -46,7 +55,13 @@
     "../cueai-notification-service/src/**/*.ts",
     "../cueai-export-service/src/**/*.ts",
     "../cueai-ai-orchestrator/src/**/*.ts",
-    "../cueai-shared-libraries/src/**/*.ts"
+    "../cueai-shared-libraries/src/**/*.ts",
+    "../cueai-gateway/src/**/*.ts"
   ],
-  "exclude": ["node_modules", "_local_backup"]
+  "exclude": [
+    "node_modules",
+    "_local_backup",
+    "../cueai-shared-libraries/src/licensing/**",
+    "scripts/test-device-auth.mts"
+  ]
 }

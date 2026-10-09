@@ -1,19 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuthOrDevice, upstreamSessionCookieHeader } from "@/lib/server/api-auth";
+import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept",
-};
+const CORS_HEADERS = liveCorsHeaders("POST, OPTIONS");
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const { error, session } = await requireAuthOrDevice(request);
+  if (error || !session) {
+    return withLiveCors(
+      error || NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      "POST, OPTIONS",
+    );
+  }
+
   const base = (process.env.CUEAI_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
   try {
     const upstream = await fetch(`${base}/v1/live/screen`, {
@@ -21,9 +27,7 @@ export async function POST(request: Request) {
       headers: {
         "content-type": request.headers.get("content-type") || "application/json",
         accept: request.headers.get("accept") || "*/*",
-        ...(request.headers.get("cookie")
-          ? { cookie: request.headers.get("cookie") as string }
-          : {}),
+        cookie: upstreamSessionCookieHeader(session, request.headers.get("cookie")),
       },
       body: await request.arrayBuffer(),
     });

@@ -162,6 +162,23 @@ export async function getActiveMeeting() {
   return (store.meetings || []).find((m) => m.status === "live") || null;
 }
 
+/** Live meeting for this identity only. Never falls back to another user's activeMeetingId. */
+export async function getActiveMeetingForSession(session: SessionPayload) {
+  const store = await readStore();
+  const live = (store.meetings || []).filter(
+    (m) => m.status === "live" && canAccessMeeting(m, session),
+  );
+  if (store.activeMeetingId) {
+    const found = live.find((m) => m.id === store.activeMeetingId);
+    if (found) return found;
+  }
+  return live.find((m) => m.userId === session.userId) || null;
+}
+
+export function briefingStorageKey(workspaceId: string, userId: string) {
+  return `${workspaceId}:${userId}`;
+}
+
 export type LiveBriefing = {
   kind?: "interview" | "regular";
   company?: string;
@@ -175,16 +192,32 @@ export type LiveBriefing = {
   updatedAt: string;
 };
 
-export async function getLiveBriefing(): Promise<LiveBriefing | null> {
+export async function getLiveBriefing(
+  session: SessionPayload,
+): Promise<LiveBriefing | null> {
   const store = await readStore();
-  return store.liveBriefing || null;
+  const key = briefingStorageKey(session.workspaceId, session.userId);
+  return store.liveBriefings?.[key] || null;
 }
 
-export async function saveLiveBriefing(partial: Partial<LiveBriefing>) {
+export async function getLiveBriefingForUser(userId: string): Promise<LiveBriefing | null> {
+  const store = await readStore();
+  const user = store.users.find((u) => u.id === userId);
+  if (!user) return null;
+  const workspaceId = user.workspaceId || store.workspace.id;
+  return store.liveBriefings?.[briefingStorageKey(workspaceId, userId)] || null;
+}
+
+export async function saveLiveBriefing(
+  partial: Partial<LiveBriefing>,
+  session: SessionPayload,
+) {
   const now = new Date().toISOString();
+  const key = briefingStorageKey(session.workspaceId, session.userId);
   await updateStore(async (s) => {
-    const prev = s.liveBriefing || { updatedAt: now };
-    s.liveBriefing = {
+    if (!s.liveBriefings) s.liveBriefings = {};
+    const prev = s.liveBriefings[key] || { updatedAt: now };
+    s.liveBriefings[key] = {
       ...prev,
       ...Object.fromEntries(
         Object.entries(partial).filter(([, v]) => v !== undefined && v !== ""),
@@ -195,11 +228,14 @@ export async function saveLiveBriefing(partial: Partial<LiveBriefing>) {
       updatedAt: now,
     };
   });
-  return getLiveBriefing();
+  return getLiveBriefing(session);
 }
 
-export async function resolveAnswerBriefing() {
-  const [meeting, briefing] = await Promise.all([getActiveMeeting(), getLiveBriefing()]);
+export async function resolveAnswerBriefing(session: SessionPayload) {
+  const [meeting, briefing] = await Promise.all([
+    getActiveMeetingForSession(session),
+    getLiveBriefing(session),
+  ]);
   return {
     meeting,
     briefing: {
@@ -236,7 +272,7 @@ export async function createMeeting(input: {
   pendingKnowledgeIds?: string[];
 }): Promise<DbMeeting> {
   const now = new Date().toISOString();
-  const existing = await getLiveBriefing();
+  const existing = input.userId ? await getLiveBriefingForUser(input.userId) : null;
   const documentIds = [
     ...new Set([
       ...(input.documentIds || []),
@@ -300,19 +336,24 @@ export async function createMeeting(input: {
     s.meetings.unshift(meeting);
     s.meetings = s.meetings.slice(0, 200);
     s.activeMeetingId = meeting.id;
-    s.liveBriefing = {
-      ...(s.liveBriefing || { updatedAt: now }),
-      kind: meeting.kind,
-      company: meeting.company,
-      jobDescription: meeting.jobDescription,
-      jobLink: meeting.jobLink,
-      resumeName: meeting.resumeName,
-      resumeText: meeting.resumeText || s.liveBriefing?.resumeText,
-      description: meeting.description,
-      documentIds: meeting.documentIds,
-      pendingKnowledgeIds: [],
-      updatedAt: now,
-    };
+    if (meeting.userId) {
+      if (!s.liveBriefings) s.liveBriefings = {};
+      const key = briefingStorageKey(meeting.workspaceId, meeting.userId);
+      const prev = s.liveBriefings[key] || { updatedAt: now };
+      s.liveBriefings[key] = {
+        ...prev,
+        kind: meeting.kind,
+        company: meeting.company,
+        jobDescription: meeting.jobDescription,
+        jobLink: meeting.jobLink,
+        resumeName: meeting.resumeName,
+        resumeText: meeting.resumeText || prev.resumeText,
+        description: meeting.description,
+        documentIds: meeting.documentIds,
+        pendingKnowledgeIds: [],
+        updatedAt: now,
+      };
+    }
   });
 
   if (reboundIds.length) {

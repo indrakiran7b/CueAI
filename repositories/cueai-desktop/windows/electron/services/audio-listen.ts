@@ -15,6 +15,7 @@ export function registerMediaPermissionHandler() {
       // Electron/Chromium variants
       (permission as string) === "audioCapture" ||
       (permission as string) === "microphone";
+    console.log("[PERM] request", permission, "granted", ok);
     callback(ok);
   });
 
@@ -27,6 +28,12 @@ export function registerMediaPermissionHandler() {
       p === "audioCapture" ||
       p === "microphone"
     );
+  });
+
+  session.defaultSession.setDevicePermissionHandler((details) => {
+    const granted = details.deviceType === "audio" || details.deviceType === "unknown";
+    console.log("[PERM] device", details.deviceType, "granted", granted);
+    return granted;
   });
 
   // Prefer silent Windows loopback for getDisplayMedia (Teams/Zoom/browser audio).

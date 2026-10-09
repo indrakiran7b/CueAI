@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuthOrDevice } from "@/lib/server/api-auth";
+import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -7,11 +9,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_STT_MODEL = process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo";
 const MAX_BYTES = 25 * 1024 * 1024;
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+const CORS_HEADERS = liveCorsHeaders("POST, OPTIONS");
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -21,9 +19,25 @@ function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: CORS_HEADERS });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const { error, session } = await requireAuthOrDevice(request);
+  if (error || !session) {
+    return withLiveCors(
+      error || NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      "POST, OPTIONS",
+    );
+  }
+
   try {
-    const form = await request.formData();
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Content-Type was not one of")) {
+        return json({ error: "Audio file is required." }, 400);
+      }
+      throw err;
+    }
     const file = form.get("audio");
     const label = String(form.get("label") || "You").slice(0, 40);
 
@@ -79,7 +93,16 @@ export async function POST(request: Request) {
       } else {
         const detail = await groqRes.text();
         console.error("groq_transcribe_failed", groqRes.status, detail.slice(0, 400));
-        tryGemini = true;
+        const { resolveGeminiCredentials } = await import("@/lib/server/gemini");
+        if (await resolveGeminiCredentials()) {
+          tryGemini = true;
+        } else {
+          const status = groqRes.status === 413 ? 413 : groqRes.status >= 500 ? 502 : 400;
+          return json(
+            { error: "Transcription failed. Check the audio file and try again." },
+            status,
+          );
+        }
       }
     }
 
@@ -101,9 +124,7 @@ export async function POST(request: Request) {
 
     try {
       const { randomUUID } = await import("node:crypto");
-      const { getSessionFromRequest } = await import("@/lib/server/api-auth");
       const { recordUsageEvent } = await import("@/lib/server/usage");
-      const session = await getSessionFromRequest();
       const minutes = Math.max(1, Math.round(file.size / (32_000 * 60)) || 1);
       const requestId = randomUUID();
       await recordUsageEvent(session, {

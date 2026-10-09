@@ -3,6 +3,8 @@
  * Keep in sync with signSession() in session.ts (HMAC-SHA256 over base64url payload).
  */
 
+import { resolveAuthSecret } from "@/lib/runtime-env";
+
 export const SESSION_COOKIE = "cueai_admin_session";
 
 export type EdgeSessionPayload = {
@@ -16,7 +18,7 @@ export type EdgeSessionPayload = {
 };
 
 function secret() {
-  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "cueai-dev-secret-change-me";
+  return resolveAuthSecret();
 }
 
 function b64urlFromBytes(buf: ArrayBuffer | Uint8Array) {

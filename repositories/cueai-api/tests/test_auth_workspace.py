@@ -30,6 +30,7 @@ def api_client(tmp_path, monkeypatch):
     data_dir.mkdir()
     monkeypatch.setenv("CUEAI_DATA_DIR", str(data_dir))
     monkeypatch.setenv("AUTH_SECRET", "test-secret")
+    monkeypatch.setenv("CUEAI_BOOTSTRAP_ADMIN_ENABLED", "true")
     monkeypatch.setenv("NEXT_PUBLIC_AUTH_BYPASS", "false")
     monkeypatch.setenv("NEXT_PUBLIC_SKIP_AUTH", "false")
     monkeypatch.setattr("app.main.init_redis", _noop_async)
@@ -80,6 +81,7 @@ def test_login_service_direct(tmp_path, monkeypatch) -> None:
     data_dir.mkdir()
     monkeypatch.setenv("CUEAI_DATA_DIR", str(data_dir))
     monkeypatch.setenv("AUTH_SECRET", "test-secret")
+    monkeypatch.setenv("CUEAI_BOOTSTRAP_ADMIN_ENABLED", "true")
     import app.persistence.store as store_mod
 
     store_mod._memory = None
@@ -163,6 +165,7 @@ def _client(tmp_path, monkeypatch, **env_flags) -> TestClient:
     data_dir.mkdir(exist_ok=True)
     monkeypatch.setenv("CUEAI_DATA_DIR", str(data_dir))
     monkeypatch.setenv("AUTH_SECRET", "test-secret")
+    monkeypatch.setenv("CUEAI_BOOTSTRAP_ADMIN_ENABLED", "true")
     monkeypatch.setattr("app.main.init_redis", _noop_async)
     monkeypatch.setattr("app.main.dispose_redis", _noop_async)
     monkeypatch.setattr("app.main.check_redis", _redis_ok)
@@ -211,3 +214,15 @@ def test_store_uses_configured_path(api_client: TestClient, tmp_path, monkeypatc
     store_mod._memory = None
     read_store()
     assert store_path().parent == tmp_path / "data2"
+
+
+def test_data_dir_without_env_is_api_relative(monkeypatch) -> None:
+    monkeypatch.delenv("CUEAI_DATA_DIR", raising=False)
+    monkeypatch.delenv("CUEAI_WEB_DATA_DIR", raising=False)
+    import app.persistence.store as store_mod
+
+    store_mod._memory = None
+    store_mod._loaded_mtime = 0.0
+    data_dir = store_mod._data_dir()
+    assert data_dir.name == ".data"
+    assert data_dir.parent.name == "cueai-api" or (data_dir.parent / "app").is_dir()

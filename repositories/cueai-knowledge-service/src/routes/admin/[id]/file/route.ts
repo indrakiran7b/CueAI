@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const store = await readStore();
   const item = store.knowledge.find(
-    (k) => k.id === id && (!k.workspaceId || k.workspaceId === session.workspaceId),
+    (k) => k.id === id && k.workspaceId === session.workspaceId,
   );
   if (!item?.storagePath) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });

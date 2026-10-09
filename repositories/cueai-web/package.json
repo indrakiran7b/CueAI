@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:desktop": "next dev --port 3000 --hostname 127.0.0.1",
+    "dev": "next dev --webpack --port 3000 --hostname 127.0.0.1",
+    "dev:desktop": "next dev --webpack --port 3000 --hostname 127.0.0.1",
     "dev:mac": "next dev --webpack --port 3002 --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",

@@ -15,6 +15,7 @@ const PUBLIC_PREFIXES = [
   "/resume-tailor/login",
   "/api/auth",
   "/api/license",
+  "/api/billing/webhook",
   "/_next",
   "/favicon",
   "/icons",

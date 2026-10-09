@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
     const dup = store.knowledge.find(
       (k) =>
         k.checksum === checksum &&
-        (!k.workspaceId || k.workspaceId === session.workspaceId) &&
+        k.workspaceId === session.workspaceId &&
         k.status !== "failed",
     );
     if (dup) {
@@ -267,7 +267,7 @@ export async function PATCH(req: NextRequest) {
 
   const store = await updateStore(async (s) => {
     const item = s.knowledge.find(
-      (k) => k.id === body.id && (!k.workspaceId || k.workspaceId === session.workspaceId),
+      (k) => k.id === body.id && k.workspaceId === session.workspaceId,
     );
     if (!item) throw new Error("NOT_FOUND");
     if (body.title?.trim()) item.title = body.title.trim();

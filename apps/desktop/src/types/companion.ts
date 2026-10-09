@@ -82,6 +82,7 @@ export type CompanionAPI = {
     who?: string;
     error?: string;
   }>;
+  getDeviceAuthHeaders?: () => Promise<Record<string, string>>;
   getSession: () => Promise<MeetingSession>;
   onMode: (cb: (mode: CompanionMode) => void) => () => void;
   onSession: (cb: (session: MeetingSession) => void) => () => void;

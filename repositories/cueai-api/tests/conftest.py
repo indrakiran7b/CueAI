@@ -10,6 +10,8 @@ from app.core.config import Settings
 # Ensure `app.main` can import before a local `.env` exists (pytest loads conftest first).
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("AUTH_SECRET", "test-auth-secret")
+os.environ.setdefault("CUEAI_ENV", "test")
+os.environ.setdefault("CUEAI_BOOTSTRAP_ADMIN_ENABLED", "true")
 os.environ.setdefault(
     "REDIS_URL",
     os.environ.get("CUEAI_TEST_REDIS_URL", "redis://127.0.0.1:6379/0"),

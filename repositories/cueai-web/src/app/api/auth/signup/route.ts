@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeRole } from "@/lib/roles";
 import { CREDENTIALS_BYPASS } from "@/lib/auth-mode";
 import { generateBypassSignupEmail, resolveBypassUser } from "@/lib/server/bypass-auth";
+import { isBootstrapAdminEmail } from "@/lib/server/bootstrap-admin";
 import { appendAudit, publicUser, readStore, updateStore } from "@/lib/server/db";
 import {
   hashPassword,
@@ -111,11 +112,11 @@ export async function POST(req: NextRequest) {
     }
 
     const activeUsers = s.users.filter(
-      (u) => u.status === "Active" && u.email !== "admin@cueai.local",
+      (u) => u.status === "Active" && !isBootstrapAdminEmail(u.email),
     );
     const onlyBootstrap =
       s.users.filter((u) => u.status === "Active").length === 1 &&
-      s.users.some((u) => u.email === "admin@cueai.local" && u.status === "Active");
+      s.users.some((u) => isBootstrapAdminEmail(u.email) && u.status === "Active");
     role = activeUsers.length === 0 || onlyBootstrap ? "Admin" : "User";
     userId = `usr_${randomUUID().slice(0, 10)}`;
 

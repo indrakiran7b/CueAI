@@ -1,8 +1,9 @@
 /**
- * Live answers from the CueAI web API (Groq primary, Gemini fallback).
+ * Live answers from the CueAI web API (Gemini primary, Groq fallback).
  * Supports streaming SSE for ~2–3s overlay latency targets.
  */
 
+import { deviceAuthHeaders } from "../../../shared/device-auth-headers";
 import { createLatencyTracker, pipelineLog } from "./pipeline-log";
 
 export type LiveTranscriptLine = { who: string; text: string };
@@ -35,7 +36,10 @@ async function loadSessionContext() {
     return cachedSessionContext;
   }
   try {
-    const res = await fetch(`${apiBase}/api/live/briefing`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/api/live/briefing`, {
+      cache: "no-store",
+      headers: await deviceAuthHeaders(),
+    });
     const data = (await res.json().catch(() => ({}))) as {
       hasResume?: boolean;
       resumeName?: string;
@@ -82,7 +86,7 @@ export async function requestLiveAnswer(
   try {
     res = await fetch(`${apiBase}/api/live/answer`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await deviceAuthHeaders()) },
       body: JSON.stringify({
         prompt,
         transcript,
@@ -124,6 +128,13 @@ export type StreamLiveAnswerHandlers = {
   signal?: AbortSignal;
 };
 
+function needsLiveKnowledge(question: string) {
+  const q = question.toLowerCase();
+  return /\b((my|our|this|the)\s+)?(project|resume|experience|background|company|knowledge base|codebase|policy|onboarding|handbook|document|wiki)\b|\b(i|we)\s+(used|built|implemented|worked)\b/.test(
+    q,
+  );
+}
+
 /**
  * Stream a live answer over SSE. Falls back to non-stream JSON if the server
  * rejects streaming or returns a non-SSE body.
@@ -142,14 +153,19 @@ export async function requestLiveAnswerStream(
   try {
     res = await fetch(`${apiBase}/api/live/answer`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...(await deviceAuthHeaders()),
+      },
       signal: handlers.signal,
       body: JSON.stringify({
         prompt,
-        transcript,
+        transcript: transcript.slice(-3),
         sessionContext,
         stream: true,
         mode: "answer",
+        skipKnowledge: !needsLiveKnowledge(prompt),
       }),
     });
   } catch (err) {

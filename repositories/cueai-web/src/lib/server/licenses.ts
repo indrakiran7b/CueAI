@@ -4,6 +4,7 @@ import {
   keygateActivate,
   keygateDeactivate,
   keygateEntitlements,
+  keygateValidateLicense,
   keygateVerify,
   userMessageForKeygateState,
   type KeygateMappedState,
@@ -740,7 +741,6 @@ export async function validateLicense(input: {
     });
   }
 
-  const { keygateValidateLicense } = await import("@/lib/server/keygate");
   const keygate = await keygateValidateLicense({
     licenseKey: input.licenseKey,
     licenseId: license.id,
@@ -750,7 +750,7 @@ export async function validateLicense(input: {
   if (!keygate.skipped && !keygate.ok) {
     return publicFromLicense(license, activation, activeCount, input.platform, input.deviceId, {
       valid: false,
-      state: "REVOKED",
+      state: keygateStateToLicenseState(keygate.state ?? "REVOKED"),
       message: keygate.message || "This license is not authorized.",
     });
   }

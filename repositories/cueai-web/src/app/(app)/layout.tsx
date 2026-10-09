@@ -3,7 +3,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { WebCompanionProvider } from "@/components/companion/web-companion-provider";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { CueAiRouteGate } from "@/components/auth/cueai-route-gate";
-import { MacDeviceGate } from "@/components/mac/mac-device-gate";
+import { MacDeviceGate, WindowsDeviceGate } from "@/components/mac/mac-device-gate";
 import { MacWorkspace } from "@/components/desktop/mac-workspace";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <WebCompanionProvider>
       <RequireAuth>
         <CueAiRouteGate>
+        <WindowsDeviceGate>
         <MacDeviceGate>
         <MacWorkspace>
           <Sidebar />
@@ -21,6 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </MacWorkspace>
         </MacDeviceGate>
+        </WindowsDeviceGate>
         </CueAiRouteGate>
       </RequireAuth>
     </WebCompanionProvider>

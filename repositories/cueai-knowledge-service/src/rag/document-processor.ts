@@ -204,7 +204,7 @@ export async function deleteKnowledgeDocumentFully(input: {
   const doc = store.knowledge.find(
     (k) =>
       k.id === input.documentId &&
-      (!k.workspaceId || k.workspaceId === input.workspaceId),
+      k.workspaceId === input.workspaceId,
   );
   if (!doc) return false;
 
@@ -217,7 +217,7 @@ export async function deleteKnowledgeDocumentFully(input: {
     const idx = s.knowledge.findIndex(
       (k) =>
         k.id === input.documentId &&
-        (!k.workspaceId || k.workspaceId === input.workspaceId),
+        k.workspaceId === input.workspaceId,
     );
     if (idx >= 0) s.knowledge.splice(idx, 1);
   });
@@ -233,6 +233,7 @@ export function guessKnowledgeType(
   if (lower.endsWith(".docx") || mime.includes("wordprocessingml")) return "docx";
   if (lower.endsWith(".md") || mime === "text/markdown") return "md";
   if (lower.endsWith(".csv") || mime === "text/csv") return "txt";
+  if (lower.endsWith(".json") || mime === "application/json") return "txt";
   if (lower.endsWith(".txt") || mime.startsWith("text/")) return "txt";
   return "note";
 }

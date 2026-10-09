@@ -49,6 +49,12 @@ export const IpcChannels = {
   DESKTOP_PICK_FILE: "desktop:pick-file",
   DESKTOP_SAVE_FILE: "desktop:save-file",
 
+  DEVICE_GET_PUBLIC: "device:get-public",
+  DEVICE_REGISTER: "device:register",
+  DEVICE_VERIFY: "device:verify",
+  DEVICE_CLEAR_SESSION: "device:clear-session",
+  DEVICE_GET_AUTH_HEADERS: "device:get-auth-headers",
+
   // Settings / store
   STORE_GET: "store:get",
   STORE_SET: "store:set",

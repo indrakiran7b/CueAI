@@ -34,15 +34,72 @@ import {
 import { getDesktopAudioSourceId } from "../services/audio-listen";
 import { capturePrimaryScreenshot, listCaptureDisplays } from "../services/screenshot";
 import { getWebOrigin } from "../services/web-server";
+import { windowsDeviceService } from "../platform/windows/windowsDevice";
 
 function getMainWindow() {
-  return BrowserWindow.getAllWindows().find(
-    (w) =>
+  return BrowserWindow.getAllWindows().find((w) => {
+    const url = w.webContents.getURL();
+    return (
       w.getTitle() === "CueAI" ||
-      w.webContents.getURL().includes("localhost:3000") ||
-      w.webContents.getURL().includes("127.0.0.1:39100") ||
-      w.webContents.getURL().includes("/dashboard")
-  );
+      url.includes("localhost:3000") ||
+      url.includes("127.0.0.1:3000") ||
+      url.includes("127.0.0.1:39100") ||
+      url.includes("/dashboard")
+    );
+  });
+}
+
+function getDashboardSession() {
+  const main = getMainWindow();
+  if (main && !main.isDestroyed()) return main.webContents.session;
+  return null;
+}
+
+let deviceAuthEnsuredAt = 0;
+const DEVICE_AUTH_ENSURE_MS = 30_000;
+
+async function ensureDeviceAuthHeaders(): Promise<Record<string, string>> {
+  const now = Date.now();
+  let headers = windowsDeviceService.getAuthHeaders();
+  if (
+    now - deviceAuthEnsuredAt < DEVICE_AUTH_ENSURE_MS &&
+    headers["X-CueAI-Device-Id"] &&
+    headers["X-CueAI-Device-Credential"]
+  ) {
+    return headers;
+  }
+  const ses = getDashboardSession();
+  if (!ses) {
+    console.log("[DEVICE] cannot verify credential — dashboard session unavailable");
+    return headers;
+  }
+  const origin = getWebOrigin();
+  const fetchImpl = (input: string, init?: RequestInit) => ses.fetch(input, init);
+  const verified = await windowsDeviceService.verifyDevice(fetchImpl, origin);
+  if (
+    verified.ok &&
+    verified.authorized &&
+    headers["X-CueAI-Device-Id"] &&
+    headers["X-CueAI-Device-Credential"]
+  ) {
+    deviceAuthEnsuredAt = now;
+    return headers;
+  }
+  if (verified.status === "BLOCKED" || verified.status === "REVOKED") {
+    console.log("[DEVICE] repair skipped", { status: verified.status });
+    return headers;
+  }
+  console.log("[DEVICE] Repairing stale or missing device credential via existing registration");
+  const result = await windowsDeviceService.registerDevice(fetchImpl, origin);
+  console.log("[DEVICE] repair", {
+    status: result.status,
+    authorized: result.authorized,
+  });
+  headers = windowsDeviceService.getAuthHeaders();
+  if (headers["X-CueAI-Device-Id"] && headers["X-CueAI-Device-Credential"]) {
+    deviceAuthEnsuredAt = Date.now();
+  }
+  return headers;
 }
 
 let ipcRegistered = false;
@@ -122,7 +179,26 @@ export function registerIpcHandlers() {
     const blob = new Blob([Buffer.from(payload.data)], { type: mime });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
-    const res = await fetch(`${origin}/api/transcribe`, { method: "POST", body });
+    const auth = await ensureDeviceAuthHeaders();
+    console.log("[TRANSCRIBE] request sent", {
+      path: "/api/transcribe",
+      bytes: payload.data.byteLength,
+      deviceId: Boolean(auth["X-CueAI-Device-Id"]),
+      credential: Boolean(auth["X-CueAI-Device-Credential"]),
+    });
+    const ses = getDashboardSession();
+    const res = ses
+      ? await ses.fetch(`${origin}/api/transcribe`, {
+          method: "POST",
+          headers: auth,
+          body,
+        })
+      : await fetch(`${origin}/api/transcribe`, {
+          method: "POST",
+          headers: auth,
+          body,
+        });
+    console.log("[TRANSCRIBE] response status", res.status);
     const data = (await res.json()) as { text?: string; who?: string; error?: string };
     if (!res.ok) return { error: data.error || "Transcription failed" };
     return data;
@@ -354,4 +430,38 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle(IpcChannels.STORE_GET_ALL, () => getAllStore());
+
+  ipcMain.handle(IpcChannels.DEVICE_GET_PUBLIC, () => {
+    try {
+      return windowsDeviceService.getPublicDevice();
+    } catch (err) {
+      console.error("[DEVICE] Failed to read Windows account-device identity", err);
+      throw err;
+    }
+  });
+  ipcMain.handle(IpcChannels.DEVICE_VERIFY, async (event) => {
+    const origin = getWebOrigin();
+    return windowsDeviceService.verifyDevice(
+      (input, init) => event.sender.session.fetch(input, init),
+      origin,
+    );
+  });
+  ipcMain.handle(IpcChannels.DEVICE_REGISTER, async (event) => {
+    const origin = getWebOrigin();
+    return windowsDeviceService.registerDevice(
+      (input, init) => event.sender.session.fetch(input, init),
+      origin,
+    );
+  });
+  ipcMain.handle(IpcChannels.DEVICE_CLEAR_SESSION, () => {
+    return windowsDeviceService.clearDeviceSession();
+  });
+  ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, async () => {
+    const headers = await ensureDeviceAuthHeaders();
+    console.log("[DEVICE] auth headers present", {
+      deviceId: Boolean(headers["X-CueAI-Device-Id"]),
+      credential: Boolean(headers["X-CueAI-Device-Credential"]),
+    });
+    return headers;
+  });
 }

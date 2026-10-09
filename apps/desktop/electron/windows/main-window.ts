@@ -35,7 +35,13 @@ export function createMainWindow(): BrowserWindow {
 
   const origin = getWebOrigin().replace(/\/$/, "");
   const target = `${origin}/dashboard`;
+  console.log(`[WEB] loading ${target}`);
   void win.loadURL(target);
+  win.webContents.on("did-finish-load", () => {
+    if (win.isDestroyed()) return;
+    const loaded = win.webContents.getURL();
+    if (!loaded.startsWith("data:")) console.log(`[WEB] loaded ${loaded.split("?")[0]}`);
+  });
 
   win.once("ready-to-show", () => {
     win.show();

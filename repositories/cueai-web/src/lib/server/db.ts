@@ -3,7 +3,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import type { OnboardingProfile } from "@/lib/onboarding";
-import { hashPassword } from "@/lib/server/session";
+import { hashPassword, verifyPassword } from "@/lib/server/session";
+import {
+  DEV_ONLY_BOOTSTRAP_EMAIL,
+  DEV_ONLY_BOOTSTRAP_PASSWORD,
+  resolveBootstrapAdmin,
+} from "@/lib/server/bootstrap-admin";
+import { isCueaiProduction } from "@/lib/runtime-env";
 
 export type UserStatus = "Active" | "Invited" | "Deactivated";
 
@@ -307,7 +313,10 @@ export type WorkspaceStore = {
   meetings?: DbMeeting[];
   devices?: DbDevice[];
   activeMeetingId?: string | null;
-  /** Latest resume / job briefing for live answers, even before a meeting starts. */
+  /**
+   * Legacy global briefing. Never read for authenticated live/desktop requests.
+   * New writes go to liveBriefings keyed by workspaceId:userId.
+   */
   liveBriefing?: {
     kind?: "interview" | "regular";
     company?: string;
@@ -322,6 +331,22 @@ export type WorkspaceStore = {
     documentIds?: string[];
     updatedAt: string;
   } | null;
+  /** Per-user live briefing. Key: `${workspaceId}:${userId}`. */
+  liveBriefings?: Record<
+    string,
+    {
+      kind?: "interview" | "regular";
+      company?: string;
+      jobDescription?: string;
+      jobLink?: string;
+      resumeName?: string;
+      resumeText?: string;
+      description?: string;
+      pendingKnowledgeIds?: string[];
+      documentIds?: string[];
+      updatedAt: string;
+    }
+  >;
 };
 
 // Packaged desktop builds set CUEAI_DATA_DIR because their working directory
@@ -329,9 +354,38 @@ export type WorkspaceStore = {
 const DATA_DIR = process.env.CUEAI_DATA_DIR?.trim() || path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "workspace-store.json");
 
+function defaultUsers(workspaceId: string): DbUser[] {
+  const bootstrap = resolveBootstrapAdmin();
+  if (!bootstrap) return [];
+  return [
+    {
+      id: "usr_bootstrap_admin",
+      name: bootstrap.name,
+      email: bootstrap.email,
+      passwordHash: hashPassword(bootstrap.password),
+      role: "Admin",
+      status: "Active",
+      workspaceId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function assertNoDefaultBootstrapInProduction(store: WorkspaceStore) {
+  if (!isCueaiProduction()) return;
+  const seeded = store.users.find(
+    (u) => u.email === DEV_ONLY_BOOTSTRAP_EMAIL && u.passwordHash,
+  );
+  if (seeded && verifyPassword(DEV_ONLY_BOOTSTRAP_PASSWORD, seeded.passwordHash)) {
+    throw new Error(
+      "Production cannot start with the default development bootstrap credentials. Change or remove that admin account.",
+    );
+  }
+}
+
 function defaultStore(): WorkspaceStore {
   const workspaceId = "ws_default";
-  const adminId = "usr_bootstrap_admin";
   return {
     workspace: {
       id: workspaceId,
@@ -352,19 +406,7 @@ function defaultStore(): WorkspaceStore {
         autoDeleteEnabled: false,
       },
     },
-    users: [
-      {
-        id: adminId,
-        name: "Workspace Admin",
-        email: "admin@cueai.local",
-        passwordHash: hashPassword("admin123"),
-        role: "Admin",
-        status: "Active",
-        workspaceId,
-        createdAt: new Date().toISOString(),
-        lastActiveAt: new Date().toISOString(),
-      },
-    ],
+    users: defaultUsers(workspaceId),
     invites: [],
     knowledge: [],
     usage: [],
@@ -421,12 +463,17 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     for (const device of memory.devices) {
       if (!device.updatedAt) device.updatedAt = device.lastVerifiedAt || device.registeredAt;
     }
+    assertNoDefaultBootstrapInProduction(memory);
     return memory;
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("default development bootstrap")) {
+      throw err;
+    }
     memory = defaultStore();
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
     memory.workspace.createdAt = new Date().toISOString();
+    assertNoDefaultBootstrapInProduction(memory);
     await persist(memory);
     loadedMtimeMs = await storeFileMtime();
     return memory;

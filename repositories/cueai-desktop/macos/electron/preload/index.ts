@@ -131,6 +131,12 @@ const cueDesktop = {
       cleared: boolean;
       identityPreserved: boolean;
     }>,
+  getAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_GET_PUBLIC),
+  registerAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_REGISTER),
+  verifyAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_VERIFY),
+  clearAccountDeviceSession: () => ipcRenderer.invoke(IpcChannels.DEVICE_CLEAR_SESSION),
+  getDeviceAuthHeaders: () =>
+    ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
   getLicenseDevice: () => ipcRenderer.invoke(IpcChannels.LICENSE_GET_DEVICE),
   getLicenseStatus: () => ipcRenderer.invoke(IpcChannels.LICENSE_GET_STATUS),
   activateLicense: (licenseKey: string) => ipcRenderer.invoke(IpcChannels.LICENSE_ACTIVATE, licenseKey),
@@ -196,6 +202,8 @@ const cueai = {
       who?: string;
       error?: string;
     }>,
+  getDeviceAuthHeaders: () =>
+    ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
   getSession: () =>
     ipcRenderer.invoke(IpcChannels.MEETING_GET_SESSION) as Promise<MeetingSession>,
   onMode: (cb: (mode: CompanionMode) => void) => {

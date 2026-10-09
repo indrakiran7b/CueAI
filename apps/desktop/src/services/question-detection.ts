@@ -1,8 +1,13 @@
 /**
  * Lightweight question / interview-prompt detection for live auto-answers.
- * Stitches consecutive STT fragments so questions are not cut mid-sentence,
- * with a short endpoint window for low latency.
+ * Stitches consecutive STT fragments so questions are not cut mid-sentence.
  */
+
+import {
+  STITCH_INCOMPLETE_MS,
+  STITCH_WINDOW_MS,
+  looksTruncatedTranscript,
+} from "./speech-capture";
 
 export type QuestionDecision = {
   accept: boolean;
@@ -13,8 +18,6 @@ export type QuestionDecision = {
 
 const MAX_RECENT = 8;
 const DEDUPE_WINDOW_MS = 45_000;
-/** Wait for trailing STT fragments when utterance looks incomplete. */
-const STITCH_WINDOW_MS = 700;
 const MIN_CHARS = 10;
 const MAX_CHARS = 600;
 
@@ -31,6 +34,7 @@ const pending: Record<
     audioEndAt?: number;
     transcribedAt?: number;
     timer: ReturnType<typeof setTimeout> | null;
+    heldOnce?: boolean;
   }
 > = {};
 
@@ -44,7 +48,7 @@ const FILLER_ONLY =
   /^(um+|uh+|hmm+|mm+|yeah|yep|yup|ok|okay|right|sure|thanks|thank you|hello|hi|hey|bye|let'?s move on|next question)\.?$/i;
 
 const INCOMPLETE_TAIL =
-  /\b(and|or|but|the|a|an|to|of|for|with|in|on|at|my|your|our|from|into|using|via|through|by)$/i;
+  /\b(and|or|but|the|a|an|to|of|for|with|in|on|at|my|your|our|from|into|using|via|through|by|is|are|was|were)$/i;
 
 function normalize(text: string) {
   return text
@@ -52,6 +56,13 @@ function normalize(text: string) {
     .replace(/[^\w\s?]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Light cleanup only — never rewrite or shorten the spoken question. */
+export function cleanQuestionText(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (!t) return t;
+  return t.replace(/^[a-z]/, (ch) => ch.toUpperCase());
 }
 
 function questionIdFor(norm: string) {
@@ -76,6 +87,7 @@ function looksLikeQuestion(text: string): boolean {
 function isIncomplete(text: string, forStitch = true): boolean {
   const t = text.trim();
   if (t.endsWith("?")) return false;
+  if (looksTruncatedTranscript(t)) return true;
   if (t.length < 24 && !WH.test(t) && !INTERVIEW.test(t)) return true;
   if (INCOMPLETE_TAIL.test(t) && !t.endsWith("?")) return true;
   // During stitching only: short WH/INTERVIEW without punct may still be growing.
@@ -155,8 +167,9 @@ export function evaluateQuestion(
     return { accept: false, question: raw, reason: "filler" };
   }
   // After stitch finalization, do not reject for missing "?" (Whisper rarely emits it).
+  // forceSystem only relaxes "looks like a question" — never skip truncation checks.
   const forStitch = opts?.finalized === true ? false : true;
-  if (isIncomplete(raw, forStitch) && !opts?.forceSystem) {
+  if (isIncomplete(raw, forStitch) || looksTruncatedTranscript(raw)) {
     return { accept: false, question: raw, reason: "incomplete" };
   }
   if (!looksLikeQuestion(raw) && !opts?.forceSystem) {
@@ -207,9 +220,9 @@ export function assembleUtterance(
   const key = who || "Speaker";
   const now = Date.now();
   let bag = pending[key];
-  if (!bag || now - bag.updatedAt > STITCH_WINDOW_MS + 400) {
+  if (!bag || now - bag.updatedAt > STITCH_INCOMPLETE_MS + 500) {
     if (bag?.timer) clearTimeout(bag.timer);
-    bag = { parts: [], updatedAt: now, timer: null };
+    bag = { parts: [], updatedAt: now, timer: null, heldOnce: false };
     pending[key] = bag;
   }
 
@@ -257,6 +270,10 @@ export function assembleUtterance(
     return;
   }
 
+  const waitMs = looksTruncatedTranscript(joined) || isIncomplete(joined, true)
+    ? STITCH_INCOMPLETE_MS
+    : STITCH_WINDOW_MS;
+
   bag.timer = setTimeout(() => {
     const current = pending[key];
     if (!current) return;
@@ -265,7 +282,26 @@ export function assembleUtterance(
       audioEndAt: current.audioEndAt,
       transcribedAt: current.transcribedAt,
     };
+    if (
+      !current.heldOnce &&
+      finalText &&
+      (looksTruncatedTranscript(finalText) || isIncomplete(finalText, true))
+    ) {
+      current.heldOnce = true;
+      current.timer = setTimeout(() => {
+        const again = pending[key];
+        if (!again) return;
+        const text = again.parts.join(" ").replace(/\s+/g, " ").trim();
+        const later = {
+          audioEndAt: again.audioEndAt,
+          transcribedAt: again.transcribedAt,
+        };
+        delete pending[key];
+        if (text) onReady({ who: key, text, finalized: true, ...later });
+      }, STITCH_INCOMPLETE_MS);
+      return;
+    }
     delete pending[key];
     if (finalText) onReady({ who: key, text: finalText, finalized: true, ...meta });
-  }, STITCH_WINDOW_MS);
+  }, waitMs);
 }

@@ -24,6 +24,7 @@ type ListenSources = {
 /** Main window API — CueAI shell (Next.js). */
 const cueDesktop = {
   isDesktop: true as const,
+  isWindows: true as const,
   minimize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MINIMIZE),
   maximize: () => ipcRenderer.invoke(IpcChannels.WINDOW_MAXIMIZE),
   close: () => ipcRenderer.invoke(IpcChannels.WINDOW_CLOSE),
@@ -64,6 +65,12 @@ const cueDesktop = {
   activateLicense: (licenseKey: string) => ipcRenderer.invoke(IpcChannels.LICENSE_ACTIVATE, licenseKey),
   validateLicense: () => ipcRenderer.invoke(IpcChannels.LICENSE_VALIDATE),
   deactivateLicense: () => ipcRenderer.invoke(IpcChannels.LICENSE_DEACTIVATE),
+  getAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_GET_PUBLIC),
+  registerAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_REGISTER),
+  verifyAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_VERIFY),
+  clearAccountDeviceSession: () => ipcRenderer.invoke(IpcChannels.DEVICE_CLEAR_SESSION),
+  getDeviceAuthHeaders: () =>
+    ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
   setMeetingSession: (session: Partial<MeetingSession>) =>
     ipcRenderer.invoke(IpcChannels.MEETING_SET_SESSION, session) as Promise<MeetingSession>,
   getMeetingSession: () =>
@@ -163,6 +170,8 @@ const cueai = {
       who?: string;
       error?: string;
     }>,
+  getDeviceAuthHeaders: () =>
+    ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
   getSession: () =>
     ipcRenderer.invoke(IpcChannels.MEETING_GET_SESSION) as Promise<MeetingSession>,
   onMode: (cb: (mode: CompanionMode) => void) => {

@@ -104,6 +104,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.modules.onboarding.router import router as onboarding_router
     from app.modules.workspace.router import router as workspace_router
 
+    @app.get("/health")
+    async def liveness() -> dict[str, str]:
+        """Process liveness. Dependency checks remain on GET /v1/health."""
+        return {"status": "ok"}
+
     app.include_router(api_v1)
     app.include_router(auth_router, prefix="/v1")
     app.include_router(live_router, prefix="/v1")

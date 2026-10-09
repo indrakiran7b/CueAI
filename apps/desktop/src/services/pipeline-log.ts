@@ -96,5 +96,11 @@ export function createLatencyTracker(label: string) {
 export function prewarmAnswerApi(apiBase: string) {
   const base = apiBase.replace(/\/$/, "");
   if (!base) return;
-  void fetch(`${base}/api/live/briefing`, { cache: "no-store" }).catch(() => undefined);
+  void (async () => {
+    const { deviceAuthHeaders } = await import("./device-auth-headers");
+    await fetch(`${base}/api/live/briefing`, {
+      cache: "no-store",
+      headers: await deviceAuthHeaders(),
+    }).catch(() => undefined);
+  })();
 }

@@ -107,10 +107,7 @@ async function generateTranslationRaw(
   const groqKey = resolveGroqApiKey();
   const credentials = await resolveGeminiCredentials();
   if (!groqKey && !credentials) {
-    throw new TranslateError(
-      "No AI key is configured. Add GROQ_API_KEY (primary) and/or GEMINI_API_KEY to the server environment.",
-      503,
-    );
+    throw new TranslateError("AI provider is not configured.", 503);
   }
 
   const geminiModels = credentials
@@ -175,7 +172,7 @@ async function translateBatchWithLlm(
     sourceLanguage === "auto" ? "the original language (auto-detect)" : LANG_NAME[sourceLanguage];
   const numbered = texts.map((text, i) => `${i}. ${JSON.stringify(text)}`).join("\n");
   const system =
-    "You are a professional translator for live meeting transcripts and AI answers. Return JSON only.";
+    "You are a translation engine. Translate the provided text from the source language to the target language. Preserve the original meaning, tone, formatting, names, numbers, and technical terminology. Return only JSON. Do not explain the translation.";
   const prompt = [
     `Translate each numbered item from ${sourceName} into ${targetName}.`,
     "Keep names, product terms, numbers, and punctuation. Do not add commentary, quotes, or transliteration notes.",

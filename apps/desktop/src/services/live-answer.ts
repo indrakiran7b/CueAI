@@ -1,8 +1,9 @@
 /**
- * Live answers from the CueAI web API (Groq primary, Gemini fallback).
+ * Live answers from the CueAI web API (Gemini primary, Groq fallback).
  * Supports streaming SSE for ~2–3s overlay latency targets.
  */
 
+import { deviceAuthHeaders } from "./device-auth-headers";
 import { createLatencyTracker, pipelineLog } from "./pipeline-log";
 
 export type LiveTranscriptLine = { who: string; text: string };
@@ -29,13 +30,13 @@ export class LiveAnswerUnavailable extends Error {
   }
 }
 
-async function loadSessionContext() {
+async function refreshSessionContext() {
   const now = Date.now();
-  if (cachedSessionContext && now - cachedSessionAt < SESSION_CACHE_MS) {
-    return cachedSessionContext;
-  }
   try {
-    const res = await fetch(`${apiBase}/api/live/briefing`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/api/live/briefing`, {
+      cache: "no-store",
+      headers: await deviceAuthHeaders(),
+    });
     const data = (await res.json().catch(() => ({}))) as {
       hasResume?: boolean;
       resumeName?: string;
@@ -53,14 +54,13 @@ async function loadSessionContext() {
       return "";
     }
     const b = data.briefing;
-    // Cap resume text so prompt stays small for first-token latency.
-    const resume = (b.resumeText || "").slice(0, 3500);
+    const resume = (b.resumeText || "").slice(0, 1600);
     cachedSessionContext = [
       b.company ? `Interview at: ${b.company}` : "",
-      b.jobDescription ? `Job description:\n${String(b.jobDescription).slice(0, 1200)}` : "",
+      b.jobDescription ? `Job description:\n${String(b.jobDescription).slice(0, 800)}` : "",
       b.resumeName ? `Resume on file: ${b.resumeName}` : "",
       resume ? `CANDIDATE RESUME:\n${resume}` : "",
-      b.description ? `Context:\n${String(b.description).slice(0, 600)}` : "",
+      b.description ? `Context:\n${String(b.description).slice(0, 400)}` : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -71,6 +71,15 @@ async function loadSessionContext() {
   }
 }
 
+async function loadSessionContext() {
+  const now = Date.now();
+  if (now - cachedSessionAt < SESSION_CACHE_MS) {
+    if (now - cachedSessionAt > 8_000) void refreshSessionContext();
+    return cachedSessionContext;
+  }
+  return refreshSessionContext();
+}
+
 /** Throws LiveAnswerUnavailable when the server has no Gemini key or is unreachable. */
 export async function requestLiveAnswer(
   prompt: string,
@@ -78,11 +87,12 @@ export async function requestLiveAnswer(
   image?: string,
 ): Promise<LiveAnswer> {
   const sessionContext = await loadSessionContext();
+  const auth = await deviceAuthHeaders();
   let res: Response;
   try {
     res = await fetch(`${apiBase}/api/live/answer`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify({
         prompt,
         transcript,
@@ -103,6 +113,15 @@ export async function requestLiveAnswer(
     error?: string;
   };
 
+  if (!res.ok) {
+    pipelineLog("ai", "Live answer HTTP", {
+      method: "POST",
+      path: "/api/live/answer",
+      status: res.status,
+      deviceIdHeader: Boolean(auth["X-CueAI-Device-Id"]),
+      deviceCredentialHeader: Boolean(auth["X-CueAI-Device-Credential"]),
+    });
+  }
   if (res.status === 503) {
     throw new LiveAnswerUnavailable(
       data.error || "Vision model is not ready yet. Wait a moment and press Screen again.",
@@ -121,8 +140,16 @@ export async function requestLiveAnswer(
 
 export type StreamLiveAnswerHandlers = {
   onToken?: (token: string, full: string) => void;
+  onConnected?: () => void;
   signal?: AbortSignal;
 };
+
+function needsLiveKnowledge(question: string) {
+  const q = question.toLowerCase();
+  return /\b((my|our|this|the)\s+)?(project|resume|experience|background|company|knowledge base|codebase|policy|onboarding|handbook|document|wiki)\b|\b(i|we)\s+(used|built|implemented|worked)\b/.test(
+    q,
+  );
+}
 
 /**
  * Stream a live answer over SSE. Falls back to non-stream JSON if the server
@@ -138,18 +165,24 @@ export async function requestLiveAnswerStream(
   pipelineLog("ai", "Sending question", { chars: prompt.length });
 
   const sessionContext = await loadSessionContext();
+  const auth = await deviceAuthHeaders();
   let res: Response;
   try {
     res = await fetch(`${apiBase}/api/live/answer`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...auth,
+      },
       signal: handlers.signal,
       body: JSON.stringify({
         prompt,
-        transcript,
+        transcript: transcript.slice(-3),
         sessionContext,
         stream: true,
         mode: "answer",
+        skipKnowledge: !needsLiveKnowledge(prompt),
       }),
     });
   } catch (err) {
@@ -157,8 +190,16 @@ export async function requestLiveAnswerStream(
     throw new LiveAnswerUnavailable("CueAI server unreachable. Is the web app running?");
   }
 
+  handlers.onConnected?.();
   const contentType = res.headers.get("content-type") || "";
   if (!res.ok) {
+    pipelineLog("ai", "Live answer HTTP", {
+      method: "POST",
+      path: "/api/live/answer",
+      status: res.status,
+      deviceIdHeader: Boolean(auth["X-CueAI-Device-Id"]),
+      deviceCredentialHeader: Boolean(auth["X-CueAI-Device-Credential"]),
+    });
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (res.status === 503) {
       throw new LiveAnswerUnavailable(data.error || "AI provider is not configured.");

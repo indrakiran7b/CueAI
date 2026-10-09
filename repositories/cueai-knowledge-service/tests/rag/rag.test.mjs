@@ -104,7 +104,7 @@ function safeFilename(name) {
 }
 
 function scopeKnowledge(items, workspaceId) {
-  return items.filter((k) => !k.workspaceId || k.workspaceId === workspaceId);
+  return items.filter((k) => Boolean(k.workspaceId) && k.workspaceId === workspaceId);
 }
 
 function buildSystemPrompt() {
@@ -184,9 +184,10 @@ test("workspace isolation filter never returns other workspace docs", () => {
   const a = scopeKnowledge(items, "ws_a");
   assert.deepEqual(
     a.map((x) => x.id),
-    ["1", "3"],
+    ["1"],
   );
   assert.ok(!a.some((x) => x.workspaceId === "ws_b"));
+  assert.ok(!a.some((x) => !x.workspaceId));
 });
 
 test("keyword retrieval scores leave-policy content for leave query", () => {

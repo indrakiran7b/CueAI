@@ -39,6 +39,7 @@ export {
 export {
   getPublicMacDevice,
   getOrCreateMacDeviceIdentity,
+  getDeviceAuthHeaders,
   MacDeviceService,
   macDeviceService,
   type MacPublicDevice,

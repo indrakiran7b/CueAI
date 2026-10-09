@@ -31,8 +31,11 @@ import {
   evaluateQuestion,
   getRollingContext,
   pushRollingTranscript,
+  cleanQuestionText,
 } from "./services/question-detection";
+import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "./services/speech-capture";
 import { createLatencyTracker, pipelineLog, prewarmAnswerApi } from "./services/pipeline-log";
+import { createCueaiLatency } from "./services/cueai-latency";
 import { requestLiveAnswerStream } from "./services/live-answer";
 import {
   configureMeetingPersist,
@@ -108,6 +111,7 @@ export default function App() {
   const askRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
+  const lastCompleteRef = useRef("");
   const answerHeardRef = useRef<
     (
       questionText: string,
@@ -116,6 +120,7 @@ export default function App() {
         questionWho?: string;
         source?: "auto" | "manual" | "screen";
         latency?: ReturnType<typeof createLatencyTracker>;
+        cueLat?: ReturnType<typeof createCueaiLatency>;
       },
     ) => Promise<void>
   >(async () => undefined);
@@ -205,14 +210,20 @@ export default function App() {
           });
         }
 
-        // System Audio alone drives auto-answer — Mic is not required.
-        // Never auto-answer the candidate's own mic ("You").
-        if (line.who === "You") return;
-
         assembleUtterance(
           line.who,
           line.text,
           (utterance) => {
+            const assembled = cleanQuestionText(utterance.text);
+            if (!looksTruncatedTranscript(assembled)) {
+              lastCompleteRef.current = assembled;
+              rememberQuestion(assembled);
+            }
+
+            // System Audio alone drives auto-answer — Mic is not required.
+            // Never auto-answer the candidate's own mic ("You").
+            if (utterance.who === "You") return;
+
             console.log(
               "[SYSTEM-AUDIO] FINAL TRANSCRIPT:\n" + JSON.stringify(utterance.text),
             );
@@ -265,6 +276,10 @@ export default function App() {
               latency.mark("transcriptionFinal", line.transcribedAt);
             }
             latency.mark("questionDetected");
+            const cueLat = createCueaiLatency(String(qid).replace(/\D/g, "").slice(-2) || "01");
+            if (utterance.audioEndAt != null) cueLat.mark("speechEnded", utterance.audioEndAt);
+            if (line.transcribeStartedAt != null) cueLat.mark("transcriptionStarted", line.transcribeStartedAt);
+            if (utterance.transcribedAt != null) cueLat.mark("transcriptionReceived", utterance.transcribedAt);
 
             // Pass the FINAL QUESTION TEXT directly — never rely on React state.
             void answerHeardRef
@@ -274,6 +289,7 @@ export default function App() {
                   utterance.who === "System" ? "Interviewer" : utterance.who,
                 source: "auto",
                 latency,
+                cueLat,
               })
               .finally(() => endQuestionProcessing(qid));
           },
@@ -310,9 +326,10 @@ export default function App() {
       questionWho?: string;
       source?: "auto" | "manual" | "screen";
       latency?: ReturnType<typeof createLatencyTracker>;
+      cueLat?: ReturnType<typeof createCueaiLatency>;
     },
   ) {
-    const q = questionText.trim();
+    const q = cleanQuestionText(questionText);
     if (!q) return;
 
     // Abort any in-flight stream so follow-ups / auto-answer are never
@@ -326,11 +343,13 @@ export default function App() {
     streamingRef.current = true;
     setStreaming(true);
     setAnswer("");
-    setStatusMsg(null);
+    setStatusMsg("Answering...");
     aiBusyRef.current = true;
 
     const latency = opts?.latency || createLatencyTracker(q);
+    const cueLat = opts?.cueLat || createCueaiLatency("00");
     latency.mark("aiRequest");
+    cueLat.mark("questionSent");
     console.log("[GROQ] Request started");
     pipelineLog("ai", "Request started", {
       source: opts?.source || "unknown",
@@ -340,21 +359,41 @@ export default function App() {
 
     try {
       const rolling = getRollingContext(3);
+      let flushTimer: number | null = null;
+      let pendingFull = "";
       const result = await requestLiveAnswerStream(q, rolling, {
         signal: abort.signal,
+        onConnected: () => cueLat.mark("llmConnected"),
         onToken: (_token, full) => {
-          setAnswer(full);
+          pendingFull = full;
           if (!latency.marks.firstToken) {
             latency.mark("firstToken");
-            latency.mark("answerVisible");
+            cueLat.mark("firstToken");
             console.log("[GROQ] First token received");
             pipelineLog("response", "First token received");
           }
+          if (!cueLat.marks.firstRender) {
+            if (!isFirstMeaningfulAnswer(full)) return;
+            setStatusMsg(null);
+            setAnswer(full);
+            latency.mark("answerVisible");
+            cueLat.mark("firstRender");
+            return;
+          }
+          if (flushTimer != null) return;
+          flushTimer = window.setTimeout(() => {
+            flushTimer = null;
+            setAnswer(pendingFull);
+          }, 32);
         },
       });
       if (abort.signal.aborted) return;
+      if (flushTimer != null) window.clearTimeout(flushTimer);
       setAnswer(result.answer);
+      setStatusMsg(null);
       latency.mark("answerVisible");
+      cueLat.mark("complete");
+      cueLat.report();
       latency.report(opts?.source === "manual" ? "manual_answer" : "auto_answer");
       appendTranscript({ who: "CueAI", text: result.answer });
       console.log("[ANSWER] Answer rendered");
@@ -410,7 +449,7 @@ export default function App() {
   }
 
   async function generateAnswer() {
-    const last = lastHeard?.text?.trim();
+    const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
     if (!last) {
       await answerHeardQuestion(
         "Give me a ready-to-say self-introduction from my resume and the job briefing.",
@@ -504,6 +543,7 @@ export default function App() {
     setCopied(false);
     clearTranscript();
     clearQuestionMemory();
+    lastCompleteRef.current = "";
     answerAbortRef.current?.abort();
     startedAtRef.current = Date.now();
     setElapsedMs(0);

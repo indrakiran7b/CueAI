@@ -17,30 +17,46 @@ function packagedWebRoot() {
 
 function waitForServer(url: string, timeoutMs = 45000): Promise<void> {
   const started = Date.now();
+  const origin = url.replace(/\/$/, "");
+  const target = `${origin}/api/health`;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
+    const retry = () => {
+      if (settled) return;
+      if (Date.now() - started > timeoutMs) {
+        finish(new Error(`Web server did not start at ${origin}. ${lastSpawnError}`.trim()));
+        return;
+      }
+      setTimeout(tick, 250);
+    };
     const tick = () => {
+      if (settled) return;
       if (child && child.exitCode !== null) {
-        reject(
+        finish(
           new Error(
             `Embedded web server exited early (code ${child.exitCode}). ${lastSpawnError}`.trim()
           )
         );
         return;
       }
-      const req = http.get(url, (res) => {
+      const req = http.get(target, { timeout: 8000 }, (res) => {
         res.resume();
-        resolve();
-      });
-      req.on("error", () => {
-        if (Date.now() - started > timeoutMs) {
-          reject(
-            new Error(
-              `Embedded web server did not start at ${url}. ${lastSpawnError}`.trim()
-            )
-          );
+        if ((res.statusCode ?? 500) < 500) {
+          finish();
           return;
         }
-        setTimeout(tick, 250);
+        retry();
+      });
+      req.on("error", () => retry());
+      req.on("timeout", () => {
+        req.destroy();
+        retry();
       });
     };
     tick();
@@ -119,11 +135,15 @@ export async function startEmbeddedWebServer(): Promise<string> {
   const envUrl = process.env.CUEAI_WEB_URL?.trim();
   if (envUrl) {
     webOrigin = envUrl.replace(/\/$/, "");
+    console.log(`[WEB] origin = ${webOrigin}`);
+    await waitForServer(webOrigin);
     return webOrigin;
   }
 
   if (!app.isPackaged) {
     webOrigin = "http://127.0.0.1:3000";
+    console.log(`[WEB] origin = ${webOrigin}`);
+    await waitForServer(webOrigin);
     return webOrigin;
   }
 

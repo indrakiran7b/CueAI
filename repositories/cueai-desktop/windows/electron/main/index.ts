@@ -70,6 +70,9 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    console.log(`[DEVICE] process.platform = ${process.platform}`);
+    console.log("[DEVICE] selectedDevicePlatform = windows");
+    console.log("[DEVICE] selectedDeviceIdentity = windows");
     try {
       await startEmbeddedWebServer();
     } catch (err) {

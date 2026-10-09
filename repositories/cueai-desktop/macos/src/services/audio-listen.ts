@@ -21,12 +21,33 @@ import {
   tryBeginSystemStart,
   type AudioSessionSnapshot,
 } from "./audio-session-manager";
+import {
+  PREFIX_MS,
+  POST_ROLL_MS,
+  SPEECH_END_SILENCE_MS,
+  MIN_SPEECH_MS,
+  MAX_SPEECH_MS,
+  VOICE_THRESHOLD,
+  VOICE_HANGOVER_THRESHOLD,
+  adaptiveSilenceMs,
+  captureQuality,
+  looksTruncatedTranscript,
+  logCaptureMetrics,
+  wordCount,
+} from "../../../shared/speech-capture";
 
 export type ListenActiveState = AudioSessionSnapshot;
 
 export type LiveTranscribeConfig = {
   apiBase: string;
-  onResult: (line: { who: string; text: string }) => void;
+  onResult: (line: {
+    who: string;
+    text: string;
+    audioEndAt?: number;
+    transcribedAt?: number;
+    transcribeStartedAt?: number;
+    partial?: boolean;
+  }) => void;
   onError: (msg: string) => void;
 };
 
@@ -58,7 +79,8 @@ function usesPcmCapture() {
   return isMacClient();
 }
 
-const LIVE_SLICE_MS = 2000;
+const LIVE_SLICE_MS = 400;
+export { SPEECH_END_SILENCE_MS, PREFIX_MS, POST_ROLL_MS };
 const MIN_TRANSCRIBE_BYTES = 256;
 const SILENT_PEAK = 0.004;
 const MAX_IN_FLIGHT = 2;
@@ -158,17 +180,39 @@ function startPcmSlicer(stream: MediaStream, who: string): PcmBag | null {
   if (!audioTracks.length) return null;
   const audioOnly = new MediaStream(audioTracks);
   const source = ctx.createMediaStreamSource(audioOnly);
-  const processor = ctx.createScriptProcessor(4096, 1, 1);
+  const processor = ctx.createScriptProcessor(2048, 1, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
   const pending: Float32Array[] = [];
   let count = 0;
-  const target = Math.floor(ctx.sampleRate * (LIVE_SLICE_MS / 1000));
-  processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    pending.push(new Float32Array(input));
-    count += input.length;
-    if (count < target) return;
+  let speechActive = false;
+  let lastVoiceAt = 0;
+  let speechStarted = 0;
+  let prefixKeep = Math.floor(ctx.sampleRate * (PREFIX_MS / 1000));
+  let flushTimer: number | null = null;
+  let maxTimer: number | null = null;
+
+  const flushUtterance = (reason: string) => {
+    if (flushTimer != null) {
+      window.clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (maxTimer != null) {
+      window.clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+    const durationMs = speechActive ? performance.now() - speechStarted : 0;
+    if (!speechActive || durationMs < MIN_SPEECH_MS) {
+      speechActive = false;
+      logCaptureMetrics("audio", {
+        who,
+        audio_duration: Math.round(durationMs),
+        question_capture_quality: captureQuality({ durationMs }),
+      });
+      return;
+    }
+    speechActive = false;
+    if (!count) return;
     const merged = new Float32Array(count);
     let offset = 0;
     for (const chunk of pending) {
@@ -177,8 +221,61 @@ function startPcmSlicer(stream: MediaStream, who: string): PcmBag | null {
     }
     pending.length = 0;
     count = 0;
+    console.log("[Audio] Speech segment ended", reason);
+    logCaptureMetrics("audio", {
+      who,
+      audio_duration: Math.round(durationMs),
+      pre_roll: PREFIX_MS,
+      post_roll: POST_ROLL_MS,
+      vad_finalize_time: Math.round(durationMs),
+      question_capture_quality: captureQuality({ durationMs }),
+    });
     const wav = encodeWav(merged, ctx.sampleRate);
     void maybeTranscribeSlice(wav, who);
+  };
+
+  processor.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    const copy = new Float32Array(input);
+    pending.push(copy);
+    count += copy.length;
+    let sum = 0;
+    for (let i = 0; i < copy.length; i++) sum += copy[i]! * copy[i]!;
+    const level = Math.min(1, Math.sqrt(sum / copy.length) * 4);
+    const now = performance.now();
+    const stayThreshold = speechActive ? VOICE_HANGOVER_THRESHOLD : VOICE_THRESHOLD;
+    if (level >= stayThreshold) {
+      lastVoiceAt = now;
+      if (!speechActive) {
+        speechActive = true;
+        speechStarted = now;
+        console.log("[Audio] Speech segment started");
+        logCaptureMetrics("audio", { who, speech_start: Math.round(now), pre_roll: PREFIX_MS });
+        maxTimer = window.setTimeout(() => flushUtterance("max_duration"), MAX_SPEECH_MS);
+      }
+      if (flushTimer != null) {
+        window.clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+    } else if (speechActive && now - lastVoiceAt >= adaptiveSilenceMs(now - speechStarted) && flushTimer == null) {
+      flushTimer = window.setTimeout(() => flushUtterance("silence"), POST_ROLL_MS);
+    }
+    // Drop old prefix-only audio while idle so the next utterance stays small.
+    if (!speechActive && count > prefixKeep) {
+      let excess = count - prefixKeep;
+      while (excess > 0 && pending.length) {
+        const first = pending[0]!;
+        if (first.length <= excess) {
+          pending.shift();
+          count -= first.length;
+          excess -= first.length;
+        } else {
+          pending[0] = first.subarray(excess);
+          count -= excess;
+          excess = 0;
+        }
+      }
+    }
   };
   source.connect(processor);
   processor.connect(mute);
@@ -481,13 +578,33 @@ async function maybeTranscribeSlice(blob: Blob, who: string) {
 
   transcribeInFlight++;
   console.log("[Transcription] Audio chunk received");
+  const transcribeStarted = performance.now();
 
   try {
     console.log("[Transcription] Request sent");
     const line = await transcribeAudioBlob(blob, who, liveConfig.apiBase);
+    const transcribedAt = performance.now();
     if (line?.text) {
+      const text = line.text.trim();
       console.log("[Transcription] Response received");
-      liveConfig.onResult(line);
+      logCaptureMetrics("transcription", {
+        who,
+        transcription_latency: Math.round(transcribedAt - transcribeStarted),
+        transcript_length: text.length,
+        question_capture_quality: captureQuality({
+          transcriptChars: text.length,
+          words: wordCount(text),
+          truncated: looksTruncatedTranscript(text),
+        }),
+      });
+      liveConfig.onResult({
+        who,
+        text,
+        audioEndAt: transcribedAt,
+        transcribedAt,
+        transcribeStartedAt: transcribeStarted,
+        partial: false,
+      });
     }
     clearAudioError();
   } catch (err) {
@@ -898,8 +1015,10 @@ export async function transcribeAudioBlob(
         : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  const { deviceAuthHeaders } = await import("../../../shared/device-auth-headers");
   const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
     method: "POST",
+    headers: await deviceAuthHeaders(),
     body,
   });
   const data = (await res.json()) as {

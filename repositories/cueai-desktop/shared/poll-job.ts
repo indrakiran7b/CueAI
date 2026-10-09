@@ -18,6 +18,7 @@ export async function pollJobUntilDone(input: {
   initialDelayMs?: number;
   intervalMs?: number;
   timeoutMs?: number;
+  headers?: Record<string, string>;
 }): Promise<JobStatusPayload> {
   const base = input.apiBase.replace(/\/$/, "");
   const timeoutMs = input.timeoutMs ?? 120_000;
@@ -32,7 +33,7 @@ export async function pollJobUntilDone(input: {
     }
     const res = await fetch(`${base}/api/jobs/${encodeURIComponent(input.jobId)}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(input.headers || {}) },
       signal: input.signal,
     });
     const data = (await res.json().catch(() => ({}))) as JobStatusPayload;

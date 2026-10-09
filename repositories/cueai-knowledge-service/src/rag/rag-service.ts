@@ -128,7 +128,7 @@ async function keywordRetrieve(input: {
 
   const docs = store.knowledge.filter((d) => {
     if (d.status !== "indexed") return false;
-    if (d.workspaceId && d.workspaceId !== input.workspaceId) return false;
+    if (!d.workspaceId || d.workspaceId !== input.workspaceId) return false;
 
     if (input.knowledgeScope === "meeting") {
       if (!input.meetingId) return false;
@@ -386,7 +386,7 @@ async function generateAnswer(
   }
 
   try {
-    const { generateGroqText, resolveGroqApiKey } = await import("@/lib/server/groq");
+    const { generateGroqText, resolveGroqApiKey } = await import("@cueai/ai-orchestrator/server/groq");
     if (resolveGroqApiKey()) {
       const result = await generateGroqText({
         system,
@@ -454,7 +454,7 @@ Be concise and clear.`;
   }
 
   try {
-    const { generateGroqText, resolveGroqApiKey } = await import("@/lib/server/groq");
+    const { generateGroqText, resolveGroqApiKey } = await import("@cueai/ai-orchestrator/server/groq");
     if (resolveGroqApiKey()) {
       const result = await generateGroqText({
         system,

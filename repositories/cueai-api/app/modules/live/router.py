@@ -14,6 +14,7 @@ from app.modules.live.answer_service import (
     generate_live_answer,
     iter_groq_tokens,
 )
+from app.modules.live.gemini import gemini_api_key
 from app.modules.live.screen_service import ScreenAnalysisError, enqueue_screen_analysis
 from app.core.session import SESSION_COOKIE, verify_session
 from app.modules.live.context import active_meeting_id, append_exchange, record_usage
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/live", tags=["live"])
 _CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Allow-Headers": "Content-Type, Accept, X-CueAI-Device-Id, X-CueAI-Device-Credential",
 }
 
 
@@ -53,15 +54,28 @@ def _optional_session(request: Request) -> dict[str, str] | None:
     }
 
 
+def _require_session(request: Request) -> dict[str, str] | JSONResponse:
+    """Option A: Next authenticates (session or device) and forwards a signed cueai_admin_session."""
+    session = _optional_session(request)
+    if session:
+        return session
+    return JSONResponse({"error": "Unauthorized"}, status_code=401, headers=_CORS)
+
+
 @router.post("/answer")
 async def live_answer(request: Request, body: dict[str, Any]):
-    """Session cookie is optional. An invalid cookie is ignored, not trusted."""
-    session = _optional_session(request)
+    """Requires the existing HMAC session cookie minted by Next after browser or device auth."""
+    session = _require_session(request)
+    if isinstance(session, JSONResponse):
+        return session
     try:
         if body.get("stream") is True:
             async def events():
                 try:
-                    if not _groq_key():
+                    # Stream Groq immediately when available — do not buffer Gemini first.
+                    if _groq_key() and not body.get("image"):
+                        system, user_prompt, _session = build_prompts(body)
+                    elif gemini_api_key() or not _groq_key():
                         payload = await generate_live_answer(body)
                         text = str(payload.get("answer") or "")
                         if text:
@@ -74,7 +88,8 @@ async def live_answer(request: Request, body: dict[str, Any]):
                             "provider": payload.get("provider"),
                         })
                         return
-                    system, user_prompt, _session = build_prompts(body)
+                    else:
+                        system, user_prompt, _session = build_prompts(body)
                     parts: list[str] = []
                     model = ""
                     async for delta, used in iter_groq_tokens(system, user_prompt):
@@ -133,7 +148,9 @@ async def live_answer(request: Request, body: dict[str, Any]):
 
 @router.post("/screen")
 async def live_screen(request: Request, body: dict[str, Any]):
-    session = _optional_session(request)
+    session = _require_session(request)
+    if isinstance(session, JSONResponse):
+        return session
     try:
         payload = await enqueue_screen_analysis(body, session)
     except ScreenAnalysisError as exc:
