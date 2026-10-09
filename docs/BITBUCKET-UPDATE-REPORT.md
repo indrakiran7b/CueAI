@@ -140,16 +140,16 @@ Filled after each successful commit:
 
 | Repo | Branch | Commit |
 |------|--------|--------|
-| GitHub root `CueAI` | `separation` | *(pending GitHub commit)* |
+| GitHub root `CueAI` | `separation` | `d2a58e60a6cb5a8bcda467fc1e846f89ca8d5d1c` |
 | Bitbucket `cueai-web` | `main` | `90e9ddb793a83f4d4b47745860cbc24e3ec6903d` |
 | Bitbucket `cueai-infra` | `main` | `92ed41cdbc45556239ad47f108c3a74e7e8914a8` |
-| Bitbucket `cueai-docs` | `main` | `b11828f182df5acd09977abda9ba647d1ea88eae` |
+| Bitbucket `cueai-docs` | `main` | `b11828f182df5acd09977abda9ba647d1ea88eae` then `923e92eaa8001fcefdc9ef038440d1ec6399f9b6` |
 
 ## Push result
 
 | Remote | Result |
 |--------|--------|
-| GitHub `origin` (`separation`) | *(pending)* |
-| Bitbucket `cueai-web` `main` | *(pending)* |
-| Bitbucket `cueai-infra` `main` | *(pending)* |
-| Bitbucket `cueai-docs` `main` | *(pending)* |
+| GitHub `origin` (`separation`) | **pushed** `07ebb55..d2a58e6` → `https://github.com/indrakiran7b/CueAI.git` |
+| Bitbucket `cueai-web` `main` | **pushed** `4057992..90e9ddb` → `https://bitbucket.org/wayfinderops/cueai-web.git` |
+| Bitbucket `cueai-infra` `main` | **pushed** `5ff0ef0..92ed41c` → `https://bitbucket.org/wayfinderops/cueai-infra.git` |
+| Bitbucket `cueai-docs` `main` | **pushed** `1c1c5cb..923e92e` → `https://bitbucket.org/wayfinderops/cueai-docs.git` |
