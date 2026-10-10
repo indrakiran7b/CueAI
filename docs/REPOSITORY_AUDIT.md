@@ -26,7 +26,7 @@ Sibling `file:../cueai-*` packages supply RAG, transcription, resume, translatio
 | Languages | TypeScript, Python, Electron, Next.js 16, FastAPI (mirrored) |
 | Startup | `npm run dev:web` · `npm run dev:desktop` |
 | Tests this release | see section 17 |
-| Latest commit | set after the monorepo commit below |
+| Latest commit | `4f363751cebdcd0b75cb246d648cfe18a868b833` |
 
 **Top-level:** `apps/`, `docs/`, `e2e/`, `repositories/`, `scripts/`, `tools/`, `android/`, `package.json`, `docker-compose.yml`, `playwright.config.ts`, `README.md`.
 
@@ -121,7 +121,7 @@ All use `origin` → `https://bitbucket.org/wayfinderops/<name>.git` on `main`. 
 |------|--------|
 | Path | `repositories/cueai-docs` |
 | Bitbucket | `https://bitbucket.org/wayfinderops/cueai-docs.git` |
-| Commit (pre-audit) | `ff8561d` |
+| Commit | `8dc9bad5076bfd4fb89e1c9f966abc2cb20b65c0` |
 | Purpose | Architecture and billing docs |
 
 ### Unchanged this release (Bitbucket `main`, no GitHub remote)
@@ -188,15 +188,16 @@ No production dummy dashboards, fake transcripts, or silent mock-success replace
 
 Pushes are recorded after they are verified. Nested Bitbucket repos have **no GitHub remote**. The GitHub monorepo has **no Bitbucket remote**.
 
-| Repo | Provider | Branch | Local commit | Push |
-|------|----------|--------|--------------|------|
-| workspace root | GitHub `origin` | `separation` | pending this commit | pending |
-| cueai-web | Bitbucket | `main` | `5bd4097` | pending |
-| cueai-api | Bitbucket | `main` | `d00e978` | pending |
-| cueai-desktop | Bitbucket | `main` | `01c3606` | pending |
-| cueai-ai-orchestrator | Bitbucket | `main` | `2a9b495` | pending |
-| cueai-infra | Bitbucket | `main` | `586069a` | pending |
-| other cueai-* | Bitbucket | `main` | unchanged | not required |
+| Repo | Provider | Branch | Verified remote commit |
+|------|----------|--------|------------------------|
+| workspace root | GitHub `origin` | `separation` | `4f363751cebdcd0b75cb246d648cfe18a868b833` |
+| cueai-web | Bitbucket | `main` | `5bd40979517bc85d1e1a11ca3a88e483116018d8` |
+| cueai-api | Bitbucket | `main` | `d00e978bc7508d803c8a8443ec8d4758bd8b08b8` |
+| cueai-desktop | Bitbucket | `main` | `01c360656f9771632cfd739396c45b05e0999c44` |
+| cueai-ai-orchestrator | Bitbucket | `main` | `2a9b49526a7e099c235237ec0ca25748db9db29d` |
+| cueai-infra | Bitbucket | `main` | `586069add4f4ba13ce597383c648d43c72d5b804` |
+| cueai-docs | Bitbucket | `main` | `8dc9bad5076bfd4fb89e1c9f966abc2cb20b65c0` |
+| other cueai-* | Bitbucket | `main` | unchanged; no push required |
 
 ---
 
