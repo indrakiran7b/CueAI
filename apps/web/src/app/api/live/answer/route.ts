@@ -161,6 +161,7 @@ export async function POST(request: Request) {
           const send = (payload: unknown) => {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
           };
+          let tokensEmitted = false;
           try {
             const result = await streamGroqText({
               system,
@@ -168,7 +169,10 @@ export async function POST(request: Request) {
               temperature: 0.35,
               maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
               signal: request.signal,
-              onToken: (token) => send({ type: "token", text: token }),
+              onToken: (token) => {
+                tokensEmitted = true;
+                send({ type: "token", text: token });
+              },
             });
             send({
               type: "done",
@@ -212,6 +216,13 @@ export async function POST(request: Request) {
               }
             })();
           } catch (err) {
+            if (tokensEmitted) {
+              send({
+                type: "error",
+                error: "Answer stream interrupted. Ask again if the reply looks incomplete.",
+              });
+              return;
+            }
             if (credentials) {
               try {
                 console.error(

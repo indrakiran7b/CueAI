@@ -157,6 +157,7 @@ export type CueDesktopAPI = {
     identityPreserved: boolean;
   }>;
   getDeviceAuthHeaders?: () => Promise<Record<string, string>>;
+  startGoogleSignIn?: () => Promise<{ ok: boolean; error?: string }>;
   getMacDevice?: () => Promise<{
     deviceId: string;
     maskedId: string;

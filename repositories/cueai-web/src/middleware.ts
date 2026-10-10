@@ -11,6 +11,7 @@ const PUBLIC_PREFIXES = [
   "/login",
   "/signup",
   "/auth/complete",
+  "/auth/desktop",
   "/forgot-password",
   "/license",
   "/resume-tailor/login",

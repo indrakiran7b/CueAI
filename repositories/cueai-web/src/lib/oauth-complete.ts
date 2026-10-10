@@ -2,7 +2,10 @@
 
 export function isSafeInternalPath(path: string): boolean {
   if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) return false;
-  if (path.startsWith("/login") || path.startsWith("/signup") || path.startsWith("/auth/complete")) {
+  if (path.startsWith("/login") || path.startsWith("/signup")) {
+    return false;
+  }
+  if (path.startsWith("/auth/complete") && !path.startsWith("/auth/desktop/")) {
     return false;
   }
   return true;

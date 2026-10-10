@@ -116,7 +116,9 @@ function LoginForm() {
     persistProductFromSearch(searchParams.toString());
     persistProductMode(resumeFlow ? "resume" : "cueai");
     setMac(isMacDesktopApp());
-  }, [searchParams, resumeFlow]);
+    router.prefetch("/auth/complete");
+    router.prefetch("/dashboard");
+  }, [searchParams, resumeFlow, router]);
 
   useEffect(() => {
     if (!AUTH_BYPASS) return;

@@ -98,9 +98,8 @@ export function prewarmAnswerApi(apiBase: string) {
   if (!base) return;
   void (async () => {
     const { deviceAuthHeaders } = await import("./device-auth-headers");
-    await fetch(`${base}/api/live/briefing`, {
-      cache: "no-store",
-      headers: await deviceAuthHeaders(),
-    }).catch(() => undefined);
+    const headers = await deviceAuthHeaders();
+    await fetch(`${base}/api/live/health`, { cache: "no-store", headers }).catch(() => undefined);
+    await fetch(`${base}/api/live/briefing`, { cache: "no-store", headers }).catch(() => undefined);
   })();
 }

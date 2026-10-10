@@ -16,9 +16,16 @@ import {
  * Does not replace email/password login, roles, or workspace isolation.
  */
 export async function POST(req: NextRequest) {
+  const requestId = req.headers.get("x-request-id")?.trim() || randomUUID();
   const oauth = await auth();
   const email = oauth?.user?.email?.trim().toLowerCase() || "";
   if (!email) {
+    console.info("[auth] oauth-sync", {
+      requestId,
+      path: "/api/auth/oauth-sync",
+      status: 401,
+      category: "missing_oauth_session",
+    });
     return NextResponse.json({ error: "OAuth session required." }, { status: 401 });
   }
   // Identity comes from the verified NextAuth session only — never from the request body.
@@ -145,5 +152,12 @@ export async function POST(req: NextRequest) {
     permissions: permissionsFor(normalizeRole(user.role)),
   });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+  console.info("[auth] oauth-sync", {
+    requestId,
+    path: "/api/auth/oauth-sync",
+    status: 200,
+    category: "session_linked",
+    created: decision.action === "create",
+  });
   return res;
 }

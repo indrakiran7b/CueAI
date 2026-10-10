@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import json
+import logging
+import time
+import uuid
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -20,6 +23,7 @@ from app.core.session import SESSION_COOKIE, verify_session
 from app.modules.live.context import active_meeting_id, append_exchange, record_usage
 
 router = APIRouter(prefix="/live", tags=["live"])
+logger = logging.getLogger("cueai.live.router")
 
 _CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -62,21 +66,24 @@ def _require_session(request: Request) -> dict[str, str] | JSONResponse:
     return JSONResponse({"error": "Unauthorized"}, status_code=401, headers=_CORS)
 
 
+def _ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
 @router.post("/answer")
 async def live_answer(request: Request, body: dict[str, Any]):
     """Requires the existing HMAC session cookie minted by Next after browser or device auth."""
     session = _require_session(request)
     if isinstance(session, JSONResponse):
         return session
+    request_id = uuid.uuid4().hex[:12]
+    started = time.perf_counter()
     try:
         if body.get("stream") is True:
             async def events():
                 try:
-                    # Stream Groq immediately when available — do not buffer Gemini first.
-                    if _groq_key() and not body.get("image"):
-                        system, user_prompt, _session = build_prompts(body)
-                    elif gemini_api_key() or not _groq_key():
-                        payload = await generate_live_answer(body)
+                    if body.get("image") or not _groq_key():
+                        payload = await generate_live_answer(body, request_id=request_id)
                         text = str(payload.get("answer") or "")
                         if text:
                             yield _sse({"type": "token", "text": text})
@@ -86,23 +93,86 @@ async def live_answer(request: Request, body: dict[str, Any]):
                             "confidence": payload.get("confidence", 0.78),
                             "model": payload.get("model"),
                             "provider": payload.get("provider"),
+                            "requestId": request_id,
                         })
                         return
-                    else:
-                        system, user_prompt, _session = build_prompts(body)
+                    system, user_prompt, _session = build_prompts(body)
                     parts: list[str] = []
                     model = ""
-                    async for delta, used in iter_groq_tokens(system, user_prompt):
-                        parts.append(delta)
-                        model = used
-                        yield _sse({"type": "token", "text": delta})
+                    first_token_ms: int | None = None
+                    try:
+                        async for delta, used in iter_groq_tokens(system, user_prompt):
+                            if first_token_ms is None:
+                                first_token_ms = _ms(started)
+                            parts.append(delta)
+                            model = used
+                            yield _sse({"type": "token", "text": delta})
+                    except LiveAnswerError as exc:
+                        if parts:
+                            logger.warning(
+                                "live_answer_stream request_id=%s provider=groq error_category=%s interrupted_after_tokens=true",
+                                request_id,
+                                exc.category,
+                            )
+                            yield _sse({
+                                "type": "error",
+                                "error": "Answer stream interrupted. Ask again if the reply looks incomplete.",
+                                "requestId": request_id,
+                            })
+                            return
+                        if gemini_api_key() and exc.status != 400:
+                            logger.warning(
+                                "live_answer_stream request_id=%s provider=groq error_category=%s fallback=gemini",
+                                request_id,
+                                exc.category,
+                            )
+                            payload = await generate_live_answer(
+                                body,
+                                skip_primary=True,
+                                request_id=request_id,
+                            )
+                            text = str(payload.get("answer") or "")
+                            if text:
+                                yield _sse({"type": "token", "text": text})
+                            yield _sse({
+                                "type": "done",
+                                "answer": text,
+                                "confidence": payload.get("confidence", 0.78),
+                                "model": payload.get("model"),
+                                "provider": payload.get("provider"),
+                                "requestId": request_id,
+                            })
+                            append_exchange(
+                                active_meeting_id(),
+                                str(body.get("prompt") or ""),
+                                text,
+                                provider=str(payload.get("provider") or "gemini"),
+                                model=str(payload.get("model") or ""),
+                            )
+                            record_usage(
+                                session,
+                                provider=str(payload.get("provider") or "gemini"),
+                                model=str(payload.get("model") or ""),
+                                total=1,
+                                feature="live_answer_stream",
+                            )
+                            return
+                        yield _sse({"type": "error", "error": str(exc), "requestId": request_id})
+                        return
                     text = "".join(parts)
+                    logger.info(
+                        "live_answer_stream request_id=%s provider=groq ttft_ms=%s total_ms=%s",
+                        request_id,
+                        first_token_ms if first_token_ms is not None else -1,
+                        _ms(started),
+                    )
                     yield _sse({
                         "type": "done",
                         "answer": text,
                         "confidence": 0.78,
                         "model": model,
                         "provider": "groq",
+                        "requestId": request_id,
                     })
                     append_exchange(
                         active_meeting_id(),
@@ -119,14 +189,14 @@ async def live_answer(request: Request, body: dict[str, Any]):
                         feature="live_answer_stream",
                     )
                 except LiveAnswerError as exc:
-                    yield _sse({"type": "error", "error": str(exc)})
+                    yield _sse({"type": "error", "error": str(exc), "requestId": request_id})
 
             return StreamingResponse(
                 events(),
                 media_type="text/event-stream",
                 headers={**_CORS, "Cache-Control": "no-cache, no-transform"},
             )
-        payload = await generate_live_answer(body)
+        payload = await generate_live_answer(body, request_id=request_id)
         record_usage(
             session,
             provider=str(payload.get("provider") or ""),
@@ -142,7 +212,7 @@ async def live_answer(request: Request, body: dict[str, Any]):
             model=str(payload.get("model") or ""),
         )
     except LiveAnswerError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=exc.status, headers=_CORS)
+        return JSONResponse({"error": str(exc), "requestId": request_id}, status_code=exc.status, headers=_CORS)
     return JSONResponse(payload, headers=_CORS)
 
 

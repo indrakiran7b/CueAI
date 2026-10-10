@@ -29,6 +29,32 @@ export class GroqError extends Error {
   }
 }
 
+export const GROQ_REQUEST_TIMEOUT_MS = Math.min(
+  30_000,
+  Math.max(3_000, Number(process.env.GROQ_TIMEOUT_MS || 12_000) || 12_000),
+);
+
+export function isRetryableGroqStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function groqAbortSignal(existing?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(GROQ_REQUEST_TIMEOUT_MS);
+  if (!existing) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([existing, timeout]);
+  }
+  return existing.aborted ? existing : timeout;
+}
+
+function classifyFetchError(err: unknown): GroqError {
+  const name = err instanceof Error ? err.name : "";
+  if (name === "TimeoutError" || name === "AbortError") {
+    return new GroqError("Groq request timed out.", 504);
+  }
+  return new GroqError("Groq is unavailable.", 502);
+}
+
 export function resolveGroqApiKey(): string {
   return process.env.GROQ_API_KEY?.trim() || "";
 }
@@ -65,23 +91,29 @@ export async function generateGroqText(req: {
 
   for (const model of models) {
     console.log("[GROQ] Request started");
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: req.temperature ?? 0.4,
-        max_completion_tokens: req.maxOutputTokens ?? 700,
-        ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
-        messages: [
-          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
-          { role: "user" as const, content: req.prompt },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(GROQ_CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: groqAbortSignal(),
+        body: JSON.stringify({
+          model,
+          temperature: req.temperature ?? 0.4,
+          max_completion_tokens: req.maxOutputTokens ?? 700,
+          ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
+          messages: [
+            ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+            { role: "user" as const, content: req.prompt },
+          ],
+        }),
+      });
+    } catch (err) {
+      throw classifyFetchError(err);
+    }
 
     const payload = (await res.json().catch(() => ({}))) as {
       choices?: { message?: { content?: string | null } }[];
@@ -94,10 +126,10 @@ export async function generateGroqText(req: {
       lastStatus = res.status;
       lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
       console.error("groq_generate_failed", model, res.status, lastMessage.slice(0, 300));
-      if (res.status === 401 || res.status === 403 || res.status === 429) {
-        throw new GroqError(lastMessage, res.status);
+      if (res.status === 404) {
+        continue;
       }
-      continue;
+      throw new GroqError(lastMessage, res.status);
     }
 
     const text = payload.choices?.[0]?.message?.content?.trim() || "";
@@ -149,24 +181,29 @@ export async function streamGroqText(req: {
     : STREAM_MODEL_FALLBACKS;
 
   for (const model of models) {
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: req.signal,
-      body: JSON.stringify({
-        model,
-        temperature: req.temperature ?? 0.3,
-        max_completion_tokens: req.maxOutputTokens ?? 160,
-        stream: true,
-        messages: [
-          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
-          { role: "user" as const, content: req.prompt },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(GROQ_CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: groqAbortSignal(req.signal),
+        body: JSON.stringify({
+          model,
+          temperature: req.temperature ?? 0.3,
+          max_completion_tokens: req.maxOutputTokens ?? 160,
+          stream: true,
+          messages: [
+            ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+            { role: "user" as const, content: req.prompt },
+          ],
+        }),
+      });
+    } catch (err) {
+      throw classifyFetchError(err);
+    }
 
     if (!res.ok || !res.body) {
       const payload = (await res.json().catch(() => ({}))) as {
@@ -175,10 +212,10 @@ export async function streamGroqText(req: {
       lastStatus = res.status;
       lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
       console.error("groq_stream_failed", model, res.status, lastMessage.slice(0, 300));
-      if (res.status === 401 || res.status === 403 || res.status === 429) {
-        throw new GroqError(lastMessage, res.status);
+      if (res.status === 404) {
+        continue;
       }
-      continue;
+      throw new GroqError(lastMessage, res.status);
     }
 
     const reader = res.body.getReader();

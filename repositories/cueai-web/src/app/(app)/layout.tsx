@@ -5,12 +5,14 @@ import { RequireAuth } from "@/components/auth/require-auth";
 import { CueAiRouteGate } from "@/components/auth/cueai-route-gate";
 import { MacDeviceGate, WindowsDeviceGate } from "@/components/mac/mac-device-gate";
 import { MacWorkspace } from "@/components/desktop/mac-workspace";
+import { DesktopHandoffRescue } from "@/components/auth/desktop-handoff-rescue";
 import type { ReactNode } from "react";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <WebCompanionProvider>
       <RequireAuth>
+        <DesktopHandoffRescue />
         <CueAiRouteGate>
         <WindowsDeviceGate>
         <MacDeviceGate>

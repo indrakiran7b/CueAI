@@ -35,6 +35,19 @@ import { getDesktopAudioSourceId } from "../services/audio-listen";
 import { capturePrimaryScreenshot, listCaptureDisplays } from "../services/screenshot";
 import { getWebOrigin } from "../services/web-server";
 import { windowsDeviceService } from "../platform/windows/windowsDevice";
+import { startWindowsGoogleSignIn } from "../services/google-oauth";
+
+function originFromSender(event: Electron.IpcMainInvokeEvent): string {
+  try {
+    const loaded = event.sender.getURL();
+    if (loaded.startsWith("http://") || loaded.startsWith("https://")) {
+      return new URL(loaded).origin;
+    }
+  } catch {
+    // Fall back to the configured web origin.
+  }
+  return getWebOrigin();
+}
 
 function getMainWindow() {
   return BrowserWindow.getAllWindows().find((w) => {
@@ -440,14 +453,14 @@ export function registerIpcHandlers() {
     }
   });
   ipcMain.handle(IpcChannels.DEVICE_VERIFY, async (event) => {
-    const origin = getWebOrigin();
+    const origin = originFromSender(event);
     return windowsDeviceService.verifyDevice(
       (input, init) => event.sender.session.fetch(input, init),
       origin,
     );
   });
   ipcMain.handle(IpcChannels.DEVICE_REGISTER, async (event) => {
-    const origin = getWebOrigin();
+    const origin = originFromSender(event);
     return windowsDeviceService.registerDevice(
       (input, init) => event.sender.session.fetch(input, init),
       origin,
@@ -456,6 +469,9 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.DEVICE_CLEAR_SESSION, () => {
     return windowsDeviceService.clearDeviceSession();
   });
+  ipcMain.handle(IpcChannels.AUTH_GOOGLE_START, () =>
+    startWindowsGoogleSignIn(() => getMainWindow() ?? null),
+  );
   ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, async () => {
     const headers = await ensureDeviceAuthHeaders();
     console.log("[DEVICE] auth headers present", {

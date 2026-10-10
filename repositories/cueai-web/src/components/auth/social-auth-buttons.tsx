@@ -63,6 +63,9 @@ export function SocialAuthButtons({
     apple: false,
   });
   const [loading, setLoading] = useState<ProviderId | null>(null);
+  const [stage, setStage] = useState<
+    "idle" | "opening_browser" | "awaiting_callback" | "exchanging_code" | "error"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,12 +83,18 @@ export function SocialAuthButtons({
 
   useEffect(() => {
     if (!loading) return;
+    const desktopWait = loading === "google" && stage !== "idle";
     const timer = window.setTimeout(() => {
       setLoading(null);
-      setError("Sign-in timed out. Try again, or cancel and return to this screen.");
-    }, 45000);
+      setStage("error");
+      setError(
+        desktopWait
+          ? "CueAI Desktop is still waiting for the browser. Finish Google in the browser, or cancel and try again."
+          : "Sign-in timed out. Try again, or cancel and return to this screen.",
+      );
+    }, desktopWait ? 190000 : 45000);
     return () => window.clearTimeout(timer);
-  }, [loading]);
+  }, [loading, stage]);
 
   async function handleOAuth(provider: ProviderId) {
     setError(null);
@@ -95,10 +104,28 @@ export function SocialAuthButtons({
     }
 
     setLoading(provider);
+    setStage(provider === "google" ? "opening_browser" : "idle");
     try {
+      const desktop = (window as Window & {
+        cueDesktop?: { startGoogleSignIn?: () => Promise<{ ok: boolean; error?: string; stage?: string }> };
+      }).cueDesktop;
+      if (provider === "google" && typeof desktop?.startGoogleSignIn === "function") {
+        setStage("awaiting_callback");
+        const result = await desktop.startGoogleSignIn();
+        if (!result?.ok) {
+          setError(result?.error || "Could not start Google sign-in from CueAI Desktop.");
+          setStage("error");
+          setLoading(null);
+          return;
+        }
+        setStage("idle");
+        setLoading(null);
+        return;
+      }
       await signIn(provider, { callbackUrl, redirect: true });
     } catch {
       setError(`Could not start ${provider} sign-in. Check your connection and try again.`);
+      setStage("error");
       setLoading(null);
     }
   }
@@ -118,7 +145,11 @@ export function SocialAuthButtons({
           className="w-full"
           icon={icon}
           loading={loading === provider}
-          loadingLabel={loadingLabel[provider]}
+          loadingLabel={
+            appearance === "mac" && loading === "google" && stage === "awaiting_callback"
+              ? "Waiting for the browser…"
+              : loadingLabel[provider]
+          }
           disabled={loading !== null}
           onClick={() => void handleOAuth(provider)}
         >
@@ -148,6 +179,19 @@ export function SocialAuthButtons({
         <div className="flex flex-col gap-2">{buttons}</div>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">{buttons}</div>
+      )}
+      {loading === "google" && stage === "awaiting_callback" && (
+        <button
+          type="button"
+          className="w-full text-xs text-muted underline-offset-2 hover:underline"
+          onClick={() => {
+            setLoading(null);
+            setStage("error");
+            setError("Google sign-in cancelled. You can try again from CueAI Desktop.");
+          }}
+        >
+          Cancel and return to this screen
+        </button>
       )}
       {error && (
         <p className="text-xs leading-relaxed text-amber-400" role="alert">

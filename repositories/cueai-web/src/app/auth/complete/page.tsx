@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { isSafeInternalPath } from "@/lib/oauth-complete";
 import { withDesktopParam } from "@/lib/desktop-query";
+import { DesktopHandoffRescue } from "@/components/auth/desktop-handoff-rescue";
 
 function OAuthCompleteInner() {
   const router = useRouter();
@@ -18,6 +19,7 @@ function OAuthCompleteInner() {
 
   const nextPath = useMemo(() => {
     const raw = searchParams.get("next") || "/dashboard";
+    if (raw.startsWith("/auth/desktop/")) return raw;
     return isSafeInternalPath(raw) ? raw : "/dashboard";
   }, [searchParams]);
 
@@ -69,6 +71,7 @@ export default function OAuthCompletePage() {
         </div>
       }
     >
+      <DesktopHandoffRescue />
       <OAuthCompleteInner />
     </Suspense>
   );

@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:billing": "npx tsx --tsconfig tsconfig.json --test scripts/test-billing.mts",
-    "test:oauth": "npx tsx --tsconfig tsconfig.json --test scripts/test-oauth-complete.mts"
+    "test:oauth": "npx tsx --tsconfig tsconfig.json --test scripts/test-oauth-complete.mts scripts/test-desktop-google-handoff.mts scripts/test-oauth-request-origin.mts"
   },
   "dependencies": {
     "@cueai/ai-orchestrator": "file:../cueai-ai-orchestrator",

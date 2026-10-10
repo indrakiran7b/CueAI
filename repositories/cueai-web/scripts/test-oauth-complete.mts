@@ -8,6 +8,7 @@ test("oauth complete URLs stay on CueAI NextAuth, not Appwrite", () => {
   assert.equal(isSafeInternalPath("https://nyc.cloud.appwrite.io/v1/account/sessions/oauth2/callback/google/x"), false);
   assert.equal(isSafeInternalPath("//evil.example"), false);
   assert.equal(isSafeInternalPath("/login"), false);
+  assert.equal(isSafeInternalPath("/auth/desktop/complete?state=abc"), true);
   assert.equal(oauthBridgeCallbackUrl("/dashboard"), "/auth/complete?next=%2Fdashboard");
   assert.equal(
     oauthBridgeCallbackUrl("https://nyc.cloud.appwrite.io/v1/account/sessions/oauth2/callback/google/x"),

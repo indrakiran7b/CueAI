@@ -31,20 +31,53 @@ export function extractProtocolUrl(argv: string[]): string | null {
   return found ?? null;
 }
 
+type DesktopAuthCallback = (url: URL) => void;
+
+let desktopAuthCallback: DesktopAuthCallback | null = null;
+let pendingDesktopAuthUrl: URL | null = null;
+
+export function onDesktopAuthCallback(handler: DesktopAuthCallback) {
+  desktopAuthCallback = handler;
+  if (pendingDesktopAuthUrl) {
+    const url = pendingDesktopAuthUrl;
+    pendingDesktopAuthUrl = null;
+    handler(url);
+  }
+}
+
+function dispatchDesktopAuthCallback(url: URL) {
+  if (desktopAuthCallback) {
+    desktopAuthCallback(url);
+    return;
+  }
+  pendingDesktopAuthUrl = url;
+}
+
 /** Handle cueai://… — returns true if recognized. */
 export function handleProtocolUrl(raw: string | null | undefined): boolean {
   if (!raw || !raw.startsWith(`${CUEAI_PROTOCOL}://`)) return false;
 
+  let parsed: URL | null = null;
   let pathname = "";
   try {
-    const u = new URL(raw);
-    pathname = `${u.hostname}${u.pathname}`.replace(/\/+$/, "").toLowerCase();
+    parsed = new URL(raw);
+    pathname = `${parsed.hostname}${parsed.pathname}`.replace(/\/+$/, "").toLowerCase();
   } catch {
     pathname = raw
       .slice(`${CUEAI_PROTOCOL}://`.length)
       .split("?")[0]
       ?.replace(/\/+$/, "")
       .toLowerCase() ?? "";
+  }
+
+  if (pathname === "auth/callback" && parsed) {
+    console.info("[auth] desktop.google.protocol", {
+      stage: "callback",
+      callbackReceived: true,
+      via: "protocol",
+    });
+    dispatchDesktopAuthCallback(parsed);
+    return true;
   }
 
   if (!pathname || pathname === "companion" || pathname === "companion/show") {

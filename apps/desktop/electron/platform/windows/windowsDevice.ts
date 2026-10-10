@@ -187,6 +187,11 @@ export class WindowsDeviceService {
     };
   }
 
+  saveIssuedCredential(token: string) {
+    saveCredential(token);
+    return { saved: true };
+  }
+
   clearDeviceSession() {
     const identity = readIdentity();
     if (identity?.credential) {

@@ -217,6 +217,11 @@ export class MacDeviceService {
     return { cleared: true, identityPreserved: true };
   }
 
+  saveIssuedCredential(token: string) {
+    saveCredential(token);
+    return { saved: true };
+  }
+
   async registerDevice(fetchImpl: SessionFetch, origin: string): Promise<MacDeviceCheckResult> {
     const identity = getOrCreateMacDeviceIdentity();
     console.log("[DEVICE] Device ID loaded");

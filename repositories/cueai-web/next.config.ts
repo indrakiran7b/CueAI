@@ -33,6 +33,9 @@ const nextConfig: NextConfig = {
     "@cueai/gateway",
   ],
   serverExternalPackages: ["@xenova/transformers"],
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   webpack: (config) => {
     config.resolve = config.resolve || {};
     config.resolve.alias = {

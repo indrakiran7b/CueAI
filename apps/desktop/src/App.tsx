@@ -16,7 +16,7 @@ import {
 import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
-import { configureAnswerApi } from "./services/live-answer";
+import { configureAnswerApi, probeLiveAnswerHealth } from "./services/live-answer";
 import {
   configureLiveTranscription,
   getListenActive,
@@ -93,6 +93,7 @@ export default function App() {
   const [autoAnswer, setAutoAnswer] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [apiHealthError, setApiHealthError] = useState<string | null>(null);
   const [webApiBase, setWebApiBase] = useState("http://127.0.0.1:3000");
   const [expanded, setExpanded] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -172,6 +173,29 @@ export default function App() {
     configureScreenContextApi(webApiBase);
     configureMeetingPersist(webApiBase);
     prewarmAnswerApi(webApiBase);
+  }, [webApiBase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = async () => {
+      const health = await probeLiveAnswerHealth();
+      if (cancelled) return;
+      if (health.liveAnswer === "ready") {
+        setApiHealthError(null);
+        timer = window.setTimeout(tick, 20_000);
+        return;
+      }
+      setApiHealthError(
+        health.error || "CueAI live answers are unavailable. Start the web app and retry.",
+      );
+      timer = window.setTimeout(tick, 4_000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
   }, [webApiBase]);
 
   useEffect(() => {
@@ -781,6 +805,9 @@ export default function App() {
               <button type="button" onClick={clearBoard}>Close</button>
             </div>
           </header>
+          {apiHealthError && !streaming && !statusMsg && (
+            <p className="ov-error">{apiHealthError}</p>
+          )}
           {statusMsg && <p className="ov-error">{statusMsg}</p>}
           {streaming ? (
             <p className="ov-muted">Thinking…</p>

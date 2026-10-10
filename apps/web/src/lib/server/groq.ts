@@ -10,13 +10,13 @@ export const GROQ_DEFAULT_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-
 const MODEL_FALLBACKS = [
   GROQ_DEFAULT_MODEL,
   "openai/gpt-oss-20b",
-  "llama-3.3-70b-versatile",
+  "openai/gpt-oss-120b",
 ].filter((v, i, arr) => arr.indexOf(v) === i);
 
-/** Prefer low-latency models for live overlay streaming. */
+/** Live overlay streaming uses the same configured Groq family (retired Llama IDs 404). */
 const STREAM_MODEL_FALLBACKS = [
-  process.env.GROQ_STREAM_MODEL?.trim() || "llama-3.1-8b-instant",
-  "llama-3.3-70b-versatile",
+  process.env.GROQ_STREAM_MODEL?.trim() || GROQ_DEFAULT_MODEL,
+  "openai/gpt-oss-20b",
   GROQ_DEFAULT_MODEL,
 ].filter((v, i, arr) => v && arr.indexOf(v) === i);
 
@@ -27,6 +27,32 @@ export class GroqError extends Error {
     this.name = "GroqError";
     this.status = status;
   }
+}
+
+export const GROQ_REQUEST_TIMEOUT_MS = Math.min(
+  30_000,
+  Math.max(3_000, Number(process.env.GROQ_TIMEOUT_MS || 12_000) || 12_000),
+);
+
+export function isRetryableGroqStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function groqAbortSignal(existing?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(GROQ_REQUEST_TIMEOUT_MS);
+  if (!existing) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([existing, timeout]);
+  }
+  return existing.aborted ? existing : timeout;
+}
+
+function classifyFetchError(err: unknown): GroqError {
+  const name = err instanceof Error ? err.name : "";
+  if (name === "TimeoutError" || name === "AbortError") {
+    return new GroqError("Groq request timed out.", 504);
+  }
+  return new GroqError("Groq is unavailable.", 502);
 }
 
 export function resolveGroqApiKey(): string {
@@ -56,23 +82,29 @@ export async function generateGroqText(req: {
   let lastMessage = "Groq did not return an answer.";
 
   for (const model of MODEL_FALLBACKS) {
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: req.temperature ?? 0.4,
-        max_completion_tokens: req.maxOutputTokens ?? 700,
-        ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
-        messages: [
-          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
-          { role: "user" as const, content: req.prompt },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(GROQ_CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: groqAbortSignal(),
+        body: JSON.stringify({
+          model,
+          temperature: req.temperature ?? 0.4,
+          max_completion_tokens: req.maxOutputTokens ?? 700,
+          ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
+          messages: [
+            ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+            { role: "user" as const, content: req.prompt },
+          ],
+        }),
+      });
+    } catch (err) {
+      throw classifyFetchError(err);
+    }
 
     const payload = (await res.json().catch(() => ({}))) as {
       choices?: { message?: { content?: string | null } }[];
@@ -85,10 +117,10 @@ export async function generateGroqText(req: {
       lastStatus = res.status;
       lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
       console.error("groq_generate_failed", model, res.status, lastMessage.slice(0, 300));
-      if (res.status === 401 || res.status === 403 || res.status === 429) {
-        throw new GroqError(lastMessage, res.status);
+      if (res.status === 404) {
+        continue;
       }
-      continue;
+      throw new GroqError(lastMessage, res.status);
     }
 
     const text = payload.choices?.[0]?.message?.content?.trim() || "";
@@ -129,24 +161,29 @@ export async function streamGroqText(req: {
   let lastMessage = "Groq did not return an answer.";
 
   for (const model of STREAM_MODEL_FALLBACKS) {
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: req.signal,
-      body: JSON.stringify({
-        model,
-        temperature: req.temperature ?? 0.3,
-        max_completion_tokens: req.maxOutputTokens ?? 160,
-        stream: true,
-        messages: [
-          ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
-          { role: "user" as const, content: req.prompt },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(GROQ_CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: groqAbortSignal(req.signal),
+        body: JSON.stringify({
+          model,
+          temperature: req.temperature ?? 0.3,
+          max_completion_tokens: req.maxOutputTokens ?? 160,
+          stream: true,
+          messages: [
+            ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
+            { role: "user" as const, content: req.prompt },
+          ],
+        }),
+      });
+    } catch (err) {
+      throw classifyFetchError(err);
+    }
 
     if (!res.ok || !res.body) {
       const payload = (await res.json().catch(() => ({}))) as {
@@ -155,10 +192,10 @@ export async function streamGroqText(req: {
       lastStatus = res.status;
       lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
       console.error("groq_stream_failed", model, res.status, lastMessage.slice(0, 300));
-      if (res.status === 401 || res.status === 403 || res.status === 429) {
-        throw new GroqError(lastMessage, res.status);
+      if (res.status === 404) {
+        continue;
       }
-      continue;
+      throw new GroqError(lastMessage, res.status);
     }
 
     const reader = res.body.getReader();

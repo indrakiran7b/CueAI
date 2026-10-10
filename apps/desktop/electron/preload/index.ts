@@ -66,6 +66,8 @@ const cueDesktop = {
   clearAccountDeviceSession: () => ipcRenderer.invoke(IpcChannels.DEVICE_CLEAR_SESSION),
   getDeviceAuthHeaders: () =>
     ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
+  startGoogleSignIn: () =>
+    ipcRenderer.invoke(IpcChannels.AUTH_GOOGLE_START) as Promise<{ ok: boolean; error?: string }>,
   setMeetingSession: (session: Partial<MeetingSession>) =>
     ipcRenderer.invoke(IpcChannels.MEETING_SET_SESSION, session) as Promise<MeetingSession>,
   getMeetingSession: () =>

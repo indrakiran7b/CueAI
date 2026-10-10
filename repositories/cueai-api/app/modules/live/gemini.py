@@ -132,6 +132,8 @@ async def gemini_generate_json(
     temperature: float = 0.4,
     max_output_tokens: int = 520,
     error_label: str = "Screen analysis failed",
+    timeout: float = 90,
+    max_attempts: int = 4,
 ) -> dict[str, Any]:
     api_key = gemini_api_key()
     if not api_key:
@@ -145,8 +147,9 @@ async def gemini_generate_json(
         max_output_tokens=max_output_tokens,
     )
     last_error = error_label
-    async with httpx.AsyncClient(timeout=90) as client:
-        for model in gemini_model_candidates():
+    attempts = max(1, max_attempts)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for model in gemini_model_candidates()[:attempts]:
             url = GEMINI_URL.format(model=model)
             res = await client.post(url, params={"key": api_key}, json=body)
             if res.status_code == 429:

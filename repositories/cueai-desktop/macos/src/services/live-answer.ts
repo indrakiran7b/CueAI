@@ -1,5 +1,5 @@
 /**
- * Live answers from the CueAI web API (Gemini-backed).
+ * Live answers from the CueAI web API (Groq primary, Gemini fallback).
  *
  * The overlay renders on its own origin, so this talks to the embedded Next
  * server over HTTP the same way transcription does.
@@ -22,6 +22,38 @@ const SESSION_CACHE_MS = 30_000;
 
 export function configureAnswerApi(base: string) {
   if (base) apiBase = base.replace(/\/$/, "");
+}
+
+export type LiveAnswerHealth = {
+  status: string;
+  liveAnswer: "ready" | "unavailable" | string;
+  mode?: string;
+  fastapi?: string;
+  error?: string;
+};
+
+export async function probeLiveAnswerHealth(): Promise<LiveAnswerHealth> {
+  try {
+    const res = await fetch(`${apiBase}/api/live/health`, {
+      cache: "no-store",
+      headers: await deviceAuthHeaders(),
+    });
+    const data = (await res.json().catch(() => ({}))) as LiveAnswerHealth;
+    if (res.ok && data.liveAnswer === "ready") {
+      return { ...data, liveAnswer: "ready" };
+    }
+    return {
+      status: "unavailable",
+      liveAnswer: "unavailable",
+      error: "CueAI live answers are unavailable. Start the web app, then retry.",
+    };
+  } catch {
+    return {
+      status: "unavailable",
+      liveAnswer: "unavailable",
+      error: "CueAI server unreachable. Is the web app running?",
+    };
+  }
 }
 
 export class LiveAnswerUnavailable extends Error {

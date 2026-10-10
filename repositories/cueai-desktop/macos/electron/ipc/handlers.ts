@@ -36,6 +36,19 @@ import {
 import { getDesktopAudioSourceId } from "../services/audio-listen";
 import { capturePrimaryScreenshot } from "../services/screenshot";
 import { getWebOrigin } from "../services/web-server";
+import { startMacGoogleSignIn } from "../services/google-oauth";
+
+function originFromSender(event: Electron.IpcMainInvokeEvent): string {
+  try {
+    const loaded = event.sender.getURL();
+    if (loaded.startsWith("http://") || loaded.startsWith("https://")) {
+      return new URL(loaded).origin;
+    }
+  } catch {
+    // Fall back to the configured web origin.
+  }
+  return getWebOrigin();
+}
 import { allowNextWindowClose } from "../services/app-lifecycle";
 import {
   getMacOSPermissions,
@@ -279,7 +292,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.DEVICE_VERIFY, async (event) => {
     console.log("[DEVICE] Startup check");
     console.log("[DEVICE] Authentication state");
-    const origin = getWebOrigin();
+    const origin = originFromSender(event);
     return macDeviceService.verifyDevice(
       (input, init) => event.sender.session.fetch(input, init),
       origin,
@@ -287,7 +300,7 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle(IpcChannels.DEVICE_REGISTER, async (event) => {
-    const origin = getWebOrigin();
+    const origin = originFromSender(event);
     return macDeviceService.registerDevice(
       (input, init) => event.sender.session.fetch(input, init),
       origin,
@@ -300,6 +313,9 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, () => {
     return macDeviceService.getAuthHeaders();
   });
+  ipcMain.handle(IpcChannels.AUTH_GOOGLE_START, () =>
+    startMacGoogleSignIn(() => getMainWindow() ?? null),
+  );
 
   ipcMain.handle(
     IpcChannels.MEETING_SET_SESSION,

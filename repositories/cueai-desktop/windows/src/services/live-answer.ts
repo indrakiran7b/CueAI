@@ -1,5 +1,5 @@
 /**
- * Live answers from the CueAI web API (Gemini primary, Groq fallback).
+ * Live answers from the CueAI web API (Groq primary, Gemini fallback).
  * Supports streaming SSE for ~2–3s overlay latency targets.
  */
 
@@ -21,6 +21,41 @@ const SESSION_CACHE_MS = 30_000;
 
 export function configureAnswerApi(base: string) {
   if (base) apiBase = base.replace(/\/$/, "");
+}
+
+export type LiveAnswerHealth = {
+  status: string;
+  liveAnswer: "ready" | "unavailable" | string;
+  mode?: string;
+  fastapi?: string;
+  groqConfigured?: boolean;
+  geminiConfigured?: boolean;
+  error?: string;
+};
+
+export async function probeLiveAnswerHealth(): Promise<LiveAnswerHealth> {
+  try {
+    const res = await fetch(`${apiBase}/api/live/health`, {
+      cache: "no-store",
+      headers: await deviceAuthHeaders(),
+    });
+    const data = (await res.json().catch(() => ({}))) as LiveAnswerHealth;
+    if (res.ok && data.liveAnswer === "ready") {
+      return { ...data, liveAnswer: "ready" };
+    }
+    return {
+      status: "unavailable",
+      liveAnswer: "unavailable",
+      error: "CueAI live answers are unavailable. Start the web app, then retry.",
+      mode: data.mode,
+    };
+  } catch {
+    return {
+      status: "unavailable",
+      liveAnswer: "unavailable",
+      error: "CueAI server unreachable. Is the web app running?",
+    };
+  }
 }
 
 export class LiveAnswerUnavailable extends Error {

@@ -6,5 +6,7 @@ export async function GET(req: NextRequest) {
   const proxied = await proxyToFastApi(req, "/v1/auth/providers");
   if (proxied) return proxied;
 
-  return NextResponse.json(getOAuthProviders());
+  const res = NextResponse.json(getOAuthProviders());
+  res.headers.set("Cache-Control", "private, max-age=5");
+  return res;
 }

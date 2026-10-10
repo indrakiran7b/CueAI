@@ -62,6 +62,9 @@ ngrok.yml.local
 next-env.d.ts
 **/next-env.d.ts
 
+# Local API probe leftovers
+scripts/.last-meeting-api-test.json
+
 # Playwright
 /playwright-report/
 /test-results/

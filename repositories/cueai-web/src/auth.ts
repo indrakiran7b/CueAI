@@ -22,13 +22,24 @@ function missingEnvNames(names: string[]): string[] {
   return names.filter((name) => !isRealSecret(process.env[name]));
 }
 
+let providerCache:
+  | { at: number; value: { google: boolean; github: boolean; apple: boolean } }
+  | null = null;
+let loggedGoogleDisabled = false;
+const PROVIDER_CACHE_MS = 5000;
+
 /** Read at request time so /api/auth/providers reflects the running process env. */
 export function getOAuthProviders() {
+  const now = Date.now();
+  if (providerCache && now - providerCache.at < PROVIDER_CACHE_MS) {
+    return providerCache.value;
+  }
   const googleMissing = missingEnvNames(["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"]);
-  if (googleMissing.length > 0) {
+  if (googleMissing.length > 0 && !loggedGoogleDisabled) {
+    loggedGoogleDisabled = true;
     console.info("[auth] oauth.google.disabled", { missing: googleMissing });
   }
-  return {
+  const value = {
     google: googleMissing.length === 0,
     github:
       isRealSecret(process.env.AUTH_GITHUB_ID) &&
@@ -37,6 +48,8 @@ export function getOAuthProviders() {
       isRealSecret(process.env.AUTH_APPLE_ID) &&
       isRealSecret(process.env.AUTH_APPLE_SECRET),
   };
+  providerCache = { at: now, value };
+  return value;
 }
 
 export const oauthProviders = {
@@ -100,6 +113,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
         const parsed = new URL(target);
         if (parsed.searchParams.has("error")) return target;
         if (parsed.pathname === "/auth/complete") return target;
+        if (parsed.pathname.startsWith("/auth/desktop/")) return target;
         const next = `${parsed.pathname}${parsed.search}` || "/dashboard";
         const safeNext =
           next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login")

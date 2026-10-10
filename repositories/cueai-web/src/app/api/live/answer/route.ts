@@ -16,8 +16,20 @@ import {
   resolveGeminiCredentials,
   type GeminiJsonSchema,
 } from "@/lib/server/gemini";
-import { GroqError, generateGroqText, resolveGroqApiKey, streamGroqText } from "@/lib/server/groq";
+import {
+  GroqError,
+  generateGroqText,
+  isRetryableGroqStatus,
+  resolveGroqApiKey,
+  streamGroqText,
+} from "@/lib/server/groq";
 import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
+import {
+  forceLiveAnswerLocal,
+  liveAnswerUnavailableMessage,
+  localProvidersConfigured,
+  proxyLiveAnswerToFastApi,
+} from "@/lib/server/live-answer-backend";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -91,35 +103,46 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (process.env.CUEAI_LIVE_ANSWER_LOCAL !== "1") {
-    const base = (process.env.CUEAI_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-    try {
-      const upstream = await fetch(`${base}/v1/live/answer`, {
-        method: "POST",
-        headers: {
-          "content-type": request.headers.get("content-type") || "application/json",
-          accept: request.headers.get("accept") || "*/*",
-          cookie: upstreamSessionCookieHeader(session, request.headers.get("cookie")),
-        },
-        body: await request.arrayBuffer(),
-      });
+  const requestId = crypto.randomUUID().slice(0, 12);
+  const rawBody = await request.arrayBuffer();
+  const forceLocal = forceLiveAnswerLocal();
+
+  if (!forceLocal) {
+    const proxied = await proxyLiveAnswerToFastApi({
+      body: rawBody,
+      contentType: request.headers.get("content-type") || "application/json",
+      accept: request.headers.get("accept") || "*/*",
+      cookie: upstreamSessionCookieHeader(session, request.headers.get("cookie")),
+      signal: request.signal,
+    });
+    if ("response" in proxied) {
       const headers = new Headers(CORS_HEADERS);
-      const type = upstream.headers.get("content-type");
+      const type = proxied.response.headers.get("content-type");
       if (type) headers.set("content-type", type);
-      if (upstream.status === 401) {
+      if (proxied.response.status === 401) {
         console.log("[AUTH] Unauthorized", {
           method: "POST",
           path: "/v1/live/answer",
           source: "fastapi-upstream",
+          requestId,
         });
       }
-      return new Response(upstream.body, { status: upstream.status, headers });
-    } catch {
-      return json(
-        { error: "CueAI API is not running. Start apps/api or set CUEAI_LIVE_ANSWER_LOCAL=1." },
-        503,
-      );
+      return new Response(proxied.response.body, { status: proxied.response.status, headers });
     }
+    const local = localProvidersConfigured();
+    if (!local.groq && !local.gemini) {
+      console.error("live_answer_upstream_unavailable", {
+        requestId,
+        reason: proxied.error,
+      });
+      return json({ error: liveAnswerUnavailableMessage(proxied.error), requestId }, 503);
+    }
+    console.warn("live_answer_local_fallback", {
+      requestId,
+      reason: proxied.error,
+      groqConfigured: local.groq,
+      geminiConfigured: local.gemini,
+    });
   }
 
   const groqKey = resolveGroqApiKey();
@@ -161,8 +184,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json().catch(() => null)) as
-      | {
+    const body = (() => {
+      try {
+        return JSON.parse(new TextDecoder().decode(rawBody)) as {
           prompt?: unknown;
           transcript?: unknown;
           mode?: unknown;
@@ -170,8 +194,11 @@ export async function POST(request: NextRequest) {
           image?: unknown;
           stream?: unknown;
           skipKnowledge?: unknown;
-        }
-      | null;
+        };
+      } catch {
+        return null;
+      }
+    })();
 
     const prompt = String(body?.prompt || "").trim();
     if (!prompt) {
@@ -234,11 +261,14 @@ export async function POST(request: NextRequest) {
         knowledgeContext,
       });
       const encoder = new TextEncoder();
+      const streamStarted = Date.now();
       const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
           const send = (payload: unknown) => {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
           };
+          let tokensEmitted = false;
+          let firstTokenAt = 0;
           try {
             const result = await streamGroqText({
               system,
@@ -246,9 +276,19 @@ export async function POST(request: NextRequest) {
               temperature: 0.35,
               maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
               signal: request.signal,
-              onToken: (token) => send({ type: "token", text: token }),
+              onToken: (token) => {
+                if (!tokensEmitted) firstTokenAt = Date.now();
+                tokensEmitted = true;
+                send({ type: "token", text: token });
+              },
               apiKey: effectiveGroqKey,
               model: byokGroqModel,
+            });
+            console.info("live_answer_stream", {
+              requestId,
+              provider: "groq",
+              ttftMs: firstTokenAt ? firstTokenAt - streamStarted : -1,
+              totalMs: Date.now() - streamStarted,
             });
             send({
               type: "done",
@@ -256,6 +296,7 @@ export async function POST(request: NextRequest) {
               confidence: 0.78,
               model: result.model,
               provider: "groq",
+              requestId,
               knowledgeUsed: knowledgeMeta.knowledgeUsed,
               sourceType: knowledgeMeta.sourceType,
               sources: knowledgeMeta.sources,
@@ -293,12 +334,32 @@ export async function POST(request: NextRequest) {
               }
             })();
           } catch (err) {
-            if (credentials) {
+            if (tokensEmitted) {
+              send({
+                type: "error",
+                error: "Answer stream interrupted. Ask again if the reply looks incomplete.",
+                requestId,
+              });
+              return;
+            }
+            const groqStatus = err instanceof GroqError ? err.status : 502;
+            const canFallback =
+              Boolean(credentials) &&
+              groqStatus !== 400 &&
+              (isRetryableGroqStatus(groqStatus) || groqStatus === 401 || groqStatus === 403);
+            if (canFallback && credentials) {
               try {
-                console.error(
-                  "live_answer_stream_groq_fallback",
-                  err instanceof Error ? err.message : err,
-                );
+                console.error("live_answer_stream_groq_fallback", {
+                  requestId,
+                  errorCategory:
+                    groqStatus === 429
+                      ? "rate_limit"
+                      : groqStatus === 401 || groqStatus === 403
+                        ? "auth"
+                        : groqStatus === 504
+                          ? "timeout"
+                          : "unavailable",
+                });
                 const gemini = await generateGeminiText({
                   credentials,
                   system,
@@ -329,6 +390,7 @@ export async function POST(request: NextRequest) {
                   confidence,
                   model: gemini.model,
                   provider: "gemini",
+                  requestId,
                   knowledgeUsed: knowledgeMeta.knowledgeUsed,
                   sourceType: knowledgeMeta.sourceType,
                   sources: knowledgeMeta.sources,
@@ -419,24 +481,26 @@ export async function POST(request: NextRequest) {
       sources: unknown[];
     } = { knowledgeUsed: false, sourceType: "general_ai", sources: [] };
     try {
-      const { retrieveKnowledgeForMeeting } = await import(
+      const { needsLiveKnowledge, retrieveKnowledgeForMeeting } = await import(
         "@/lib/server/knowledge-retrieve"
       );
-      const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-      const resolved = await resolveAnswerBriefing(session);
-      meetingId = meetingId || resolved.meeting?.id || null;
-      const kb = await retrieveKnowledgeForMeeting(prompt, {
-        workspaceId: session.workspaceId,
-        meetingId,
-        documentIds: resolved.briefing.documentIds,
-        includeWorkspace: true,
-      });
-      knowledgeContext = kb.context;
-      knowledgeMeta = {
-        knowledgeUsed: kb.knowledgeUsed,
-        sourceType: kb.sourceType,
-        sources: kb.sources.slice(0, 5),
-      };
+      if (body?.skipKnowledge !== true && needsLiveKnowledge(prompt)) {
+        const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
+        const resolved = await resolveAnswerBriefing(session);
+        meetingId = meetingId || resolved.meeting?.id || null;
+        const kb = await retrieveKnowledgeForMeeting(prompt, {
+          workspaceId: session.workspaceId,
+          meetingId,
+          documentIds: resolved.briefing.documentIds,
+          includeWorkspace: true,
+        });
+        knowledgeContext = kb.context;
+        knowledgeMeta = {
+          knowledgeUsed: kb.knowledgeUsed,
+          sourceType: kb.sourceType,
+          sources: kb.sources.slice(0, 5),
+        };
+      }
     } catch {
       // optional
     }
@@ -455,7 +519,8 @@ export async function POST(request: NextRequest) {
       inputTokens: number;
       outputTokens: number;
     };
-    let provider = "gemini";
+    let provider = "groq";
+    const generateStarted = Date.now();
 
     if (inlineImage && rawImage) {
       try {
@@ -500,34 +565,6 @@ export async function POST(request: NextRequest) {
         outputTokens: byokResult.outputTokens,
       };
       provider = byokResult.provider;
-    } else if (credentials && !preferGemini) {
-      try {
-        console.log("[GEMINI] Request started");
-        result = await generateGeminiText({
-          credentials,
-          system,
-          prompt: userPrompt,
-          temperature: 0.4,
-          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-          thinkingLevel: "MINIMAL",
-          jsonSchema: ANSWER_SCHEMA,
-        });
-        provider = "gemini";
-      } catch (err) {
-        if (!effectiveGroqKey) throw err;
-        console.error("live_answer_gemini_fallback", err instanceof Error ? err.message : err);
-        console.log("[GROQ] Fallback started");
-        result = await generateGroqText({
-          system,
-          prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
-          temperature: 0.4,
-          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-          jsonObject: true,
-          apiKey: effectiveGroqKey,
-          model: byokGroqModel,
-        });
-        provider = "groq";
-      }
     } else if (effectiveGroqKey && !preferGemini) {
       try {
         console.log("[GROQ] Request started");
@@ -542,11 +579,26 @@ export async function POST(request: NextRequest) {
         });
         provider = "groq";
       } catch (err) {
-        if (!credentials) throw err;
-        console.error("live_answer_groq_fallback", err instanceof Error ? err.message : err);
+        const groqStatus = err instanceof GroqError ? err.status : 502;
+        const canFallback =
+          Boolean(credentials) &&
+          groqStatus !== 400 &&
+          (isRetryableGroqStatus(groqStatus) || groqStatus === 401 || groqStatus === 403);
+        if (!canFallback) throw err;
+        console.error("live_answer_groq_fallback", {
+          requestId,
+          errorCategory:
+            groqStatus === 429
+              ? "rate_limit"
+              : groqStatus === 401 || groqStatus === 403
+                ? "auth"
+                : groqStatus === 504
+                  ? "timeout"
+                  : "unavailable",
+        });
         console.log("[GEMINI] Fallback started");
         result = await generateGeminiText({
-          credentials,
+          credentials: credentials!,
           system,
           prompt: userPrompt,
           temperature: 0.4,
@@ -556,6 +608,18 @@ export async function POST(request: NextRequest) {
         });
         provider = "gemini";
       }
+    } else if (credentials && !preferGemini) {
+      console.log("[GEMINI] Request started");
+      result = await generateGeminiText({
+        credentials,
+        system,
+        prompt: userPrompt,
+        temperature: 0.4,
+        maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+        thinkingLevel: "MINIMAL",
+        jsonSchema: ANSWER_SCHEMA,
+      });
+      provider = "gemini";
     } else {
       if (!credentials) {
         return json(
@@ -623,12 +687,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.info("live_answer", {
+      requestId,
+      provider,
+      totalMs: Date.now() - generateStarted,
+    });
+
     return json({
       ok: true,
       answer,
       confidence,
       model: result.model,
       provider,
+      requestId,
       knowledgeUsed: knowledgeMeta.knowledgeUsed,
       sourceType: knowledgeMeta.sourceType,
       sources: knowledgeMeta.sources,

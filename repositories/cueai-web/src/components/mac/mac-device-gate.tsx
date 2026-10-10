@@ -87,6 +87,70 @@ function accountDeviceBridge(platform: GatePlatform) {
   };
 }
 
+type PageDeviceResult = {
+  status: DeviceStatus;
+  authorized: boolean;
+};
+
+async function recoverDeviceViaPageSession(
+  action: "verify" | "register",
+  identity: PublicDevice,
+): Promise<PageDeviceResult | null> {
+  try {
+    if (action === "register") {
+      const res = await fetchWithTimeout("/api/devices/register", DEVICE_REQUEST_TIMEOUT_MS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          device_id: identity.deviceId,
+          device_name: identity.deviceName,
+          platform: identity.platform,
+          app_version: identity.appVersion,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: DeviceStatus;
+        authorized?: boolean;
+      };
+      if (
+        data.status !== "NEW" &&
+        data.status !== "PENDING" &&
+        data.status !== "ACTIVE" &&
+        data.status !== "BLOCKED" &&
+        data.status !== "REVOKED"
+      ) {
+        return null;
+      }
+      return { status: data.status, authorized: data.authorized !== false };
+    }
+
+    const res = await fetchWithTimeout(
+      `/api/devices/status?device_id=${encodeURIComponent(identity.deviceId)}`,
+      DEVICE_REQUEST_TIMEOUT_MS,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as
+      | { status?: DeviceStatus; authorized?: boolean }
+      | null;
+    if (
+      !data ||
+      (data.status !== "NEW" &&
+        data.status !== "PENDING" &&
+        data.status !== "ACTIVE" &&
+        data.status !== "BLOCKED" &&
+        data.status !== "REVOKED")
+    ) {
+      return null;
+    }
+    return { status: data.status, authorized: data.authorized !== false };
+  } catch {
+    return null;
+  }
+}
+
 const GATE_COPY = {
   macos: {
     signInFirst: "Sign in before this Mac can be verified.",
@@ -256,10 +320,26 @@ function AccountDeviceGate({
         );
         if (checkGen.current !== gen) return;
         if (repaired.status === "AUTH_REQUIRED") {
+          const recovered = await recoverDeviceViaPageSession("register", info);
+          if (recovered) {
+            const persisted = await withTimeout(
+              bridge.register(),
+              DEVICE_REQUEST_TIMEOUT_MS + 2000,
+              labels.timeoutRegister,
+            ).catch(() => null);
+            if (persisted && persisted.status !== "AUTH_REQUIRED") {
+              if (persisted.status === "NETWORK_ERROR" || persisted.status === "SERVER_ERROR") {
+                setStatus(mapDeviceStatus(recovered.status, recovered.authorized));
+                return;
+              }
+              setStatus(mapDeviceStatus(persisted.status, persisted.authorized));
+              return;
+            }
+            setStatus(mapDeviceStatus(recovered.status, recovered.authorized));
+            return;
+          }
           setStatus("AUTH_REQUIRED");
           setMessage(labels.sessionExpired);
-          await logout();
-          router.replace(withDesktopParam("/login"));
           return;
         }
         if (repaired.status === "NETWORK_ERROR" || repaired.status === "SERVER_ERROR") {
@@ -288,10 +368,13 @@ function AccountDeviceGate({
         );
         if (checkGen.current !== gen) return;
         if (result.status === "AUTH_REQUIRED") {
+          const recovered = await recoverDeviceViaPageSession("verify", info);
+          if (recovered) {
+            setStatus(mapDeviceStatus(recovered.status, recovered.authorized));
+            return;
+          }
           setStatus("AUTH_REQUIRED");
           setMessage(labels.sessionExpired);
-          await logout();
-          router.replace(withDesktopParam("/login"));
           return;
         }
         if (result.status === "NETWORK_ERROR" || result.status === "SERVER_ERROR") {
@@ -330,8 +413,6 @@ function AccountDeviceGate({
         console.log("[DEVICE] Status = AUTH_REQUIRED");
         setStatus("AUTH_REQUIRED");
         setMessage(labels.sessionExpired);
-        await logout();
-        router.replace(withDesktopParam("/login"));
         return;
       }
 
@@ -383,7 +464,7 @@ function AccountDeviceGate({
       window.clearTimeout(watchdog);
       if (checkGen.current === gen) console.log("[DEVICE] Device check completed");
     }
-  }, [labels, logout, platform, router, session?.userId]);
+  }, [labels, platform, session?.userId]);
 
   useEffect(() => {
     if (!mac) return;
@@ -437,9 +518,13 @@ function AccountDeviceGate({
           labels.timeoutRegister,
         );
         if (result.status === "AUTH_REQUIRED") {
+          const recovered = identity ? await recoverDeviceViaPageSession("register", identity) : null;
+          if (recovered) {
+            setStatus(mapDeviceStatus(recovered.status, recovered.authorized));
+            return;
+          }
           setStatus("AUTH_REQUIRED");
-          await logout();
-          router.replace(withDesktopParam("/login"));
+          setMessage(labels.sessionExpired);
           return;
         }
         if (result.status === "NETWORK_ERROR" || result.status === "SERVER_ERROR") {
@@ -470,8 +555,7 @@ function AccountDeviceGate({
       const data = (await res.json().catch(() => ({}))) as { error?: string; status?: DeviceStatus };
       if (res.status === 401) {
         setStatus("AUTH_REQUIRED");
-        await logout();
-        router.replace(withDesktopParam("/login"));
+        setMessage(labels.sessionExpired);
         return;
       }
       if (!res.ok) {
