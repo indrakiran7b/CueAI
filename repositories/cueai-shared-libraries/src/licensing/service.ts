@@ -223,6 +223,9 @@ export function createLicensingService(deps: LicensingDeps) {
   }
 
   async function deactivate(): Promise<LicenseStatusResult> {
+    if (!deps.enforcementEnabled) {
+      return { ok: true, state: "ACTIVE", authorized: true, message: "Licensing disabled." };
+    }
     const local = deps.readLocal();
     if (!local) {
       return { ok: true, state: "NOT_ACTIVATED", authorized: false, message: "Device deactivated." };
@@ -243,6 +246,9 @@ export function createLicensingService(deps: LicensingDeps) {
   }
 
   function getPublicStatus(): LicenseStatusResult {
+    if (!deps.enforcementEnabled) {
+      return { ok: true, state: "ACTIVE", authorized: true, message: "Licensing disabled.", deviceId: deviceId(), platform: deps.platform };
+    }
     const local = deps.readLocal();
     if (!local) {
       return { ok: false, state: "NOT_ACTIVATED", authorized: false, deviceId: deviceId(), platform: deps.platform };

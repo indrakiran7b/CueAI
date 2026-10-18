@@ -45,6 +45,7 @@ type WorkspaceRow = {
 const COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
+  { label: "Resume Tailor", href: "/resume", icon: FileText },
   { label: "Desktop Companion", href: "/companion", icon: Video },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

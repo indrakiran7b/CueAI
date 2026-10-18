@@ -22,7 +22,6 @@ import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { BillingPanel } from "@/components/billing/billing-panel";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
-import { LicensePanel } from "@/components/desktop/license-panel";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { deleteAccountLocal, updateSessionProfile } from "@/lib/auth";
@@ -37,7 +36,6 @@ const sections = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
   { id: "desktop", label: "Desktop Preferences", icon: Monitor },
-  { id: "license", label: "License", icon: KeyRound },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "workspace", label: "Workspace", icon: Building2 },
   { id: "billing", label: "Billing", icon: CreditCard },
@@ -313,8 +311,6 @@ export default function SettingsPage() {
         )}
 
         {section === "desktop" && <DesktopPreferencesPanel />}
-
-        {section === "license" && <LicensePanel />}
 
         {section === "notifications" && (
           <Card className="space-y-3 p-6">

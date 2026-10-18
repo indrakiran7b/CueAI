@@ -2,7 +2,6 @@ import { BrowserWindow, screen, shell } from "electron";
 import path from "node:path";
 import { getStoreValue, setStoreValue } from "../services/store";
 import { getWebOrigin } from "../services/web-server";
-import { getLicenseService } from "../services/license-service";
 import { isAppQuitting } from "../services/app-lifecycle";
 
 export function createMainWindow(): BrowserWindow {
@@ -35,15 +34,8 @@ export function createMainWindow(): BrowserWindow {
   });
 
   const origin = getWebOrigin().replace(/\/$/, "");
-  let target = `${origin}/license?desktop=windows`;
-  void (async () => {
-    const license = getLicenseService();
-    const initialPath = license.resolveStartupPath
-      ? await license.resolveStartupPath()
-      : license.resolveInitialPath();
-    target = `${origin}${initialPath.startsWith("/") ? initialPath : `/${initialPath}`}`;
-    void win.loadURL(target);
-  })();
+  const target = `${origin}/dashboard`;
+  void win.loadURL(target);
 
   win.once("ready-to-show", () => {
     win.show();

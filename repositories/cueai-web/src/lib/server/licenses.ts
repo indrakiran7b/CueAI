@@ -423,7 +423,30 @@ async function activateViaKeygate(input: {
   });
 }
 
+export function licensingDisabledResponse(extra?: Partial<LicensePublicResponse>): LicensePublicResponse {
+  return {
+    valid: true,
+    state: "ACTIVE",
+    status: "active",
+    message: "Licensing is disabled.",
+    provider: "local",
+    ...extra,
+  };
+}
+
 export async function activateLicense(input: {
+  licenseKey: string;
+  deviceId: string;
+  platform: "windows" | "macos";
+  appVersion: string;
+}): Promise<LicensePublicResponse> {
+  return licensingDisabledResponse({
+    deviceId: input.deviceId.trim(),
+    platform: input.platform,
+  });
+}
+
+async function activateLicenseLegacy(input: {
   licenseKey: string;
   deviceId: string;
   platform: "windows" | "macos";
@@ -689,6 +712,19 @@ export async function validateLicense(input: {
   platform: "windows" | "macos";
   appVersion?: string;
 }): Promise<LicensePublicResponse> {
+  return licensingDisabledResponse({
+    deviceId: input.deviceId.trim(),
+    platform: input.platform,
+  });
+}
+
+async function validateLicenseLegacy(input: {
+  licenseKey?: string;
+  licenseId?: string;
+  deviceId: string;
+  platform: "windows" | "macos";
+  appVersion?: string;
+}): Promise<LicensePublicResponse> {
   if (isKeygateEnabled()) {
     return validateViaKeygate(input);
   }
@@ -780,6 +816,15 @@ export async function deactivateLicense(input: {
   licenseId: string;
   deviceId: string;
 }): Promise<LicensePublicResponse> {
+  return licensingDisabledResponse({
+    deviceId: input.deviceId.trim(),
+  });
+}
+
+async function deactivateLicenseLegacy(input: {
+  licenseId: string;
+  deviceId: string;
+}): Promise<LicensePublicResponse> {
   if (isKeygateEnabled()) {
     const store = await readLicenseStore();
     const binding = findActiveKeygateBinding(store, input.licenseId, input.deviceId);
@@ -862,6 +907,22 @@ export async function getLicenseEntitlements(input: {
   licenseKey?: string;
   deviceId: string;
 }): Promise<LicensePublicResponse> {
+  return licensingDisabledResponse({
+    deviceId: input.deviceId.trim(),
+    plan: "pro",
+    entitlements: {
+      "meeting.full_summary": true,
+      "meeting.max_questions": 999,
+      desktop_companion: true,
+    },
+  });
+}
+
+async function getLicenseEntitlementsLegacy(input: {
+  licenseId?: string;
+  licenseKey?: string;
+  deviceId: string;
+}): Promise<LicensePublicResponse> {
   if (!isKeygateEnabled()) {
     return {
       valid: false,
@@ -936,3 +997,8 @@ export async function revokeLicense(licenseId: string): Promise<boolean> {
 }
 
 export { licenseKeysMatch, GRACE_HOURS, isKeygateEnabled };
+
+void activateLicenseLegacy;
+void validateLicenseLegacy;
+void deactivateLicenseLegacy;
+void getLicenseEntitlementsLegacy;

@@ -1,16 +1,6 @@
-import { Suspense } from "react";
-import { LicenseActivationClient } from "@/components/desktop/license-activation-client";
+import { redirect } from "next/navigation";
 
+/** Desktop licensing is disabled. Send leftover /license links into the app. */
 export default function LicensePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-background p-6 text-sm text-muted">
-          Loading…
-        </div>
-      }
-    >
-      <LicenseActivationClient />
-    </Suspense>
-  );
+  redirect("/dashboard");
 }

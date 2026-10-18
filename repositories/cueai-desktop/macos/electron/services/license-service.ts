@@ -14,10 +14,7 @@ function publicKeyPem() {
 }
 
 function enforcementEnabled() {
-  const flag = resolveWorkspaceEnv(app.getPath("userData"), "LICENSE_ENFORCEMENT");
-  if (flag === "false") return false;
-  if (flag === "true") return true;
-  return app.isPackaged && Boolean(publicKeyPem());
+  return false;
 }
 
 let service: ReturnType<typeof createLicensingService> | null = null;

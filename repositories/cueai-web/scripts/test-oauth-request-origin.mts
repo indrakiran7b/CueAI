@@ -30,6 +30,27 @@ test("session requests do not rewrite AUTH_URL", async () => {
   assert.equal(process.env.AUTH_URL, "http://127.0.0.1:3000");
 });
 
+test("127.0.0.1 OAuth handshake reaches Auth.js without the localhost rewrite", async () => {
+  process.env.AUTH_URL = "http://127.0.0.1:3000";
+  const req = new NextRequest("http://127.0.0.1:3000/api/auth/signin/google", {
+    method: "POST",
+    headers: {
+      host: "127.0.0.1:3000",
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+    },
+    body: "csrfToken=abc&callbackUrl=%2Fdashboard",
+  });
+  await withBrowserOAuthOrigin(req, async (aligned) => {
+    assert.equal(new URL(aligned.url).host, "127.0.0.1:3000");
+    assert.equal(aligned.headers.get("host"), "127.0.0.1:3000");
+    assert.equal(process.env.AUTH_URL, undefined);
+    assert.equal(await aligned.text(), "csrfToken=abc&callbackUrl=%2Fdashboard");
+    return null;
+  });
+  assert.equal(process.env.AUTH_URL, "http://127.0.0.1:3000");
+});
+
 test("browser localhost OAuth keeps the browser host", () => {
   const req = new NextRequest("http://localhost:3000/api/auth/signin/google", {
     headers: {

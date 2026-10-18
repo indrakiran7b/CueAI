@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { RequireResumeAccess } from "@/components/auth/require-resume-access";
 import { useAuth } from "@/components/providers/auth-provider";
+import { isDesktopApp } from "@/lib/desktop";
 import { Logo } from "@/components/ui/logo";
 
-/** Authenticated Resume Tailor workspace (any CueAI role; web only). */
+/** Authenticated Resume Tailor workspace (User, Manager, or Admin). */
 export default function ResumeTailorProductLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
@@ -20,12 +21,14 @@ export default function ResumeTailorProductLayout({ children }: { children: Reac
 
 function ResumeShell({ children }: { children: ReactNode }) {
   const { session, logout } = useAuth();
+  const [desktop] = useState(() => isDesktopApp());
+  const homeHref = desktop ? "/dashboard" : "/";
 
   return (
     <div className="min-h-screen bg-background">
       <header className="flex h-14 items-center justify-between border-b border-[var(--border)] px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <Logo size="sm" href="/" />
+          <Logo size="sm" href={homeHref} />
           <span className="hidden h-4 w-px bg-[var(--border)] sm:block" aria-hidden />
           <span className="text-sm font-semibold tracking-tight">Resume Tailor</span>
         </div>
@@ -35,8 +38,8 @@ function ResumeShell({ children }: { children: ReactNode }) {
               {session.email}
             </span>
           ) : null}
-          <Link href="/" className="text-muted transition hover:text-foreground">
-            Home
+          <Link href={homeHref} className="text-muted transition hover:text-foreground">
+            {desktop ? "CueAI" : "Home"}
           </Link>
           <button
             type="button"

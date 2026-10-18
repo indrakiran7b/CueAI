@@ -43,9 +43,13 @@ export function originFromRequest(req: NextRequest): string {
 }
 
 /**
- * Auth.js rewrites the request origin to AUTH_URL (often 127.0.0.1).
- * Google then receives a redirect_uri that does not match the browser host
- * (localhost). Temporarily align AUTH_URL with the incoming Host header.
+ * OAuth redirect_uri must use the exact host the browser is on, or the PKCE/state
+ * cookies (set on that host) are missing at the callback and Auth.js fails with
+ * InvalidCheck. Two things break that:
+ * - next-auth rewrites the request to AUTH_URL whenever AUTH_URL is set.
+ * - Every NextRequest normalizes 127.0.0.1 and [::1] to "localhost" in `req.url`.
+ * So during the handshake AUTH_URL/NEXTAUTH_URL are unset (Auth.js then reads the
+ * Host headers) and Auth.js receives a plain Request that keeps the real host.
  */
 function isOAuthHandshakePath(pathname: string): boolean {
   return (
@@ -72,18 +76,20 @@ export async function withBrowserOAuthOrigin<T>(
   const dest = new URL(origin);
   url.protocol = dest.protocol;
   url.host = dest.host;
-  const aligned = new NextRequest(url, req);
-  aligned.headers.set("host", dest.host);
-  aligned.headers.set("x-forwarded-host", dest.host);
-  aligned.headers.set("x-forwarded-proto", dest.protocol.replace(":", ""));
+  const headers = new Headers(req.headers);
+  headers.set("host", dest.host);
+  headers.set("x-forwarded-host", dest.host);
+  headers.set("x-forwarded-proto", dest.protocol.replace(":", ""));
+  const body = req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer();
+  const aligned = new Request(url.toString(), { method: req.method, headers, body });
 
   const prevAuthUrl = process.env.AUTH_URL;
   const prevNextAuthUrl = process.env.NEXTAUTH_URL;
-  process.env.AUTH_URL = origin;
-  process.env.NEXTAUTH_URL = origin;
+  delete process.env.AUTH_URL;
+  delete process.env.NEXTAUTH_URL;
   console.info("[auth] oauth.callback_origin", { origin, path });
   try {
-    return await run(aligned);
+    return await run(aligned as NextRequest);
   } finally {
     if (prevAuthUrl === undefined) delete process.env.AUTH_URL;
     else process.env.AUTH_URL = prevAuthUrl;

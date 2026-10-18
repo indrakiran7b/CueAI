@@ -9,13 +9,14 @@ export type CueAiNavItem = {
 };
 
 /** Single CueAI navigation source of truth. Filter with visibleCueAiNav(role). */
-/** Web-only products — must not open inside Electron (Windows + macOS). */
-export const DESKTOP_WEB_ONLY_PREFIXES = ["/resume", "/resume-tailor"] as const;
+/** Paths that must not open inside Electron. Empty: Resume Tailor is available on desktop. */
+export const DESKTOP_WEB_ONLY_PREFIXES = [] as const;
 
 export const CUEAI_NAV: CueAiNavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/meetings", label: "Meetings" },
   { href: "/meetings/live", label: "Live Session" },
+  { href: "/resume", label: "Resume Tailor" },
   { href: "/translation", label: "Translation", adminOnly: true },
   { href: "/companion", label: "Desktop Companion" },
   { href: "/screen-context", label: "Screen Context", adminOnly: true },

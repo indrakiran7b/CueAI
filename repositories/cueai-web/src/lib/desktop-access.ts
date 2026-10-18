@@ -1,5 +1,5 @@
 /**
- * Desktop path policy — Resume Tailor stays out of Electron.
+ * Desktop path policy. Resume Tailor is available to User and Admin in Electron.
  * Admin Portal / Translation / Screen Context use role guards, not desktop blocks.
  */
 export {

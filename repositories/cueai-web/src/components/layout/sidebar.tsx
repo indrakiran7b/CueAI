@@ -13,6 +13,7 @@ import {
   Library,
   PanelLeft,
   AppWindow,
+  FileText,
 } from "lucide-react";
 import { BrandMark, Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/meetings", label: "Meetings", icon: Video },
   { href: "/meetings/live", label: "Live Session", icon: Sparkles },
+  { href: "/resume", label: "Resume Tailor", icon: FileText },
   { href: "/knowledge", label: "Knowledge Base", icon: Library, adminOnly: true as const },
   { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
   { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
@@ -36,7 +38,7 @@ const nav = [
 const MAC_SECTIONS = [
   {
     title: "CUE AI",
-    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/companion"],
+    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/resume", "/companion"],
   },
   {
     title: "Workspace",

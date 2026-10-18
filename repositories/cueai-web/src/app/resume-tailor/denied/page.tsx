@@ -9,10 +9,10 @@ export default function ResumeTailorDeniedPage() {
       <Logo href="/" />
       <h1 className="text-2xl font-semibold tracking-tight">Resume Tailor is not available</h1>
       <p className="max-w-md text-sm text-muted">
-        Resume Tailor is a web-only product. Sign in with your CueAI account in a browser to
-        continue. It is not available inside the Windows or macOS desktop apps.
+        This CueAI account does not have access to Resume Tailor. Sign in with a User or Admin
+        workspace account and try again.
       </p>
-      <Link href="/login?product=cueai" className="text-sm font-medium text-primary hover:underline">
+      <Link href="/dashboard" className="text-sm font-medium text-primary hover:underline">
         Continue to CueAI
       </Link>
     </div>

@@ -2,7 +2,6 @@ import { app, BrowserWindow, screen, shell } from "electron";
 import path from "node:path";
 import { getStoreValue, setStoreValue } from "../services/store";
 import { getWebOrigin, waitForWebServer } from "../services/web-server";
-import { getLicenseService } from "../services/license-service";
 import { consumeAllowWindowClose, isAppQuitting } from "../services/app-lifecycle";
 import {
   installMacContextMenu,
@@ -148,18 +147,8 @@ export function createMainWindow(): BrowserWindow {
   if (isMac) installMacContextMenu(win);
 
   const origin = getWebOrigin().replace(/\/$/, "");
-  let target = `${origin}/license?desktop=mac`;
-  void (async () => {
-    const license = getLicenseService();
-    const initialPath = license.resolveStartupPath
-      ? await license.resolveStartupPath()
-      : license.resolveInitialPath();
-    const path = withMacDesktopQuery(
-      initialPath.startsWith("/") ? initialPath : `/${initialPath}`
-    );
-    target = `${origin}${path}`;
-    void loadRenderer(win, target);
-  })();
+  const target = `${origin}${withMacDesktopQuery("/dashboard")}`;
+  void loadRenderer(win, target);
 
   win.webContents.on("did-start-loading", () => {
     const url = win.webContents.getURL();

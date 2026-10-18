@@ -13,7 +13,6 @@ import {
   Database,
   KeyRound,
   Laptop,
-  Ticket,
   Lock,
   Mail,
   Plus,
@@ -36,7 +35,6 @@ import {
 } from "recharts";
 import { RequireAdmin } from "@/components/auth/require-admin";
 import { AdminDevicesPanel } from "@/components/admin/admin-devices-panel";
-import { AdminLicensesPanel } from "@/components/admin/admin-licenses-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,7 +64,6 @@ type NavId =
   | "retention"
   | "audit"
   | "devices"
-  | "licenses"
   | "settings";
 
 const NAV: Array<{
@@ -88,7 +85,6 @@ const NAV: Array<{
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
   { id: "audit", label: "Activity Log", icon: ScrollText, permission: "audit.read" },
   { id: "devices", label: "Mac devices", icon: Laptop, permission: "devices.read" },
-  { id: "licenses", label: "Licenses", icon: Ticket, permission: "licenses.read" },
   { id: "settings", label: "Settings", icon: Settings, permission: "workspace.read" },
 ];
 
@@ -1675,8 +1671,6 @@ function AdminPortalInner() {
             )}
 
             {tab === "devices" && <AdminDevicesPanel />}
-
-            {tab === "licenses" && <AdminLicensesPanel />}
 
             {tab === "settings" && (
               <Card className="p-5">
