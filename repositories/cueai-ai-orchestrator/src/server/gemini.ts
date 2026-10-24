@@ -15,13 +15,12 @@ export const GEMINI_ENDPOINT = DEFAULT_ENDPOINTS.gemini;
 export const VERTEX_PUBLISHER_ENDPOINT = "https://aiplatform.googleapis.com/v1";
 
 /** Floating alias by default so a model retirement cannot break live answers. */
-export const GEMINI_DEFAULT_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+export const GEMINI_DEFAULT_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
 
 const MODEL_FALLBACKS = [
   GEMINI_DEFAULT_MODEL,
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
   "gemini-flash-latest",
+  "gemini-2.5-flash",
 ].filter((v, i, arr) => arr.indexOf(v) === i);
 
 export type GeminiCredentials = {

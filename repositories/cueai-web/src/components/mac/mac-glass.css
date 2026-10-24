@@ -238,21 +238,3 @@ html[data-desktop="mac"] .mac-auth-copy {
   line-height: 1.45;
 }
 
-html[data-desktop="mac"] .mac-device-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-
-html[data-desktop="mac"] .mac-device-row span {
-  color: var(--foreground-muted);
-}
-
-html[data-desktop="mac"] .mac-device-row strong {
-  font-weight: 600;
-  text-align: right;
-}
-

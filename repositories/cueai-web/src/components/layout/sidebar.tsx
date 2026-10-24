@@ -12,7 +12,6 @@ import {
   Sparkles,
   Library,
   PanelLeft,
-  AppWindow,
   FileText,
 } from "lucide-react";
 import { BrandMark, Logo } from "@/components/ui/logo";
@@ -30,7 +29,6 @@ const nav = [
   { href: "/knowledge", label: "Knowledge Base", icon: Library, adminOnly: true as const },
   { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
   { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
-  { href: "/companion", label: "Desktop Companion", icon: AppWindow },
   { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true as const },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -38,7 +36,7 @@ const nav = [
 const MAC_SECTIONS = [
   {
     title: "CUE AI",
-    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/resume", "/companion"],
+    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/resume"],
   },
   {
     title: "Workspace",
@@ -80,7 +78,7 @@ export function Sidebar() {
     return isCueAiUserNavHref(item.href);
   });
 
-  function renderLink(item: (typeof nav)[number], hudLabel = false) {
+  function renderLink(item: (typeof nav)[number]) {
     const active = isNavActive(pathname, item.href);
     const Icon = item.icon;
     return (
@@ -103,9 +101,7 @@ export function Sidebar() {
           )}
         />
         {!collapsed && (
-          <span className="truncate">
-            {item.label === "Desktop Companion" && hudLabel ? "Meeting HUD" : item.label}
-          </span>
+          <span className="truncate">{item.label}</span>
         )}
         {!collapsed && active && (
           <span className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground not-mac" />

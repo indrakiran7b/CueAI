@@ -37,7 +37,25 @@ type ApiKeyItem = {
   endpoint?: string;
   isDefault: boolean;
   isActive?: boolean;
+  lastVerifiedAt?: string | null;
+  lastUsedAt?: string | null;
+  lastError?: string | null;
 };
+
+type EncryptionStatus = { ready: boolean; source: string; message: string | null };
+
+const STATUS_BADGE: Record<string, { label: string; variant: "success" | "danger" | "warning" | "default" }> = {
+  connected: { label: "Connected", variant: "success" },
+  invalid: { label: "Invalid", variant: "danger" },
+  error: { label: "Check failed", variant: "warning" },
+  not_tested: { label: "Not tested", variant: "default" },
+};
+
+function formatWhen(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
 
 const PROVIDERS_WITH_ENDPOINT = new Set([
   "openai",
@@ -73,6 +91,8 @@ export function ApiKeysPanel() {
   const [showUseExisting, setShowUseExisting] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const [provider, setProvider] = useState("");
   const [keyName, setKeyName] = useState("");
@@ -92,8 +112,10 @@ export function ApiKeysPanel() {
       items?: ApiKeyItem[];
       providers?: ProviderOption[];
       models?: CatalogModel[];
+      encryption?: EncryptionStatus;
     };
     if (!res.ok) throw new Error("Failed to load API keys.");
+    setEncryption(body.encryption || null);
     setItems(body.items || []);
     setProviders(body.providers || []);
     setCatalogModels(body.models || []);
@@ -336,6 +358,33 @@ export function ApiKeysPanel() {
     }
   }
 
+  async function onTest(id: string) {
+    setMenuOpenId(null);
+    setTestingId(id);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/settings/api-keys/${encodeURIComponent(id)}/test`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        item?: ApiKeyItem | null;
+      };
+      if (!res.ok) throw new Error("Could not validate this key.");
+      if (body.item) {
+        setItems((prev) => prev.map((i) => (i.id === id ? body.item! : i)));
+      }
+      if (body.ok) setMessage(body.message || "Connection successful.");
+      else setError(body.message || "The key could not be verified.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not validate this key.");
+    } finally {
+      setTestingId(null);
+    }
+  }
+
   async function onDelete(id: string) {
     setMenuOpenId(null);
     if (
@@ -424,9 +473,28 @@ export function ApiKeysPanel() {
               Add your own LLM provider API keys and use them securely with CueAI.
               Keys are encrypted and never displayed in full.
             </p>
+            <p className="mt-1 text-xs text-subtle">
+              Your active key powers Live Session, AI Mock Interview, meeting summaries, Knowledge
+              Base, Translation and Resume Tailor. Screen Context uses it only when the model can
+              read images. Without a key of your own, your workspace&apos;s AI configuration is used.
+            </p>
           </div>
           {headerActions}
         </div>
+
+        {encryption?.message && (
+          <div
+            role="status"
+            className={cn(
+              "rounded-xl border px-4 py-3 text-sm",
+              encryption.ready
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                : "border-red-500/30 bg-red-500/10 text-red-200",
+            )}
+          >
+            {encryption.message}
+          </div>
+        )}
 
         {(message || error) && (
           <div
@@ -450,6 +518,8 @@ export function ApiKeysPanel() {
           <div className="space-y-3">
             {items.map((item) => {
               const active = item.isActive ?? item.isDefault;
+              const status = STATUS_BADGE[item.status] || STATUS_BADGE.not_tested!;
+              const validated = formatWhen(item.lastVerifiedAt);
               return (
                 <div
                   key={item.id}
@@ -459,13 +529,22 @@ export function ApiKeysPanel() {
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium">{item.providerLabel}</p>
-                        <Badge variant={active ? "success" : "default"}>
+                        <Badge variant={active ? "info" : "default"}>
                           {active ? "Active" : "Inactive"}
                         </Badge>
+                        <Badge variant={status.variant}>{status.label}</Badge>
                       </div>
                       <p className="text-sm text-muted">{item.name}</p>
                       <p className="text-xs text-subtle">Model: {item.model}</p>
                       <p className="font-mono text-xs text-subtle">{item.maskedKey}</p>
+                      <p className="text-xs text-subtle">
+                        {validated ? `Last validated ${validated}` : "Not validated yet"}
+                      </p>
+                      {item.lastError && (
+                        <p className={cn("text-xs", item.status === "connected" ? "text-amber-300" : "text-red-300")}>
+                          {item.lastError}
+                        </p>
+                      )}
                     </div>
                     <div className="relative">
                       <Button
@@ -473,7 +552,7 @@ export function ApiKeysPanel() {
                         variant="ghost"
                         size="icon"
                         aria-label="Key actions"
-                        disabled={busy}
+                        disabled={busy || testingId === item.id}
                         onClick={() =>
                           setMenuOpenId((id) => (id === item.id ? null : item.id))
                         }
@@ -491,6 +570,13 @@ export function ApiKeysPanel() {
                               Set Active
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)]"
+                            onClick={() => void onTest(item.id)}
+                          >
+                            Re-validate
+                          </button>
                           <button
                             type="button"
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)]"

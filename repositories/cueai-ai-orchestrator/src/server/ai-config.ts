@@ -50,7 +50,7 @@ const ENV_PROVIDER_SEEDS: EnvProviderSeed[] = [
   {
     type: "gemini",
     envKey: "GEMINI_API_KEY",
-    defaultModels: [process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash"],
+    defaultModels: [process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest"],
   },
   {
     type: "openai",

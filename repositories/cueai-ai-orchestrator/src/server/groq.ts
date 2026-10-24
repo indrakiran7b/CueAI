@@ -13,12 +13,23 @@ const MODEL_FALLBACKS = [
   "openai/gpt-oss-120b",
 ].filter((v, i, arr) => arr.indexOf(v) === i);
 
-/** Live overlay streaming uses the same configured Groq family (retired Llama IDs 404). */
-const STREAM_MODEL_FALLBACKS = [
+/**
+ * Live overlay streaming chain. Groq rate limits (TPM) are per model, so a 429 on
+ * one model falls through to the next instead of a slower provider.
+ */
+export const STREAM_MODEL_FALLBACKS = [
   process.env.GROQ_STREAM_MODEL?.trim() || GROQ_DEFAULT_MODEL,
   "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
   GROQ_DEFAULT_MODEL,
 ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+/** gpt-oss models reason before answering; low effort keeps live TTFT and TPM down. */
+function reasoningParams(model: string): { reasoning_effort?: string } {
+  if (!/^openai\/gpt-oss/.test(model)) return {};
+  const effort = process.env.GROQ_REASONING_EFFORT?.trim() || "low";
+  return { reasoning_effort: effort };
+}
 
 export class GroqError extends Error {
   status: number;
@@ -76,6 +87,7 @@ export async function generateGroqText(req: {
   apiKey?: string;
   /** Prefer this model first when provided. */
   model?: string;
+  signal?: AbortSignal;
 }): Promise<GroqResult> {
   const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
@@ -99,7 +111,7 @@ export async function generateGroqText(req: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        signal: groqAbortSignal(),
+        signal: groqAbortSignal(req.signal),
         body: JSON.stringify({
           model,
           temperature: req.temperature ?? 0.4,
@@ -164,6 +176,13 @@ export async function streamGroqText(req: {
   onToken: (token: string) => void;
   apiKey?: string;
   model?: string;
+  /** Explicit model chain; defaults to the preferred model + STREAM_MODEL_FALLBACKS. */
+  models?: string[];
+  /**
+   * When every model is rate limited and Groq asks to wait at most this long,
+   * wait once and retry the soonest-available model instead of failing.
+   */
+  maxRateLimitWaitMs?: number;
 }): Promise<GroqResult> {
   const apiKey = req.apiKey?.trim() || resolveGroqApiKey();
   if (!apiKey) {
@@ -173,12 +192,15 @@ export async function streamGroqText(req: {
   let lastStatus = 502;
   let lastMessage = "Groq did not return an answer.";
   const preferredStreamModel = req.model?.trim() || "";
-  const models = preferredStreamModel
-    ? [
-        preferredStreamModel,
-        ...STREAM_MODEL_FALLBACKS.filter((m) => m !== preferredStreamModel),
-      ]
-    : STREAM_MODEL_FALLBACKS;
+  const models = req.models?.length
+    ? req.models.filter((v, i, arr) => v && arr.indexOf(v) === i)
+    : preferredStreamModel
+      ? [
+          preferredStreamModel,
+          ...STREAM_MODEL_FALLBACKS.filter((m) => m !== preferredStreamModel),
+        ]
+      : STREAM_MODEL_FALLBACKS;
+  const rateLimited: { model: string; waitMs: number }[] = [];
 
   for (const model of models) {
     let res: Response;
@@ -195,6 +217,7 @@ export async function streamGroqText(req: {
           temperature: req.temperature ?? 0.3,
           max_completion_tokens: req.maxOutputTokens ?? 160,
           stream: true,
+          ...reasoningParams(model),
           messages: [
             ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
             { role: "user" as const, content: req.prompt },
@@ -202,7 +225,12 @@ export async function streamGroqText(req: {
         }),
       });
     } catch (err) {
-      throw classifyFetchError(err);
+      if (req.signal?.aborted) throw classifyFetchError(err);
+      const classified = classifyFetchError(err);
+      lastStatus = classified.status;
+      lastMessage = classified.message;
+      console.error("groq_stream_failed", model, classified.status, classified.message);
+      continue;
     }
 
     if (!res.ok || !res.body) {
@@ -212,7 +240,11 @@ export async function streamGroqText(req: {
       lastStatus = res.status;
       lastMessage = payload.error?.message || `Groq responded with ${res.status}.`;
       console.error("groq_stream_failed", model, res.status, lastMessage.slice(0, 300));
-      if (res.status === 404) {
+      if (res.status === 429) {
+        rateLimited.push({ model, waitMs: rateLimitWaitMs(res.headers, lastMessage) });
+      }
+      // Nothing has streamed yet, so the next model cannot duplicate output.
+      if (res.status === 404 || isRetryableGroqStatus(res.status)) {
         continue;
       }
       throw new GroqError(lastMessage, res.status);
@@ -272,5 +304,25 @@ export async function streamGroqText(req: {
     };
   }
 
+  const maxWait = req.maxRateLimitWaitMs ?? 0;
+  if (lastStatus === 429 && maxWait > 0 && rateLimited.length && !req.signal?.aborted) {
+    const soonest = rateLimited.reduce((a, b) => (b.waitMs < a.waitMs ? b : a));
+    if (soonest.waitMs <= maxWait) {
+      await new Promise((resolve) => setTimeout(resolve, soonest.waitMs + 100));
+      if (!req.signal?.aborted) {
+        return streamGroqText({ ...req, models: [soonest.model], maxRateLimitWaitMs: 0 });
+      }
+    }
+  }
+
   throw new GroqError(lastMessage, lastStatus);
+}
+
+/** Groq sends retry-after (seconds) and "try again in 1.65s" / "in 899.99ms" in the message. */
+export function rateLimitWaitMs(headers: Headers, message: string): number {
+  const header = Number(headers.get("retry-after"));
+  if (Number.isFinite(header) && header > 0) return Math.ceil(header * 1000);
+  const m = message.match(/try again in ([\d.]+)\s*(ms|s)\b/i);
+  if (m?.[1]) return Math.ceil(Number(m[1]) * (m[2]?.toLowerCase() === "ms" ? 1 : 1000));
+  return Number.POSITIVE_INFINITY;
 }

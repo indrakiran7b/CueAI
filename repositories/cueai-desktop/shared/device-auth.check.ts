@@ -66,3 +66,14 @@ test("27. Windows does not use license.device as account auth", () => {
   assert.doesNotMatch(src, /getLicenseDevice/);
   assert.doesNotMatch(src, /getOrCreateDeviceId/);
 });
+
+test("28. No device-verification or license gate blocks the desktop app", () => {
+  const layout = read("../../cueai-web/src/app/(app)/layout.tsx");
+  assert.doesNotMatch(layout, /DeviceGate/);
+  for (const shell of ["windows", "macos"]) {
+    const preload = read(`../${shell}/electron/preload/index.ts`);
+    assert.doesNotMatch(preload, /DEVICE_VERIFY|DEVICE_REGISTER|LICENSE_/);
+    const mainWindow = read(`../${shell}/electron/windows/main-window.ts`);
+    assert.doesNotMatch(mainWindow, /\/license/);
+  }
+});

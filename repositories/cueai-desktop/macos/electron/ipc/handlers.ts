@@ -8,7 +8,6 @@ import {
 } from "electron";
 import { IpcChannels, type CompanionMode } from "./channels";
 import { getAllStore, getStoreValue, setStoreValue } from "../services/store";
-import { getLicenseDevicePublic, getLicenseService } from "../services/license-service";
 import {
   getCompanionBridgeStatus,
   getCompanionWindow,
@@ -38,17 +37,6 @@ import { capturePrimaryScreenshot } from "../services/screenshot";
 import { getWebOrigin } from "../services/web-server";
 import { startMacGoogleSignIn } from "../services/google-oauth";
 
-function originFromSender(event: Electron.IpcMainInvokeEvent): string {
-  try {
-    const loaded = event.sender.getURL();
-    if (loaded.startsWith("http://") || loaded.startsWith("https://")) {
-      return new URL(loaded).origin;
-    }
-  } catch {
-    // Fall back to the configured web origin.
-  }
-  return getWebOrigin();
-}
 import { allowNextWindowClose } from "../services/app-lifecycle";
 import {
   getMacOSPermissions,
@@ -75,11 +63,82 @@ function getMainWindow() {
   });
 }
 
+const TRANSCRIBE_TIMEOUT_MS = 15_000;
+
+let deviceAuthEnsuredAt = 0;
+const DEVICE_AUTH_ENSURE_MS = 30_000;
+
+// Overlay requests carry no cookie, so they authenticate with the device credential.
+// Failures return whatever headers exist; they never block the app.
+async function ensureDeviceAuthHeaders(): Promise<Record<string, string>> {
+  const now = Date.now();
+  let headers = macDeviceService.getAuthHeaders();
+  if (
+    now - deviceAuthEnsuredAt < DEVICE_AUTH_ENSURE_MS &&
+    headers["X-CueAI-Device-Id"] &&
+    headers["X-CueAI-Device-Credential"]
+  ) {
+    return headers;
+  }
+  const main = getMainWindow();
+  if (!main || main.isDestroyed()) return headers;
+  const ses = main.webContents.session;
+  const origin = getWebOrigin();
+  const fetchImpl = (input: string, init?: RequestInit) => ses.fetch(input, init);
+  try {
+    const verified = await macDeviceService.verifyDevice(fetchImpl, origin);
+    if (
+      verified.ok &&
+      verified.authorized &&
+      headers["X-CueAI-Device-Id"] &&
+      headers["X-CueAI-Device-Credential"]
+    ) {
+      deviceAuthEnsuredAt = now;
+      return headers;
+    }
+    if (verified.status === "BLOCKED" || verified.status === "REVOKED") return headers;
+    await macDeviceService.registerDevice(fetchImpl, origin);
+  } catch (err) {
+    console.log("[DEVICE] credential refresh skipped", err instanceof Error ? err.message : err);
+    return headers;
+  }
+  headers = macDeviceService.getAuthHeaders();
+  if (headers["X-CueAI-Device-Id"] && headers["X-CueAI-Device-Credential"]) {
+    deviceAuthEnsuredAt = Date.now();
+  }
+  return headers;
+}
+
+function saveListenSources(payload: { mic?: boolean; systemAudio?: boolean }) {
+  const settings = getStoreValue("desktopSettings");
+  const next = {
+    ...settings,
+    listenMic: typeof payload?.mic === "boolean" ? payload.mic : Boolean(settings.listenMic),
+    listenSystemAudio:
+      typeof payload?.systemAudio === "boolean"
+        ? payload.systemAudio
+        : Boolean(settings.listenSystemAudio),
+  };
+  setStoreValue("desktopSettings", next);
+  const sources = { mic: next.listenMic, systemAudio: next.listenSystemAudio };
+  const win = getCompanionWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send("companion:listen-sources", sources);
+  }
+  const main = getMainWindow();
+  if (main && !main.isDestroyed()) {
+    main.webContents.send("companion:listen-sources", sources);
+  }
+  return sources;
+}
+
 let ipcRegistered = false;
 
 export function registerIpcHandlers() {
   if (ipcRegistered) return;
   ipcRegistered = true;
+  // Capture must be switched on explicitly in each session, never resumed silently at launch.
+  saveListenSources({ mic: false, systemAudio: false });
   ipcMain.handle(IpcChannels.WINDOW_MINIMIZE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
@@ -151,22 +210,49 @@ export function registerIpcHandlers() {
     endOverlayResize();
     return true;
   });
-  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string }) => {
-    const origin = getWebOrigin().replace(/\/$/, "");
-    const body = new FormData();
-    const ext = payload.mime.includes("ogg") ? "ogg" : payload.mime.includes("mp4") ? "m4a" : "webm";
-    const blob = new Blob([Buffer.from(payload.data)], { type: payload.mime || "audio/webm" });
-    body.append("audio", blob, `listen.${ext}`);
-    body.append("label", payload.label || "You");
-    const res = await fetch(`${origin}/api/transcribe`, {
-      method: "POST",
-      headers: macDeviceService.getAuthHeaders(),
-      body,
-    });
-    const data = (await res.json()) as { text?: string; who?: string; error?: string };
-    if (!res.ok) return { error: data.error || "Transcription failed" };
-    return data;
-  });
+  ipcMain.handle(
+    IpcChannels.COMPANION_TRANSCRIBE,
+    async (_e, payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => {
+      const origin = getWebOrigin().replace(/\/$/, "");
+      const body = new FormData();
+      const mime = payload.mime || "audio/wav";
+      const ext = mime.includes("wav")
+        ? "wav"
+        : mime.includes("ogg")
+          ? "ogg"
+          : mime.includes("mp4")
+            ? "m4a"
+            : "webm";
+      const blob = new Blob([Buffer.from(payload.data)], { type: mime });
+      body.append("audio", blob, `listen.${ext}`);
+      body.append("label", payload.label || "You");
+      if (payload.prompt?.trim()) body.append("prompt", payload.prompt.trim().slice(-400));
+      let res: Response;
+      try {
+        res = await fetch(`${origin}/api/transcribe`, {
+          method: "POST",
+          headers: await ensureDeviceAuthHeaders(),
+          body,
+          signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
+        });
+      } catch (err) {
+        const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+        return {
+          error: timedOut ? "Transcription timed out." : "Unable to reach the transcription service.",
+          status: timedOut ? 504 : 0,
+        };
+      }
+      const retryAfter = Number(res.headers.get("retry-after")) || undefined;
+      let data: { text?: string; who?: string; error?: string; uncertain?: boolean } = {};
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        if (res.ok) return { error: "Transcription returned an unreadable response.", status: 502 };
+      }
+      if (!res.ok) return { error: data.error || "Transcription failed", status: res.status, retryAfter };
+      return { text: data.text, who: data.who, uncertain: Boolean(data.uncertain), status: res.status };
+    }
+  );
   ipcMain.handle(IpcChannels.COMPANION_OPEN_DASHBOARD, async () => {
     const main = getMainWindow();
     if (main) {
@@ -188,6 +274,7 @@ export function registerIpcHandlers() {
       screenSharing: false,
       cueAiMode: "inactive",
     });
+    saveListenSources({ mic: false, systemAudio: false });
     hideCompanion();
     const main = getMainWindow();
     if (main && !main.isDestroyed()) {
@@ -226,29 +313,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(
     IpcChannels.COMPANION_SET_LISTEN_SOURCES,
-    (_e, payload: { mic?: boolean; systemAudio?: boolean }) => {
-      const settings = getStoreValue("desktopSettings");
-      const next = {
-        ...settings,
-        listenMic:
-          typeof payload?.mic === "boolean" ? payload.mic : Boolean(settings.listenMic),
-        listenSystemAudio:
-          typeof payload?.systemAudio === "boolean"
-            ? payload.systemAudio
-            : Boolean(settings.listenSystemAudio),
-      };
-      setStoreValue("desktopSettings", next);
-      const sources = { mic: next.listenMic, systemAudio: next.listenSystemAudio };
-      const win = getCompanionWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send("companion:listen-sources", sources);
-      }
-      const main = getMainWindow();
-      if (main && !main.isDestroyed()) {
-        main.webContents.send("companion:listen-sources", sources);
-      }
-      return sources;
-    }
+    (_e, payload: { mic?: boolean; systemAudio?: boolean }) => saveListenSources(payload)
   );
 
   ipcMain.handle(IpcChannels.COMPANION_GET_DESKTOP_AUDIO_SOURCE, () =>
@@ -279,40 +344,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.PERMISSIONS_OPEN_SETTINGS, (_e, pane?: MacPermissionKind | "privacy") =>
     openMacOSPrivacySettings(pane || "privacy")
   );
-  ipcMain.handle(IpcChannels.DEVICE_GET_PUBLIC, () => {
-    try {
-      console.log("[DEVICE] Device ID loaded");
-      return macDeviceService.getPublicDevice();
-    } catch (err) {
-      console.error("[DEVICE] Failed to read Mac device identity", err);
-      throw err;
-    }
-  });
-
-  ipcMain.handle(IpcChannels.DEVICE_VERIFY, async (event) => {
-    console.log("[DEVICE] Startup check");
-    console.log("[DEVICE] Authentication state");
-    const origin = originFromSender(event);
-    return macDeviceService.verifyDevice(
-      (input, init) => event.sender.session.fetch(input, init),
-      origin,
-    );
-  });
-
-  ipcMain.handle(IpcChannels.DEVICE_REGISTER, async (event) => {
-    const origin = originFromSender(event);
-    return macDeviceService.registerDevice(
-      (input, init) => event.sender.session.fetch(input, init),
-      origin,
-    );
-  });
-
-  ipcMain.handle(IpcChannels.DEVICE_CLEAR_SESSION, () => {
-    return macDeviceService.clearDeviceSession();
-  });
-  ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, () => {
-    return macDeviceService.getAuthHeaders();
-  });
+  ipcMain.handle(IpcChannels.DEVICE_GET_AUTH_HEADERS, () => ensureDeviceAuthHeaders());
   ipcMain.handle(IpcChannels.AUTH_GOOGLE_START, () =>
     startMacGoogleSignIn(() => getMainWindow() ?? null),
   );
@@ -431,12 +463,4 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle(IpcChannels.STORE_GET_ALL, () => getAllStore());
-
-  ipcMain.handle(IpcChannels.LICENSE_GET_DEVICE, () => getLicenseDevicePublic());
-  ipcMain.handle(IpcChannels.LICENSE_GET_STATUS, () => getLicenseService().getPublicStatus());
-  ipcMain.handle(IpcChannels.LICENSE_ACTIVATE, async (_e, licenseKey: string) =>
-    getLicenseService().activate(String(licenseKey || "")),
-  );
-  ipcMain.handle(IpcChannels.LICENSE_VALIDATE, async () => getLicenseService().validateOnline());
-  ipcMain.handle(IpcChannels.LICENSE_DEACTIVATE, async () => getLicenseService().deactivate());
 }

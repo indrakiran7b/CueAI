@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
-import { ArrowUpRight, Monitor, Sparkles } from "lucide-react";
-import { isAdminUser } from "@/lib/app-access";
+import { Activity, ArrowUpRight, ChevronDown } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -16,8 +15,9 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { useTheme } from "@/components/providers/theme-provider";
 import { greetingFor } from "@/lib/auth";
-import { formatDuration, formatMeetingWhen, type StoredMeeting } from "@/lib/meetings-client";
+import { type StoredMeeting } from "@/lib/meetings-client";
 import { getDesktop } from "@/lib/desktop";
+import { DesktopFeatureCards } from "./desktop-feature-cards";
 import "./dashboard.css";
 
 const fade: Variants = {
@@ -33,12 +33,6 @@ const fade: Variants = {
   }),
 };
 
-const adminQuickActions = [
-  { href: "/screen-context", icon: Monitor, label: "Enable Screen AI" },
-  { href: "/translation", icon: Sparkles, label: "Start translation" },
-  { href: "/meetings/live", icon: Sparkles, label: "Start live session" },
-];
-
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function DashboardPage() {
@@ -46,7 +40,6 @@ export default function DashboardPage() {
   const { theme } = useTheme();
   const name = session?.name || "there";
   const workspace = session?.workspace || "Your Workspace";
-  const admin = isAdminUser(session?.role);
   const isLight = theme === "light";
   const chartTick = isLight ? "#999999" : "#666666";
   const chartStroke = isLight ? "#090909" : "#ffffff";
@@ -62,6 +55,7 @@ export default function DashboardPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [companionOn, setCompanionOn] = useState<boolean | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,10 +130,10 @@ export default function DashboardPage() {
       delta: loaded ? (hours ? "From saved sessions" : "No activity data yet") : "Loading…",
     },
     {
-      label: "Desktop companion",
+      label: "Desktop overlay",
       value: companionOn == null ? "—" : companionOn ? "Open" : "Idle",
       delta:
-        companionOn == null ? "Check Desktop status" : companionOn ? "Overlay visible" : "Not open",
+        companionOn == null ? "CueAI Desktop not connected" : companionOn ? "Overlay visible" : "Not open",
     },
   ];
 
@@ -206,7 +200,41 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="db-main">
+      <motion.div className="db-toolbar" custom={5} variants={fade} initial="hidden" animate="show">
+        <div className="min-w-0">
+          <p className="db-toolbar-title">Weekly activity</p>
+          {loadError ? (
+            <p className="db-section-sub text-[var(--cue-danger)]" role="alert">
+              {loadError}{" "}
+              <button type="button" className="db-link" onClick={() => window.location.reload()}>
+                Try Again
+              </button>
+            </p>
+          ) : (
+            <p className="db-section-sub">
+              {!loaded
+                ? "Loading…"
+                : hasUsage
+                  ? `${thisWeek.length} completed meeting${thisWeek.length === 1 ? "" : "s"} in the last 7 days`
+                  : "No activity data available yet"}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          className="db-toolbar-btn"
+          aria-expanded={activityOpen}
+          aria-controls="db-activity-panel"
+          onClick={() => setActivityOpen((o) => !o)}
+        >
+          <Activity className="h-4 w-4" />
+          Activities
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${activityOpen ? "rotate-180" : ""}`} />
+        </button>
+      </motion.div>
+
+      {activityOpen && (
+      <div className="db-main" id="db-activity-panel">
         <motion.section
           className="db-panel"
           custom={5}
@@ -282,7 +310,7 @@ export default function DashboardPage() {
               </strong>
             </p>
             <p>
-              Companion:{" "}
+              Desktop overlay:{" "}
               <strong className="text-foreground">
                 {companionOn == null ? "Not connected" : companionOn ? "Open" : "Idle"}
               </strong>
@@ -296,95 +324,11 @@ export default function DashboardPage() {
           </p>
         </motion.section>
       </div>
+      )}
 
-      <div className="db-lower">
-        <motion.section
-          className="db-panel"
-          custom={7}
-          variants={fade}
-          initial="hidden"
-          animate="show"
-        >
-          <div className="db-panel-head">
-            <div>
-              <h2 className="db-section-title">Recent meetings</h2>
-              <p className="db-section-sub">Completed history only</p>
-            </div>
-            <Link href="/meetings" className="db-link">
-              View all
-            </Link>
-          </div>
-          <div>
-            {loadError && (
-              <p className="py-4 text-sm text-[var(--cue-danger)]" role="alert">
-                {loadError}{" "}
-                <button
-                  type="button"
-                  className="db-link"
-                  onClick={() => window.location.reload()}
-                >
-                  Try Again
-                </button>
-              </p>
-            )}
-            {!loadError && loaded && completed.length === 0 && (
-              <p className="py-6 text-sm text-muted">No meeting summaries yet.</p>
-            )}
-            {!loadError &&
-              completed.slice(0, 6).map((m) => (
-                <Link key={m.id} href={`/meetings/${m.id}/summary`} className="db-meeting">
-                  <div>
-                    <p className="db-meeting-title">{m.title}</p>
-                    <p className="db-meeting-meta">
-                      {formatMeetingWhen(m.startedAt)}
-                      {m.attendees ? ` · ${m.attendees} people` : ""}
-                    </p>
-                  </div>
-                  <div className="db-meeting-side">{formatDuration(m.durationSec)}</div>
-                </Link>
-              ))}
-          </div>
-        </motion.section>
-
-        {admin && (
-        <motion.section
-          className="db-panel"
-          custom={8}
-          variants={fade}
-          initial="hidden"
-          animate="show"
-        >
-          <div className="db-panel-head">
-            <h2 className="db-section-title">Quick actions</h2>
-          </div>
-          <div className="db-actions">
-            {adminQuickActions.map((a) => (
-              <Link key={a.href} href={a.href} className="db-action">
-                <span>{a.label}</span>
-                <a.icon className="db-action-icon h-4 w-4" />
-              </Link>
-            ))}
-          </div>
-        </motion.section>
-        )}
-
-        <motion.section
-          className="db-panel"
-          custom={9}
-          variants={fade}
-          initial="hidden"
-          animate="show"
-        >
-          <div className="db-panel-head">
-            <h2 className="db-section-title">Activity</h2>
-          </div>
-          <div className="db-activity">
-            <p className="db-section-sub" style={{ padding: "8px 0" }}>
-              No activity data available yet.
-            </p>
-          </div>
-        </motion.section>
-      </div>
+      <motion.div custom={6} variants={fade} initial="hidden" animate="show">
+        <DesktopFeatureCards />
+      </motion.div>
     </div>
   );
 }

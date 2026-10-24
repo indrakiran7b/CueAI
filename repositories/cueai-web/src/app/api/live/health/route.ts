@@ -19,7 +19,7 @@ export async function GET() {
   const forceLocal = forceLiveAnswerLocal();
   const providers = localProvidersConfigured();
   const fastapi = forceLocal ? { reachable: false as const } : await probeFastApi();
-  const localReady = providers.groq || providers.gemini;
+  const localReady = providers.openai || providers.groq || providers.gemini;
   const liveAnswer = fastapi.reachable || localReady ? "ready" : "unavailable";
   const mode = forceLocal ? "local" : fastapi.reachable ? "fastapi" : localReady ? "local_fallback" : "unavailable";
 
@@ -40,6 +40,7 @@ export async function GET() {
       web: "ok",
       fastapi: forceLocal ? "skipped" : fastapi.reachable ? "ok" : fastapi.error || "unreachable",
       apiUrl: liveAnswerApiUrl(),
+      openaiConfigured: providers.openai,
       groqConfigured: providers.groq,
       geminiConfigured: providers.gemini,
     },

@@ -17,46 +17,97 @@ import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
 import { configureAnswerApi, requestLiveAnswerStream } from "./services/live-answer";
-import { createCueaiLatency } from "../../../shared/cueai-latency";
-import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "../../../shared/speech-capture";
+import { createCueaiLatency } from "../../shared/cueai-latency";
 import {
-  assembleUtterance,
-  beginQuestionProcessing,
+  AnswerSequencer,
+  PipelineMetrics,
+  QuestionGate,
+  UtteranceAssembler,
+  selectHistory,
+  type Exchange,
+  type FinalUtterance,
+} from "../../shared/live-pipeline";
+import { isFirstMeaningfulAnswer } from "../../shared/speech-capture";
+import { answerBlocks } from "../../shared/answer-blocks";
+import {
   cleanQuestionText,
   clearQuestionMemory,
-  endQuestionProcessing,
-  evaluateQuestion,
   getRollingContext,
   pushRollingTranscript,
 } from "./services/question-detection";
+import { debugText, isPipelineDebug, pipelineLog } from "./services/pipeline-log";
 import {
   configureLiveTranscription,
+  getTranscribeStats,
+  resetTranscriptionContext,
+  startMicListen,
+  startSystemAudioListen,
   stopAllListen,
+  stopMicListen,
+  stopSystemAudioListen,
   subscribeListenLevels,
   syncListenSources,
 } from "./services/audio-listen";
 import type { ScreenshotResult } from "./types/companion";
 import { ResizeHandles } from "./components/ResizeHandles";
-import type { AudioSessionSnapshot } from "./services/audio-session-manager";
+import {
+  humanizeFetchError,
+  type AudioSessionSnapshot,
+  type AudioSessionState,
+} from "./services/audio-session-manager";
+
+type ListenKind = "mic" | "systemAudio";
+
+const isCapturing = (s: AudioSessionState) => s === "listening" || s === "processing";
+const isStarting = (s: AudioSessionState) => s === "requesting_permission" || s === "connecting";
+
+const getDesktopSourceId = async () => (await window.cueai?.getDesktopAudioSourceId()) ?? null;
+
+type AskOptions = {
+  image?: string;
+  echoAsYou?: boolean;
+  /** Set for auto-answers; an utterance is answered at most once. */
+  utteranceId?: string;
+  uncertain?: boolean;
+};
+
+type LivePipeline = {
+  assembler: UtteranceAssembler;
+  gate: QuestionGate;
+  sequencer: AnswerSequencer;
+  metrics: PipelineMetrics;
+};
+
+function createLivePipeline(onFinal: (u: FinalUtterance) => void): LivePipeline {
+  const metrics = new PipelineMetrics();
+  const pipeline: LivePipeline = {
+    assembler: new UtteranceAssembler({
+      onFinal,
+      onDebug: (e) => {
+        if (isPipelineDebug()) {
+          pipelineLog("question", `Assembler ${e.type}`, { who: e.who, seq: e.seq, detail: e.detail });
+        }
+      },
+    }),
+    gate: new QuestionGate(),
+    sequencer: new AnswerSequencer(),
+    metrics,
+  };
+  // Counters and per-stage latency only (no transcript text) for live diagnosis in DevTools.
+  (window as unknown as { __cueaiPipeline?: unknown }).__cueaiPipeline = {
+    counters: metrics.counters,
+    rates: () => metrics.rates(),
+    summarize: (utteranceId: string) => metrics.summarize(utteranceId),
+    transcription: getTranscribeStats,
+  };
+  return pipeline;
+}
 
 function formatElapsed(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function answerLines(text: string) {
-  const bullets = text
-    .split(/\n+/)
-    .map((line) => line.replace(/^[-*•]\s*/, "").trim())
-    .filter(Boolean);
-  if (bullets.length > 1) return bullets;
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  return sentences.length > 1 ? sentences.slice(0, 6) : [text.trim()];
 }
 
 function Waveform({ active }: { active: boolean }) {
@@ -108,7 +159,16 @@ export default function App() {
     micError: null,
     systemError: null,
   });
-  const lastAnsweredRef = useRef("");
+  const [audioErrors, setAudioErrors] = useState<Record<ListenKind, string | null>>({
+    mic: null,
+    systemAudio: null,
+  });
+  const onUtteranceRef = useRef<(u: FinalUtterance) => void>(() => undefined);
+  const pipelineRef = useRef<LivePipeline | null>(null);
+  if (!pipelineRef.current) pipelineRef.current = createLivePipeline((u) => onUtteranceRef.current(u));
+  const pipeline = pipelineRef.current;
+  /** Question/answer pairs from the current meeting, oldest first. */
+  const exchangesRef = useRef<Exchange[]>([]);
   const lastCompleteRef = useRef("");
   const startedAtRef = useRef(Date.now());
   const aiBusyRef = useRef(false);
@@ -118,26 +178,28 @@ export default function App() {
   transcriptRef.current = transcript;
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
-  const runAskRef = useRef<(prompt: string, opts?: { image?: string; echoAsYou?: boolean }) => Promise<void>>(
-    async () => undefined,
-  );
+  const runAskRef = useRef<(prompt: string, opts?: AskOptions) => Promise<void>>(async () => undefined);
   const askRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
-  const answerAbortRef = useRef<AbortController | null>(null);
+  const systemOnRef = useRef(false);
 
   const privacyOn = capture?.requested !== false;
   const lastHeard = [...transcript].reverse().find((t) => t.who !== "CueAI");
   const hasAnswer = Boolean(answer.trim());
   const boardOpen = streaming || hasAnswer || Boolean(question.trim());
   const listening = audioSession.mic === "listening" || audioSession.system === "listening";
-  const micLive = audioSession.mic === "listening";
-  const systemLive = audioSession.system === "listening";
-  const audioProblem =
-    statusMsg ||
-    (listen.mic || micLive ? audioSession.micError : null) ||
-    (listen.systemAudio || systemLive ? audioSession.systemError : null) ||
-    audioSession.error;
+  const micLive = isCapturing(audioSession.mic);
+  const systemLive = isCapturing(audioSession.system);
+  const micStarting = isStarting(audioSession.mic);
+  const systemStarting = isStarting(audioSession.system);
+  systemOnRef.current = systemLive;
+  const sourceProblem = [audioErrors.mic, audioErrors.systemAudio].filter(Boolean).join(" · ");
+  const audioProblem = statusMsg || sourceProblem || audioSession.error;
+  const cueAiOn = Boolean(session.active && session.cueAiMode !== "inactive");
+  const cueAiOnRef = useRef(cueAiOn);
+  const liveListening = Boolean(session.active && session.cueAiMode === "live");
+  const liveListeningRef = useRef(false);
   const kicker = shotBusy
     ? "Reading screen"
     : streaming
@@ -191,52 +253,65 @@ export default function App() {
     configureLiveTranscription({
       apiBase: webApiBase,
       onResult: (line) => {
-        appendTranscript(line);
+        appendTranscript({ who: line.who, text: line.text });
         pushRollingTranscript(line.who, line.text);
         setStatusMsg(null);
-        const chunk = line.text.trim();
-        if (!chunk) return;
-        assembleUtterance(
-          line.who,
-          chunk,
-          (utterance) => {
-            console.log("[TRANSCRIPT] Final transcript received");
-            const assembled = cleanQuestionText(utterance.text);
-            if (!looksTruncatedTranscript(assembled)) {
-              lastCompleteRef.current = assembled;
-              rememberQuestion(assembled);
-            }
-            if (!autoAnswerRef.current || aiBusyRef.current || streamingRef.current) return;
-            const decision = evaluateQuestion(utterance.text, {
-              who: utterance.who,
-              allowSelfQuestions: true,
-              finalized: true,
-              forceSystem: utterance.who === "System",
-            });
-            if (!decision.accept) return;
-            const questionText = cleanQuestionText(decision.question);
-            const key = questionText.toLowerCase().replace(/\s+/g, " ");
-            if (key === lastAnsweredRef.current) return;
-            const qid = decision.questionId || questionText;
-            if (!beginQuestionProcessing(qid)) return;
-            void runAskRef
-              .current(questionText, { echoAsYou: false })
-              .finally(() => endQuestionProcessing(qid));
-          },
-          {
-            audioEndAt: line.audioEndAt,
-            transcribedAt: line.transcribedAt,
-            partial: line.partial,
-          },
-        );
       },
-      onError: (msg) => setStatusMsg(msg),
+      onError: (msg) => {
+        pipeline.metrics.count("transcriptionErrors");
+        setStatusMsg(msg);
+      },
+      onSpeechStart: (who, at) => pipeline.assembler.speechStart(who, at),
+      onSpeechEnd: (who, at, lastVoiceAt) => pipeline.assembler.speechEnd(who, at, lastVoiceAt),
+      onSegmentQueued: (who, seq) => pipeline.assembler.segmentQueued(who, seq),
+      onSegmentResult: (who, seq, result) => pipeline.assembler.segmentResult(who, seq, result),
     });
     return () => {
       clearQuestionMemory();
       configureLiveTranscription(null);
+      pipeline.assembler.reset();
+      pipeline.sequencer.cancel();
     };
-  }, [appendTranscript, webApiBase]);
+  }, [appendTranscript, webApiBase, pipeline]);
+
+  onUtteranceRef.current = (u: FinalUtterance) => {
+    const { metrics, gate } = pipeline;
+    metrics.count("utterances");
+    if (u.speechStartAt != null) metrics.mark(u.id, "speechStart", u.speechStartAt);
+    if (u.lastVoiceAt != null) metrics.mark(u.id, "lastVoice", u.lastVoiceAt);
+    if (u.speechEndAt != null) metrics.mark(u.id, "speechEnd", u.speechEndAt);
+    if (u.transcribedAt != null) metrics.mark(u.id, "transcriptResponse", u.transcribedAt);
+    metrics.mark(u.id, "finalized", u.finalizedAt);
+    if (!u.complete) metrics.count("incomplete");
+
+    // With system audio live the interviewer is on that lane; the mic is the candidate (context only).
+    // With only the mic, the interviewer is heard through the mic, so it may trigger answers.
+    const answerable = u.who === "System" || !systemOnRef.current;
+    const decision = gate.evaluate(u, { answerable: answerable && autoAnswerRef.current });
+    if (u.complete && answerable) {
+      lastCompleteRef.current = decision.question;
+      rememberQuestion(decision.question);
+    }
+    pipelineLog("question", decision.accept ? "Question accepted" : "Utterance not answered", {
+      utterance: u.id,
+      who: u.who,
+      reason: !autoAnswerRef.current && answerable ? "auto_answer_off" : decision.reason,
+      complete: u.complete,
+      uncertain: u.uncertain,
+      segments: u.segments,
+      followUp: decision.followUp,
+      text: debugText(u.text),
+    });
+    if (!decision.accept) {
+      metrics.count(decision.reason === "duplicate" ? "duplicate" : "skipped");
+      return;
+    }
+    void runAskRef.current(decision.question, {
+      echoAsYou: false,
+      utteranceId: u.id,
+      uncertain: u.uncertain,
+    });
+  };
 
   useEffect(() => {
     if (!window.cueai) return;
@@ -246,8 +321,7 @@ export default function App() {
         await syncListenSources({
           mic: listen.mic,
           systemAudio: listen.systemAudio,
-          getDesktopSourceId: async () =>
-            (await window.cueai?.getDesktopAudioSourceId()) ?? null,
+          getDesktopSourceId,
         });
       } catch (err) {
         if (!cancelled) {
@@ -259,6 +333,43 @@ export default function App() {
       cancelled = true;
     };
   }, [listen.mic, listen.systemAudio]);
+
+  useEffect(() => {
+    if (audioSession.mic === "error" && audioSession.micError) {
+      setAudioErrors((e) => ({ ...e, mic: audioSession.micError }));
+    } else if (isCapturing(audioSession.mic)) {
+      setAudioErrors((e) => (e.mic ? { ...e, mic: null } : e));
+    }
+  }, [audioSession.mic, audioSession.micError]);
+
+  useEffect(() => {
+    if (audioSession.system === "error" && audioSession.systemError) {
+      setAudioErrors((e) => ({ ...e, systemAudio: audioSession.systemError }));
+    } else if (isCapturing(audioSession.system)) {
+      setAudioErrors((e) => (e.systemAudio ? { ...e, systemAudio: null } : e));
+    }
+  }, [audioSession.system, audioSession.systemError]);
+
+  useEffect(() => {
+    const wasOn = cueAiOnRef.current;
+    cueAiOnRef.current = cueAiOn;
+    if (wasOn && !cueAiOn) void releaseAudio();
+  }, [cueAiOn]);
+
+  // Live mode means "listen now": open both lanes immediately instead of waiting for toolbar clicks.
+  useEffect(() => {
+    const was = liveListeningRef.current;
+    liveListeningRef.current = liveListening;
+    if (liveListening && !was) {
+      const current = useCompanionStore.getState().listen;
+      if (current.mic && current.systemAudio) return;
+      pipelineLog("audio", "Live session started — starting microphone and system audio");
+      void saveListen({ mic: true, systemAudio: true });
+    } else if (!liveListening && was && cueAiOnRef.current) {
+      pipelineLog("audio", "Left live mode — releasing capture");
+      void releaseAudio();
+    }
+  }, [liveListening]);
 
   useEffect(() => {
     return () => {
@@ -281,8 +392,8 @@ export default function App() {
 
   useEffect(() => {
     if (boardOpen || expanded) return;
-    void window.cueai?.fitHeight?.(menuOpen ? 320 : 120);
-  }, [menuOpen, boardOpen, expanded]);
+    void window.cueai?.fitHeight?.(menuOpen ? 320 : sourceProblem ? 168 : 120);
+  }, [menuOpen, boardOpen, expanded, sourceProblem]);
 
   useEffect(() => {
     const key = session.meetingId || null;
@@ -300,6 +411,12 @@ export default function App() {
     setCopied(false);
     clearTranscript();
     clearQuestionMemory();
+    resetTranscriptionContext();
+    pipeline.assembler.reset();
+    pipeline.gate.reset();
+    pipeline.sequencer.reset();
+    pipeline.metrics.reset();
+    exchangesRef.current = [];
     lastCompleteRef.current = "";
     startedAtRef.current = Date.now();
     setElapsedMs(0);
@@ -325,12 +442,20 @@ export default function App() {
     if (text) setQuestion(text);
   }
 
-  async function runAsk(prompt: string, image?: string, opts?: { echoAsYou?: boolean }) {
+  async function runAsk(prompt: string, image?: string, opts?: Omit<AskOptions, "image">) {
     const q = cleanQuestionText(prompt);
     if (!q) return;
-    answerAbortRef.current?.abort();
-    const abort = new AbortController();
-    answerAbortRef.current = abort;
+    const { sequencer, metrics } = pipeline;
+    // Newest question wins: the sequencer aborts any running answer; an utterance is answered once.
+    const wasBusy = streamingRef.current;
+    const ticket = sequencer.begin(opts?.utteranceId);
+    if (!ticket) {
+      pipelineLog("question", "Utterance already answered", { utterance: opts?.utteranceId });
+      return;
+    }
+    if (wasBusy) metrics.count("answerSuperseded");
+    const isStale = () => !sequencer.isCurrent(ticket.id);
+    const metricId = opts?.utteranceId || `manual-${ticket.id}`;
     bumpActivity();
     if (!image) rememberQuestion(q);
     setStreaming(true);
@@ -342,62 +467,101 @@ export default function App() {
     if (!image && opts?.echoAsYou !== false) appendTranscript({ who: "You", text: q });
     const cueLat = createCueaiLatency("01");
     cueLat.mark("questionSent");
+    metrics.mark(metricId, "llmRequest");
 
+    let streamed = "";
     try {
       if (image) {
         const result = await AIService.ask(q, { transcript: context.map((t) => `${t.who}: ${t.text}`), image }, { fallback: false });
-        if (abort.signal.aborted) return;
+        if (isStale()) return;
         setAnswer(result.answer);
         setStatusMsg(null);
         appendTranscript({ who: "CueAI", text: result.answer });
-        lastAnsweredRef.current = q.toLowerCase().replace(/\s+/g, " ");
         return;
       }
       let flushTimer: number | null = null;
       let pendingFull = "";
-      const result = await requestLiveAnswerStream(q, context, {
-        signal: abort.signal,
-        onConnected: () => cueLat.mark("llmConnected"),
-        onToken: (_token, full) => {
-          pendingFull = full;
-          if (!cueLat.marks.firstToken) {
-            cueLat.mark("firstToken");
-          }
-          if (!cueLat.marks.firstRender) {
-            if (!isFirstMeaningfulAnswer(full)) return;
-            setStatusMsg(null);
-            setAnswer(full);
-            cueLat.mark("firstRender");
-            return;
-          }
-          if (flushTimer != null) return;
-          flushTimer = window.setTimeout(() => {
-            flushTimer = null;
-            setAnswer(pendingFull);
-          }, 32);
-        },
-      });
-      if (abort.signal.aborted) return;
-      if (flushTimer != null) window.clearTimeout(flushTimer);
-      setAnswer(result.answer);
+      let answerText = "";
+      try {
+        const result = await requestLiveAnswerStream(q, getRollingContext(6), {
+          signal: ticket.signal,
+          history: selectHistory(q, exchangesRef.current),
+          uncertain: opts?.uncertain,
+          onConnected: () => cueLat.mark("llmConnected"),
+          onToken: (_token, full) => {
+            if (isStale()) return;
+            streamed = full;
+            pendingFull = full;
+            if (!cueLat.marks.firstToken) {
+              cueLat.mark("firstToken");
+              metrics.mark(metricId, "firstToken");
+            }
+            if (!cueLat.marks.firstRender) {
+              if (!isFirstMeaningfulAnswer(full)) return;
+              setStatusMsg(null);
+              setAnswer(full);
+              cueLat.mark("firstRender");
+              return;
+            }
+            if (flushTimer != null) return;
+            flushTimer = window.setTimeout(() => {
+              flushTimer = null;
+              if (!isStale()) setAnswer(pendingFull);
+            }, 32);
+          },
+        });
+        answerText = result.answer;
+      } catch (err) {
+        if (isStale()) throw err;
+        // A partially streamed answer is shown as-is; retrying would duplicate or contradict it.
+        if (streamed.trim()) {
+          setAnswer(streamed);
+          setStatusMsg("Answer was interrupted. Ask again to regenerate.");
+          metrics.count("answerFailed");
+          return;
+        }
+        pipelineLog("fallback", "Stream failed before any text — trying non-stream path", {
+          error: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+        });
+        const result = await AIService.ask(
+          q,
+          { transcript: context.map((t) => `${t.who}: ${t.text}`) },
+          { fallback: false },
+        );
+        answerText = result.answer;
+      } finally {
+        if (flushTimer != null) window.clearTimeout(flushTimer);
+      }
+      if (isStale()) return;
+      setAnswer(answerText);
       setStatusMsg(null);
-      appendTranscript({ who: "CueAI", text: result.answer });
-      lastAnsweredRef.current = q.toLowerCase().replace(/\s+/g, " ");
+      appendTranscript({ who: "CueAI", text: answerText });
+      exchangesRef.current.push({ question: q, answer: answerText });
+      if (exchangesRef.current.length > 40) exchangesRef.current.shift();
       cueLat.mark("complete");
       cueLat.report("macOS");
+      metrics.mark(metricId, "answerComplete");
+      metrics.count("answered");
+      pipelineLog("perf", "Utterance latency", { utterance: metricId, ...metrics.summarize(metricId) });
     } catch (err) {
-      if (abort.signal.aborted) return;
-      lastAnsweredRef.current = "";
+      if (isStale()) return;
+      metrics.count("answerFailed");
       setStatusMsg(err instanceof Error ? err.message : "Unable to generate an answer. Try again.");
     } finally {
-      if (!abort.signal.aborted) {
+      if (!isStale()) {
+        sequencer.finish(ticket.id);
         setStreaming(false);
         streamingRef.current = false;
         aiBusyRef.current = false;
       }
     }
   }
-  runAskRef.current = (prompt, opts) => runAsk(prompt, opts?.image, { echoAsYou: opts?.echoAsYou });
+  runAskRef.current = (prompt, opts) =>
+    runAsk(prompt, opts?.image, {
+      echoAsYou: opts?.echoAsYou,
+      utteranceId: opts?.utteranceId,
+      uncertain: opts?.uncertain,
+    });
 
   async function onAsk(e: FormEvent) {
     e.preventDefault();
@@ -407,20 +571,17 @@ export default function App() {
     await runAsk(prompt);
   }
 
-  async function ensurePermission(kind: "microphone" | "systemAudio"): Promise<boolean> {
+  /** Returns null when capture may proceed, otherwise the reason it can't. */
+  async function ensurePermission(kind: "microphone" | "systemAudio"): Promise<string | null> {
     const api = window.cueai;
-    if (!api?.getPermissions || !api.requestPermission) return true;
+    if (!api?.getPermissions || !api.requestPermission) return null;
     const current = await api.getPermissions();
     const status = kind === "microphone" ? current.microphone : current.systemAudio;
-    if (status.state === "granted") return true;
-    if (status.state === "denied" || status.state === "restricted") {
-      setStatusMsg(status.message);
-      return false;
-    }
+    if (status.state === "granted") return null;
+    if (status.state === "denied" || status.state === "restricted") return status.message;
     const next = await api.requestPermission(kind === "microphone" ? "microphone" : "systemAudio");
-    if (next.state === "granted" || next.state === "not-determined") return true;
-    setStatusMsg(next.message);
-    return false;
+    if (next.state === "granted" || next.state === "not-determined") return null;
+    return next.message;
   }
 
   async function generateAnswer() {
@@ -484,12 +645,28 @@ export default function App() {
     setEnding(true);
     bumpActivity();
     try {
-      await stopAllListen();
+      await releaseAudio();
       await window.cueai?.endSession();
       clearBoard();
       setMenuOpen(false);
     } finally {
       setEnding(false);
+    }
+  }
+
+  async function releaseAudio() {
+    await stopAllListen();
+    setAudioErrors({ mic: null, systemAudio: null });
+    await saveListen({ mic: false, systemAudio: false });
+  }
+
+  async function saveListen(next: { mic: boolean; systemAudio: boolean }) {
+    setListen(next);
+    try {
+      const saved = await window.cueai?.setListenSources(next);
+      if (saved) setListen(saved);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Could not change listen sources.");
     }
   }
 
@@ -508,27 +685,34 @@ export default function App() {
     });
   }
 
-  async function toggleListen(kind: "mic" | "systemAudio") {
+  async function toggleListen(kind: ListenKind) {
     bumpActivity();
-    const turningOn = kind === "mic" ? !listen.mic : !listen.systemAudio;
-    if (turningOn) {
-      const ok = await ensurePermission(kind === "mic" ? "microphone" : "systemAudio");
-      if (!ok) return;
+    const state = kind === "mic" ? audioSession.mic : audioSession.system;
+    const withSource = (on: boolean) => ({ ...useCompanionStore.getState().listen, [kind]: on });
+    // Stopping clears the service's auto-recover intent, so a failed or disabled source stays off.
+    const stop = () => (kind === "mic" ? stopMicListen() : stopSystemAudioListen());
+    setAudioErrors((e) => ({ ...e, [kind]: null }));
+    if (isCapturing(state) || isStarting(state)) {
+      await stop();
+      await saveListen(withSource(false));
+      return;
     }
-    const next = {
-      mic: kind === "mic" ? !listen.mic : listen.mic,
-      systemAudio: kind === "systemAudio" ? !listen.systemAudio : listen.systemAudio,
-    };
-    setListen(next);
+    const denied = await ensurePermission(kind === "mic" ? "microphone" : "systemAudio");
+    if (denied) {
+      await stop();
+      setAudioErrors((e) => ({ ...e, [kind]: denied }));
+      await saveListen(withSource(false));
+      return;
+    }
+    // Flag first so the listen-sync effect joins this start instead of cancelling it.
+    await saveListen(withSource(true));
     try {
-      const saved = await window.cueai?.setListenSources(next);
-      if (saved) setListen(saved);
+      if (kind === "mic") await startMicListen();
+      else await startSystemAudioListen(getDesktopSourceId);
     } catch (err) {
-      setListen({
-        mic: kind === "mic" ? listen.mic : next.mic,
-        systemAudio: kind === "systemAudio" ? listen.systemAudio : next.systemAudio,
-      });
-      setStatusMsg(err instanceof Error ? err.message : "Could not change listen sources.");
+      await stop();
+      setAudioErrors((e) => ({ ...e, [kind]: humanizeFetchError(err) }));
+      await saveListen(withSource(false));
     }
   }
 
@@ -541,7 +725,7 @@ export default function App() {
   return (
     <div
       ref={rootRef}
-      className={cn("cue-root", boardOpen && "is-open")}
+      className={cn("cue-root", boardOpen && "is-open", !boardOpen && sourceProblem && "has-hint")}
       onMouseMove={bumpActivity}
       onFocus={bumpActivity}
     >
@@ -576,17 +760,6 @@ export default function App() {
             </button>
             {menuOpen && (
               <div className="cue-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => void toggleListen("mic")}>
-                  {micLive ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                  <span>Microphone</span>
-                  <em>{micLive ? "Listening" : "Off"}</em>
-                </button>
-                <button type="button" role="menuitem" onClick={() => void toggleListen("systemAudio")}>
-                  {systemLive ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-                  <span>System audio</span>
-                  <em>{systemLive ? "Listening" : "Off"}</em>
-                </button>
-                <hr />
                 <button type="button" role="menuitem" onClick={() => setPinned(!pinned)}>
                   <Pin className="h-4 w-4" />
                   <span>Keep on top</span>
@@ -645,7 +818,82 @@ export default function App() {
             <Camera className="h-3.5 w-3.5" />
             {shotBusy ? "Reading" : "Screen"}
           </button>
+          <button
+            type="button"
+            className={cn(
+              "cue-action cue-src",
+              micLive && "is-live",
+              micStarting && "is-pending",
+              audioErrors.mic && "is-error",
+            )}
+            onClick={() => void toggleListen("mic")}
+            aria-label={micLive ? "Mic on" : "Mic off"}
+            aria-pressed={micLive}
+            aria-busy={micStarting}
+            title={
+              audioErrors.mic ||
+              (micStarting ? "Starting microphone…" : micLive ? "Mic on — click to stop" : "Mic off — click to start")
+            }
+          >
+            {micLive || micStarting ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+            <span className="cue-src-label">Mic</span>
+            <span className="cue-src-dot" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "cue-action cue-src",
+              systemLive && "is-live",
+              systemStarting && "is-pending",
+              audioErrors.systemAudio && "is-error",
+            )}
+            onClick={() => void toggleListen("systemAudio")}
+            aria-label={systemLive ? "System Audio on" : "System Audio off"}
+            aria-pressed={systemLive}
+            aria-busy={systemStarting}
+            title={
+              audioErrors.systemAudio ||
+              (systemStarting
+                ? "Starting system audio…"
+                : systemLive
+                  ? "System Audio on — click to stop"
+                  : "System Audio off — click to start")
+            }
+          >
+            {systemLive || systemStarting ? (
+              <Volume2 className="h-3.5 w-3.5" />
+            ) : (
+              <VolumeX className="h-3.5 w-3.5" />
+            )}
+            <span className="cue-src-label">System Audio</span>
+            <span className="cue-src-dot" aria-hidden />
+          </button>
         </form>
+
+        {!boardOpen && sourceProblem && (
+          <div className="cue-hint no-drag" role="alert">
+            <p title={sourceProblem}>{sourceProblem}</p>
+            {sourceProblem.includes("System Settings") && (
+              <button
+                type="button"
+                onClick={() =>
+                  void window.cueai?.openPrivacySettings?.(
+                    audioErrors.mic?.includes("System Settings") ? "microphone" : "screen",
+                  )
+                }
+              >
+                Open Settings
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setAudioErrors({ mic: null, systemAudio: null })}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {boardOpen && (
           <section className="cue-sheet no-drag">
@@ -694,11 +942,17 @@ export default function App() {
               </div>
             ) : (
               <div className="cue-answer">
-                {answerLines(
+                {answerBlocks(
                   answer || "Ask a question, or press Screen to read what’s in front of you.",
-                ).map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
+                ).map((block, i) =>
+                  block.kind === "code" ? (
+                    <pre key={i} aria-label={block.lang ? `${block.lang} code` : "code"}>
+                      <code>{block.text}</code>
+                    </pre>
+                  ) : (
+                    <p key={i}>{block.text}</p>
+                  ),
+                )}
               </div>
             )}
           </section>

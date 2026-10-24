@@ -1,10 +1,11 @@
-import type { MeetingRecord } from "@/lib/meetings-catalog";
+import type { MeetingKind, MeetingRecord } from "@/lib/meetings-catalog";
 import { getMeetingById } from "@/lib/meetings-catalog";
+import type { MockInterviewListSummary, MockInterviewPublic } from "@/lib/mock-interview-types";
 
 export type StoredMeeting = {
   id: string;
   title: string;
-  kind: "interview" | "regular";
+  kind: MeetingKind;
   status: "live" | "summary" | "completed" | "incomplete";
   startedAt: string;
   endedAt?: string | null;
@@ -17,12 +18,15 @@ export type StoredMeeting = {
   transcript: { who: string; text: string; at?: string }[];
   transcriptLocked?: boolean;
   transcriptLineCount?: number;
-  answers: { prompt: string; answer: string; at: string }[];
+  answers: { prompt: string; answer: string; at: string; status?: "answered" | "unavailable" }[];
   hasMore?: boolean;
   fullSummaryAvailable?: boolean;
+  owner?: { name: string; email: string } | null;
   summary?: string | null;
   questionCount?: number;
   answerCount?: number;
+  mockSummary?: MockInterviewListSummary | null;
+  mock?: MockInterviewPublic | null;
 };
 
 export function formatMeetingWhen(iso: string) {
@@ -137,9 +141,15 @@ export function storedMeetingToRecord(meeting: StoredMeeting): MeetingRecord {
       answerHi: answer.answer,
       answerTe: answer.answer,
       pinned: index === 0,
+      status: answer.status ?? (answer.answer?.trim() ? "answered" : "unavailable"),
     })),
     hasMore: meeting.hasMore,
     fullSummaryAvailable: meeting.fullSummaryAvailable,
+    kind: meeting.kind,
+    startedAt: meeting.startedAt,
+    owner: meeting.owner ?? null,
+    mockSummary: meeting.mockSummary ?? null,
+    mock: meeting.mock ?? null,
     emailSubject: `Notes from ${meeting.title}`,
     emailBody,
   };

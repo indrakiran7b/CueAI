@@ -78,7 +78,7 @@ export function applyCaptureExclusion(win: BrowserWindow | null): CaptureProtect
       requested: true,
       applied: false,
       supported: false,
-      message: "Companion window unavailable",
+      message: "Overlay window unavailable",
     };
     return getCaptureProtectionStatus();
   }

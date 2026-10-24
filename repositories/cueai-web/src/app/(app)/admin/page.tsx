@@ -22,6 +22,7 @@ import {
   Shield,
   Trash2,
   UserPlus,
+  UserSearch,
   Users,
   X,
 } from "lucide-react";
@@ -35,6 +36,7 @@ import {
 } from "recharts";
 import { RequireAdmin } from "@/components/auth/require-admin";
 import { AdminDevicesPanel } from "@/components/admin/admin-devices-panel";
+import { UserTokenUsagePanel } from "@/components/admin/user-token-usage-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +61,7 @@ type NavId =
   | "providers"
   | "models"
   | "tokens"
+  | "userTokens"
   | "meetings"
   | "privacy"
   | "retention"
@@ -80,6 +83,7 @@ const NAV: Array<{
   { id: "providers", label: "AI Providers", icon: KeyRound, permission: "ai.read" },
   { id: "models", label: "AI Models", icon: Bot, permission: "ai.read" },
   { id: "tokens", label: "Token Usage", icon: Cpu, permission: "usage.read" },
+  { id: "userTokens", label: "Token Utilization per User", icon: UserSearch, permission: "usage.read" },
   { id: "meetings", label: "Meeting Minutes", icon: Clock3, permission: "usage.read" },
   { id: "privacy", label: "Privacy", icon: Lock, permission: "privacy.read" },
   { id: "retention", label: "Retention", icon: Database, permission: "privacy.read" },
@@ -1477,6 +1481,8 @@ function AdminPortalInner() {
                 )}
               </div>
             )}
+
+            {tab === "userTokens" && <UserTokenUsagePanel />}
 
             {tab === "meetings" && (
               <div className="space-y-4">

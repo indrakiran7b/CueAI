@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, type Variants } from "framer-motion";
 import {
-  AppWindow,
   ArrowUpRight,
   Settings,
   Sparkles,
@@ -49,7 +48,6 @@ type MeetingRow = {
 const userShortcuts = [
   { href: "/meetings", icon: Video, label: "Meetings", hint: "Completed summaries" },
   { href: "/meetings/live", icon: Sparkles, label: "Live Session", hint: "Start a live session" },
-  { href: "/companion", icon: AppWindow, label: "Desktop Companion", hint: "Open the overlay" },
   { href: "/settings", icon: Settings, label: "Settings", hint: "Preferences" },
 ];
 

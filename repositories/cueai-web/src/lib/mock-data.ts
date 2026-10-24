@@ -22,7 +22,7 @@ export const pricing = [
       "Everything in Starter",
       "Unlimited meetings",
       "Resume Tailor",
-      "Desktop Companion",
+      "Desktop overlay with live audio assistance",
       "Screen Context AI",
     ],
     cta: "Start Free",
@@ -48,7 +48,7 @@ export const pricing = [
 export const faqs = [
   {
     q: "Does CueAI work with Zoom, Meet, and Teams?",
-    a: "Yes. CueAI captures system audio via the Desktop Companion and works alongside Zoom, Google Meet, Microsoft Teams, and browser-based calls.",
+    a: "Yes. The CueAI desktop app captures system audio on supported platforms and works alongside Zoom, Google Meet, Microsoft Teams, and browser-based calls.",
   },
   {
     q: "Is my meeting data private?",

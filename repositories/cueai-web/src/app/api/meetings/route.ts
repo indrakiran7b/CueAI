@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/server/api-auth";
 import {
   createMeeting,
   listCompletedMeetingsForUser,
-  meetingQaForSession,
+  listCompletedWorkspaceMeetings,
   publicMeeting,
 } from "@/lib/server/meetings";
 import { sessionTitle, type LiveSessionKind } from "@/lib/live-session-config";
@@ -24,9 +24,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
 
-  const qa = await meetingQaForSession(session);
+  if (req.nextUrl.searchParams.get("scope") === "workspace") {
+    const rows = await listCompletedWorkspaceMeetings(session);
+    if (!rows) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: CORS_HEADERS });
+    }
+    return NextResponse.json(
+      { meetings: rows.map(({ meeting, owner }) => publicMeeting(meeting, false, false, owner)) },
+      { headers: CORS_HEADERS },
+    );
+  }
+
   const stored = (await listCompletedMeetingsForUser(session)).map((meeting) =>
-    publicMeeting(meeting, false, false, qa),
+    publicMeeting(meeting),
   );
   return NextResponse.json({ meetings: stored }, { headers: CORS_HEADERS });
 }
@@ -81,9 +91,5 @@ export async function POST(req: NextRequest) {
     pendingKnowledgeIds: body?.pendingKnowledgeIds,
   });
 
-  const qa = await meetingQaForSession(session);
-  return NextResponse.json(
-    { meeting: publicMeeting(meeting, true, false, qa) },
-    { headers: CORS_HEADERS },
-  );
+  return NextResponse.json({ meeting: publicMeeting(meeting, true) }, { headers: CORS_HEADERS });
 }

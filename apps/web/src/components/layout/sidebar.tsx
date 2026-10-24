@@ -13,7 +13,6 @@ import {
   Shield,
   Sparkles,
   PanelLeft,
-  AppWindow,
 } from "lucide-react";
 import { BrandMark, Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
@@ -42,7 +41,6 @@ const FULL_NAV: NavItem[] = [
   { href: "/knowledge", label: "Knowledge Base", icon: Library, hideFromNav: true },
   { href: "/translation", label: "Translation", icon: Languages, adminExtra: true },
   { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true },
-  { href: "/companion", label: "Desktop Companion", icon: AppWindow },
   { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

@@ -1,159 +1,114 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import {
-  Check,
-  Download,
-  FileUp,
-  Loader2,
-  Sparkles,
-  Upload,
-  X,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, ChevronRight, Download, Eye, FileUp, Pencil, RotateCcw, Sparkles, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gauge, Progress, Tabs } from "@/components/ui/misc";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { docxBlob, downloadBlob } from "@cueai/export-service/exportDocument";
 import { extractAndRememberResume, rememberResume } from "@/lib/resume-store";
+import { resumeDocumentXml } from "@/lib/resume/docx";
+import { layoutResume } from "@/lib/resume/layout";
+import { getMeasurer, resumeFileName, type ResumeMeasurer } from "@/lib/resume/pdf";
+import { applyRewrites } from "@/lib/resume/rewrites";
+import { TEMPLATES } from "@/lib/resume/templates";
+import type { ResumeRewrite, StructuredResume, TemplateId } from "@/lib/resume/types";
+import { ResumeEditor } from "./resume-editor";
+import { ResumePageSvg } from "./resume-page-svg";
 
-type ResumeRewrite = {
-  section: string;
-  original: string;
-  rewritten: string;
+type Analysis = {
+  resume: StructuredResume;
+  rewriteSet: ResumeRewrite[];
 };
 
-type ResumeAnalysis = {
-  matchScore: number;
-  atsScore: number;
-  keywordCoverage: number;
-  missingKeywords: string[];
-  suggestedSkills: string[];
-  summary: string;
-  rewrites: ResumeRewrite[];
-  resumeText: string;
-  resumePreview: string;
-  usedJobDescription: boolean;
-};
-
-type RewriteDecision = "pending" | "accepted" | "rejected";
-type WorkflowStep = "upload" | "job" | "analysis";
+type Status = { kind: "success" | "error"; text: string };
 
 const ACCEPTED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ];
+const MAX_BYTES = 5 * 1024 * 1024;
 
 function isAllowedFile(file: File) {
-  const name = file.name.toLowerCase();
-  return (
-    ACCEPTED_TYPES.includes(file.type) ||
-    name.endsWith(".pdf") ||
-    name.endsWith(".docx") ||
-    name.endsWith(".txt")
-  );
-}
-
-function normalizeWs(text: string) {
-  return text.replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function replaceExcerpt(source: string, original: string, replacement: string): string {
-  if (!original.trim()) return source;
-  if (source.includes(original)) {
-    return source.replace(original, replacement);
-  }
-  const normSource = normalizeWs(source);
-  const normOriginal = normalizeWs(original).trim();
-  const idx = normSource.indexOf(normOriginal);
-  if (idx < 0) return source;
-  const flexible = escapeRegExp(normOriginal).replace(/ /g, "\\s+").replace(/\\n/g, "\\s*");
-  return source.replace(new RegExp(flexible), replacement);
-}
-
-function buildImprovedResume(
-  baseText: string,
-  rewrites: ResumeRewrite[],
-  decisions: RewriteDecision[],
-): string {
-  let next = baseText;
-  rewrites.forEach((rewrite, i) => {
-    if (decisions[i] !== "accepted") return;
-    const applied = replaceExcerpt(next, rewrite.original, rewrite.rewritten);
-    if (applied === next) {
-      next = `${next.trimEnd()}\n\n[${rewrite.section} — improved]\n${rewrite.rewritten}\n`;
-    } else {
-      next = applied;
-    }
-  });
-  return next.trim() + "\n";
-}
-
-function exportFileName(originalName: string | undefined) {
-  const base = (originalName || "resume").replace(/\.[^.]+$/, "");
-  return `${base}-tailored.txt`;
-}
-
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return ACCEPTED_TYPES.includes(file.type) || /\.(pdf|docx|txt)$/i.test(file.name);
 }
 
 export default function ResumeTailorApp() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState<WorkflowStep>("upload");
-  const [tab, setTab] = useState("editor");
+  const inFlight = useRef(false);
+
   const [file, setFile] = useState<File | null>(null);
   const [jd, setJd] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
-  const [rewriteIndex, setRewriteIndex] = useState(0);
-  const [decisions, setDecisions] = useState<RewriteDecision[]>([]);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analyzedKey, setAnalyzedKey] = useState("");
+  const [showInputs, setShowInputs] = useState(true);
 
-  const acceptedCount = useMemo(
-    () => decisions.filter((d) => d === "accepted").length,
-    [decisions],
+  const [edited, setEdited] = useState<StructuredResume | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editPending, setEditPending] = useState(false);
+  const [template, setTemplate] = useState<TemplateId>(TEMPLATES[0]!.id);
+  const [browse, setBrowse] = useState(0);
+
+  const [measurer, setMeasurer] = useState<ResumeMeasurer | null>(null);
+  const [measurerFailed, setMeasurerFailed] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getMeasurer()
+      .then((m) => alive && setMeasurer(m))
+      .catch(() => alive && setMeasurerFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && setPreviewOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewOpen]);
+
+  const requestKey = file ? `${file.name}|${file.size}|${file.lastModified}|${jd.trim()}` : "";
+  const upToDate = Boolean(analysis && analyzedKey === requestKey);
+
+  /** Valid rewrites are applied automatically; lines that failed the fact checks keep their original text. */
+  const tailored = useMemo(() => (analysis ? applyRewrites(analysis.resume, analysis.rewriteSet) : null), [analysis]);
+  const appliedCount = analysis?.rewriteSet.filter((r) => r.valid).length ?? 0;
+  const finalResume = edited ?? tailored;
+
+  const browsed = TEMPLATES[browse]!;
+  const selected = TEMPLATES.find((t) => t.id === template)!;
+
+  const layout = useMemo(
+    () => (measurer && finalResume ? layoutResume(finalResume, template, measurer) : null),
+    [measurer, finalResume, template],
   );
+  const thumbLayout = useMemo(() => {
+    if (!measurer || !finalResume) return null;
+    return browsed.id === template ? layout : layoutResume(finalResume, browsed.id, measurer);
+  }, [measurer, finalResume, browsed.id, template, layout]);
 
-  const improvedResume = useMemo(() => {
-    if (!analysis) return "";
-    const base = analysis.resumeText || analysis.resumePreview || "";
-    return buildImprovedResume(base, analysis.rewrites, decisions);
-  }, [analysis, decisions]);
-
-  const canExport = Boolean(analysis && acceptedCount > 0 && improvedResume.trim());
+  const unsupportedChars = layout && measurer ? [...measurer.unsupported] : [];
+  const exportReady = Boolean(layout && finalResume && !editPending && !exporting);
 
   function assignFile(next: File | null) {
     setError(null);
-    setAnalysis(null);
-    setDecisions([]);
-    setRewriteIndex(0);
-    if (!next) {
-      setFile(null);
-      return;
-    }
+    if (!next) return;
     if (!isAllowedFile(next)) {
       setError("Please upload a PDF, DOCX, or TXT file.");
-      setFile(null);
       return;
     }
-    if (next.size > 5 * 1024 * 1024) {
+    if (next.size > MAX_BYTES) {
       setError("File is larger than 5 MB.");
-      setFile(null);
       return;
     }
     rememberResume(next.name);
@@ -174,11 +129,16 @@ export default function ResumeTailorApp() {
 
   async function runAnalyze(e?: FormEvent) {
     e?.preventDefault();
+    if (inFlight.current) return;
     if (!file) {
-      setError("Upload a resume before analyzing.");
-      setStep("upload");
+      setError("Upload a resume to continue.");
       return;
     }
+    if (upToDate) {
+      setShowInputs(false);
+      return;
+    }
+    inFlight.current = true;
     setAnalyzing(true);
     setError(null);
     try {
@@ -186,319 +146,370 @@ export default function ResumeTailorApp() {
       body.append("resume", file);
       if (jd.trim()) body.append("jobDescription", jd.trim());
       const res = await fetch("/api/resume/analyze", { method: "POST", body, credentials: "include" });
-      const data = (await res.json()) as ResumeAnalysis & { error?: string };
-      if (!res.ok) throw new Error(data.error || "Analysis failed.");
-      setAnalysis(data);
-      setDecisions(data.rewrites.map(() => "pending"));
-      setRewriteIndex(0);
-      setTab("editor");
-      setStep("analysis");
+      const data = (await res.json().catch(() => ({}))) as Partial<Analysis> & { error?: string };
+      if (!res.ok || !data.resume) throw new Error(data.error || "We couldn't tailor your resume. Please try again.");
+      // Results are replaced only after a successful run, so a failed retry never clears a finished resume.
+      setAnalysis({ resume: data.resume, rewriteSet: data.rewriteSet ?? [] });
+      setAnalyzedKey(requestKey);
+      setEdited(null);
+      setEditing(false);
+      setStatus(null);
+      setShowInputs(false);
     } catch (err) {
-      setAnalysis(null);
-      setError(err instanceof Error ? err.message : "Analysis failed.");
+      setError(err instanceof Error ? err.message : "We couldn't tailor your resume. Please try again.");
     } finally {
+      inFlight.current = false;
       setAnalyzing(false);
     }
   }
 
-  function setDecision(index: number, decision: RewriteDecision) {
-    setDecisions((prev) => prev.map((d, i) => (i === index ? decision : d)));
-    if (decision === "accepted") setTab("improved");
+  function step(delta: number) {
+    setBrowse((i) => (i + delta + TEMPLATES.length) % TEMPLATES.length);
   }
 
-  function handleExport() {
-    if (!canExport) {
-      setError("Accept at least one AI rewrite before exporting.");
-      return;
+  function onCarouselKey(e: KeyboardEvent<HTMLElement>) {
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      step(1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      step(-1);
     }
-    setError(null);
-    downloadTextFile(exportFileName(file?.name), improvedResume);
   }
 
-  const activeRewrite = analysis?.rewrites[rewriteIndex];
-  const activeDecision = decisions[rewriteIndex] ?? "pending";
+  function selectBrowsed() {
+    setTemplate(browsed.id);
+    setStatus(null);
+  }
+
+  async function downloadPdf() {
+    if (!finalResume || !exportReady) return;
+    setExporting("pdf");
+    setStatus(null);
+    try {
+      const res = await fetch("/api/resume/pdf", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume: finalResume, template }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Could not generate the PDF.");
+      }
+      const blob = await res.blob();
+      if (!blob.type.includes("pdf") || blob.size < 500) throw new Error("The server did not return a PDF.");
+      const filename =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || resumeFileName(finalResume.name);
+      downloadBlob(filename, blob);
+      setStatus({ kind: "success", text: `Downloaded ${filename}` });
+    } catch (err) {
+      setStatus({ kind: "error", text: err instanceof Error ? err.message : "Could not generate the PDF." });
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function downloadDocx() {
+    if (!finalResume || !layout || !exportReady) return;
+    setExporting("docx");
+    setStatus(null);
+    try {
+      const filename = resumeFileName(finalResume.name, "docx");
+      downloadBlob(filename, docxBlob(resumeDocumentXml(layout)));
+      setStatus({ kind: "success", text: `Downloaded ${filename}` });
+    } catch {
+      setStatus({ kind: "error", text: "Could not generate the Word document." });
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  const pagesLabel = layout ? `${layout.pages.length} page${layout.pages.length === 1 ? "" : "s"}` : "";
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 animate-fade-up">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Resume Tailor</h1>
-          <p className="mt-1 text-sm text-muted">
-            Upload a resume, add a job description, then run ATS analysis for skills, suggestions, and results.
-          </p>
+          <p className="mt-1 text-sm text-muted">Tailor your resume to a job and download it as an ATS-friendly PDF or Word file.</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="gradient"
-            size="sm"
-            loading={analyzing}
-            disabled={!file || analyzing}
-            onClick={() => void runAnalyze()}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {analyzing ? "Analyzing…" : "Analyze with AI"}
+        {analysis && !showInputs && (
+          <Button variant="outline" size="sm" onClick={() => setShowInputs(true)}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            New resume or job
           </Button>
-          {canExport && (
-            <Button variant="outline" size="sm" onClick={handleExport}>
-              <Download className="h-3.5 w-3.5" />
-              Export ({acceptedCount})
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["upload", "1. Upload Resume"],
-            ["job", "2. Job Description"],
-            ["analysis", "3. ATS Analysis"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setStep(id)}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-medium",
-              step === id
-                ? "border-primary bg-[var(--primary-muted)] text-primary"
-                : "border-[var(--border)] text-muted hover:border-[var(--border-strong)]",
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        )}
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <span>{error}</span>
+          {file && !analyzing && showInputs && (
+            <Button size="sm" variant="outline" onClick={() => void runAnalyze()}>
+              Try again
+            </Button>
+          )}
         </div>
       )}
 
-      {step === "upload" && (
-        <Card
-          className={cn(
-            "border-dashed p-8 text-center transition-colors",
-            dragOver && "border-primary bg-[var(--primary-muted)]/30",
-          )}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-        >
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
-            <Upload className="h-5 w-5" />
-          </div>
-          <p className="mt-3 text-sm font-medium">Drag & drop your resume</p>
-          <p className="mt-1 text-xs text-subtle">PDF, DOCX, or TXT · Max 5 MB</p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-            className="hidden"
-            onChange={onBrowseChange}
-          />
-          <Button variant="outline" size="sm" className="mt-4" type="button" onClick={() => inputRef.current?.click()}>
-            <FileUp className="h-3.5 w-3.5" />
-            Browse files
-          </Button>
-          {file ? (
-            <p className="mt-3 text-xs text-teal-400">
-              {file.name} · {(file.size / 1024).toFixed(1)} KB ready
-            </p>
-          ) : (
-            <p className="mt-3 text-xs text-subtle">No file selected yet</p>
-          )}
-          {file && (
-            <div className="mt-4 flex justify-center gap-2">
-              <Button type="button" size="sm" onClick={() => setStep("job")}>
-                Continue to job description
+      {showInputs && (
+        <Card className="p-5">
+          <form onSubmit={(e) => void runAnalyze(e)} className="grid gap-4 md:grid-cols-2">
+            <div
+              className={cn(
+                "flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-strong)] p-6 text-center transition-colors",
+                dragOver && "border-primary bg-[var(--primary-muted)]/30",
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
+                <Upload className="h-5 w-5" />
+              </div>
+              <p className="mt-3 text-sm font-medium">Upload resume</p>
+              <p className="mt-1 text-xs text-subtle">PDF, DOCX, or TXT · Max 5 MB</p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                className="hidden"
+                onChange={onBrowseChange}
+              />
+              <Button variant="outline" size="sm" className="mt-4" type="button" onClick={() => inputRef.current?.click()}>
+                <FileUp className="h-3.5 w-3.5" />
+                Browse files
               </Button>
-              <button type="button" className="text-xs text-muted underline-offset-2 hover:underline" onClick={() => assignFile(null)}>
-                Clear file
-              </button>
+              <p className={cn("mt-3 break-all text-xs", file ? "text-teal-400" : "text-subtle")}>
+                {file ? `${file.name} · ${(file.size / 1024).toFixed(1)} KB` : "No file selected yet"}
+              </p>
             </div>
-          )}
-        </Card>
-      )}
-
-      {step === "job" && (
-        <Card className="p-4">
-          <form onSubmit={(e) => void runAnalyze(e)}>
-            <label className="text-sm font-medium" htmlFor="job-description">
-              Job description <span className="text-subtle">(optional)</span>
-            </label>
-            <p className="mt-1 text-xs text-subtle">
-              Paste a JD to improve match scoring and keyword gaps. Leave blank for general ATS feedback.
-            </p>
-            <textarea
-              id="job-description"
-              value={jd}
-              onChange={(e) => setJd(e.target.value)}
-              rows={10}
-              placeholder="Paste the job description here…"
-              className="mt-2 w-full resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-[var(--primary-muted)]"
-            />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="primary" size="sm" type="submit" loading={analyzing} disabled={!file || analyzing}>
-                {analyzing ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Analyzing…
-                  </>
-                ) : (
-                  "Analyze resume"
+            <div className="flex flex-col">
+              <label className="text-sm font-medium" htmlFor="job-description">
+                Job description
+              </label>
+              <textarea
+                id="job-description"
+                value={jd}
+                onChange={(e) => setJd(e.target.value)}
+                rows={8}
+                maxLength={20000}
+                placeholder="Paste the job description here…"
+                className="mt-2 w-full flex-1 resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-[var(--primary-muted)]"
+              />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button variant="gradient" size="sm" type="submit" loading={analyzing} disabled={!file || analyzing}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {analyzing ? "Tailoring your resume…" : upToDate ? "Back to resume" : "Tailor my resume"}
+                </Button>
+                {analysis && !analyzing && !upToDate && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowInputs(false)}>
+                    Cancel
+                  </Button>
                 )}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setStep("upload")}>
-                Back to upload
-              </Button>
+              </div>
             </div>
           </form>
         </Card>
       )}
 
-      {step === "analysis" && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-          <div className="space-y-4">
-            <Tabs
-              tabs={[
-                { id: "editor", label: "Suggestions" },
-                { id: "improved", label: `Results${acceptedCount ? ` · ${acceptedCount}` : ""}` },
-              ]}
-              active={tab}
-              onChange={setTab}
-            />
-            {tab === "improved" ? (
-              <Card className="p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">Tailored resume</p>
-                    <p className="text-xs text-subtle">Accepted rewrites update this draft.</p>
-                  </div>
-                  {canExport && (
-                    <Button size="sm" variant="primary" onClick={handleExport}>
-                      <Download className="h-3.5 w-3.5" />
-                      Export .txt
-                    </Button>
+      {analysis && finalResume && !showInputs && (
+        <>
+          <section
+            aria-roledescription="carousel"
+            aria-label="ATS resume templates"
+            onKeyDown={onCarouselKey}
+            className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-5"
+          >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <h2 className="text-base font-semibold">Choose Your ATS Resume Template</h2>
+              <span className="text-xs tabular-nums text-subtle" aria-live="polite">
+                {browse + 1} of {TEMPLATES.length}
+              </span>
+            </div>
+            <div className="grid items-center gap-6 lg:grid-cols-[auto_minmax(0,1fr)]">
+              <div className="flex min-w-0 items-center justify-center gap-1.5 sm:gap-3">
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => step(-1)} aria-label="Previous template">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <button
+                  type="button"
+                  onClick={selectBrowsed}
+                  aria-label={`${browsed.name}, template ${browse + 1} of ${TEMPLATES.length}${browsed.id === template ? ", selected" : ". Select this template"}`}
+                  className={cn(
+                    "w-[300px] min-w-0 max-w-full shrink overflow-hidden rounded-lg bg-white shadow-lg ring-offset-2 ring-offset-[var(--background)] transition",
+                    browsed.id === template ? "ring-2 ring-primary" : "ring-1 ring-[var(--border)] hover:ring-[var(--border-strong)]",
                   )}
+                >
+                  {thumbLayout?.pages[0] ? (
+                    <ResumePageSvg layout={thumbLayout} page={thumbLayout.pages[0]} className="block w-full" title={`${browsed.name} preview`} />
+                  ) : (
+                    <div className="flex aspect-[595/842] items-center justify-center text-xs text-neutral-500">
+                      {measurerFailed ? "Preview unavailable" : "Loading…"}
+                    </div>
+                  )}
+                </button>
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => step(1)} aria-label="Next template">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="min-w-0 space-y-3 text-center lg:text-left">
+                <div>
+                  <p className="text-lg font-semibold">{browsed.name}</p>
+                  <p className="mt-1 text-sm text-muted">{browsed.useCase}</p>
                 </div>
-                {analysis ? (
-                  <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--background-elevated)] p-4 text-sm leading-relaxed text-muted">
-                    {improvedResume || analysis.resumeText || analysis.resumePreview}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-subtle">Analyze a resume to see results here.</p>
-                )}
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {analysis?.summary && (
-                  <Card className="p-4 text-sm leading-relaxed text-muted">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-subtle">AI summary</p>
-                    {analysis.summary}
-                  </Card>
-                )}
-                {analysis && analysis.rewrites.length > 1 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {analysis.rewrites.map((r, i) => (
-                      <button
-                        key={`${r.section}-${i}`}
-                        type="button"
-                        onClick={() => setRewriteIndex(i)}
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs",
-                          i === rewriteIndex
-                            ? "border-primary bg-[var(--primary-muted)] text-primary"
-                            : "border-[var(--border)] text-muted hover:border-[var(--border-strong)]",
-                        )}
-                      >
-                        {r.section}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Card className="p-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-subtle">Original</p>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">
-                      {activeRewrite?.original || analysis?.resumePreview || "Analyze a resume to see excerpts."}
-                    </p>
-                  </Card>
-                  <Card className={cn("p-4", activeDecision === "accepted" && "border-teal-500/30 bg-teal-500/5")}>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-primary">AI rewrite</p>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {activeRewrite?.rewritten || "AI rewrites appear after analysis."}
-                    </p>
-                    {activeRewrite && (
-                      <div className="mt-4 flex gap-2">
-                        <Button size="sm" variant="primary" onClick={() => setDecision(rewriteIndex, "accepted")} disabled={activeDecision === "accepted"}>
-                          <Check className="h-3.5 w-3.5" />
-                          {activeDecision === "accepted" ? "Accepted" : "Accept"}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDecision(rewriteIndex, "rejected")}>
-                          <X className="h-3.5 w-3.5" />
-                          Reject
-                        </Button>
-                      </div>
-                    )}
-                  </Card>
+                <ul className="space-y-1 text-xs text-subtle">
+                  {browsed.characteristics.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+                <Button
+                  size="sm"
+                  variant={browsed.id === template ? "secondary" : "gradient"}
+                  onClick={selectBrowsed}
+                  disabled={browsed.id === template}
+                  aria-pressed={browsed.id === template}
+                >
+                  {browsed.id === template ? "Selected" : "Select Template"}
+                </Button>
+                <div className="flex justify-center gap-1.5 pt-1 lg:justify-start">
+                  {TEMPLATES.map((t, i) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setBrowse(i)}
+                      aria-label={`Show ${t.name}`}
+                      aria-current={i === browse}
+                      className={cn(
+                        "h-2 rounded-full transition-all",
+                        i === browse ? "w-5 bg-primary" : "w-2 bg-[var(--border-strong)] hover:bg-[var(--muted)]",
+                        t.id === template && i !== browse && "bg-primary/50",
+                      )}
+                    />
+                  ))}
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold">Final Resume Preview</h2>
+                <p className="mt-0.5 text-xs text-subtle">
+                  {selected.name}
+                  {pagesLabel && ` · ${pagesLabel}`}
+                  {appliedCount > 0 && ` · ${appliedCount} AI improvement${appliedCount === 1 ? "" : "s"} applied`}
+                  {edited && " · edited"}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)} disabled={!layout}>
+                  <Eye className="h-3.5 w-3.5" />
+                  Preview Resume
+                </Button>
+                <Button size="sm" variant={editing ? "secondary" : "outline"} onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  {editing ? "Close Editor" : "Edit Content"}
+                </Button>
+                <Button size="sm" variant="gradient" onClick={() => void downloadPdf()} loading={exporting === "pdf"} disabled={!exportReady}>
+                  <Download className="h-3.5 w-3.5" />
+                  {exporting === "pdf" ? "Generating…" : "Download PDF"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={downloadDocx} loading={exporting === "docx"} disabled={!exportReady}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download DOCX
+                </Button>
+              </div>
+            </div>
+
+            {status && (
+              <p role="status" className={cn("mb-3 text-sm", status.kind === "success" ? "text-emerald-400" : "text-red-300")}>
+                {status.text}
+              </p>
+            )}
+            {unsupportedChars.length > 0 && (
+              <p className="mb-3 text-xs text-amber-400">
+                Some characters can&apos;t be shown in the PDF fonts and appear as “?”: {unsupportedChars.join(" ")}. The DOCX keeps them.
+              </p>
+            )}
+
+            {editing && (
+              <div className="mb-4">
+                <ResumeEditor
+                  key={analyzedKey}
+                  value={finalResume}
+                  onChange={(next) => {
+                    setEdited(next);
+                    setStatus(null);
+                  }}
+                  onPendingChange={setEditPending}
+                />
+                {edited && (
+                  <button
+                    type="button"
+                    className="mt-2 text-xs text-subtle underline underline-offset-2 hover:text-muted"
+                    onClick={() => {
+                      setEdited(null);
+                      setEditing(false);
+                    }}
+                  >
+                    Discard my edits
+                  </button>
+                )}
               </div>
             )}
-          </div>
-          <div className="space-y-4">
-            <Card className="flex flex-col items-center p-5">
-              <CardTitle className="mb-4 self-start">ATS analysis</CardTitle>
-              <Gauge value={analysis?.matchScore ?? 0} label="Skills match" />
-              <div className="mt-6 w-full space-y-3">
-                <div>
-                  <div className="mb-1 flex justify-between text-xs">
-                    <span className="text-muted">ATS Score</span>
-                    <span>{analysis?.atsScore ?? 0}</span>
-                  </div>
-                  <Progress value={analysis?.atsScore ?? 0} />
-                </div>
-                <div>
-                  <div className="mb-1 flex justify-between text-xs">
-                    <span className="text-muted">Keyword coverage</span>
-                    <span>{analysis?.keywordCoverage ?? 0}</span>
-                  </div>
-                  <Progress value={analysis?.keywordCoverage ?? 0} />
-                </div>
-              </div>
-            </Card>
-            <Card className="p-5">
-              <CardHeader>
-                <CardTitle>Missing skills</CardTitle>
-              </CardHeader>
-              <div className="flex flex-wrap gap-1.5">
-                {(analysis?.missingKeywords?.length ? analysis.missingKeywords : ["Run analysis to see gaps"]).map((k) => (
-                  <Badge key={k} variant={analysis ? "warning" : "default"}>
-                    {k}
-                  </Badge>
+
+            {layout ? (
+              <div className="space-y-4 rounded-xl bg-black/20 p-3 sm:p-5">
+                {layout.pages.map((p, i) => (
+                  <ResumePageSvg key={i} layout={layout} page={p} title={`Page ${i + 1}`} className="mx-auto block w-full max-w-[760px] shadow-lg" />
                 ))}
               </div>
-            </Card>
-            <Card className="p-5">
-              <CardHeader>
-                <CardTitle>Suggested skills</CardTitle>
-              </CardHeader>
-              <div className="flex flex-wrap gap-1.5">
-                {(analysis?.suggestedSkills?.length ? analysis.suggestedSkills : ["Skills appear after analysis"]).map((k) => (
-                  <Badge key={k} variant={analysis ? "info" : "default"}>
-                    {k}
-                  </Badge>
-                ))}
-              </div>
-            </Card>
-          </div>
-        </div>
+            ) : (
+              <p className="text-sm text-muted">{measurerFailed ? "Preview unavailable. Refresh and try again." : "Preparing preview…"}</p>
+            )}
+          </section>
+        </>
       )}
+
+      {previewOpen &&
+        layout &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4 sm:p-8"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Resume preview"
+            onClick={() => setPreviewOpen(false)}
+          >
+            <div className="mx-auto max-w-[860px] space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-white">
+                  {selected.name} · {pagesLabel}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gradient" onClick={() => void downloadPdf()} loading={exporting === "pdf"} disabled={!exportReady}>
+                    <Download className="h-3.5 w-3.5" />
+                    Download PDF
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPreviewOpen(false)} autoFocus>
+                    <X className="h-3.5 w-3.5" />
+                    Close
+                  </Button>
+                </div>
+              </div>
+              {layout.pages.map((p, i) => (
+                <ResumePageSvg key={i} layout={layout} page={p} title={`Page ${i + 1}`} className="block w-full shadow-2xl" />
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

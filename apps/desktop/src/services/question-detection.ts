@@ -1,13 +1,10 @@
 /**
- * Lightweight question / interview-prompt detection for live auto-answers.
- * Stitches consecutive STT fragments so questions are not cut mid-sentence.
+ * Lightweight question / interview-prompt filtering for live auto-answers.
+ * Turn boundaries come from turn-detector.ts; this decides whether a finished
+ * turn is worth answering (filler, call logistics, duplicates).
  */
 
-import {
-  STITCH_INCOMPLETE_MS,
-  STITCH_WINDOW_MS,
-  looksTruncatedTranscript,
-} from "./speech-capture";
+import { looksTruncatedTranscript } from "./speech-capture";
 
 export type QuestionDecision = {
   accept: boolean;
@@ -25,19 +22,6 @@ const recent: { norm: string; at: number; id: string }[] = [];
 const rolling: { who: string; text: string; at: number }[] = [];
 const processingIds = new Set<string>();
 
-/** In-progress utterance assembly per speaker. */
-const pending: Record<
-  string,
-  {
-    parts: string[];
-    updatedAt: number;
-    audioEndAt?: number;
-    transcribedAt?: number;
-    timer: ReturnType<typeof setTimeout> | null;
-    heldOnce?: boolean;
-  }
-> = {};
-
 const WH =
   /^(what|whats|what's|why|how|when|where|who|whom|which|whose|can|could|would|should|do|does|did|is|are|was|were|will|have|has|had)\b/i;
 
@@ -46,6 +30,14 @@ const INTERVIEW =
 
 const FILLER_ONLY =
   /^(um+|uh+|hmm+|mm+|yeah|yep|yup|ok|okay|right|sure|thanks|thank you|hello|hi|hey|bye|let'?s move on|next question)\.?$/i;
+
+/** Call logistics and rhetorical tags end in "?" but are not interview questions. */
+const NOT_A_QUESTION =
+  /^(can|could) (you|everyone|everybody) (hear|see) (me|us|my screen|the screen|it)\b|^(is|are) (my|the) (screen|audio|mic|microphone|video|camera)\b|^am i (audible|visible|on mute|muted)\b|^are you able to (hear|see) (me|my screen)\b|^(can|shall) (we|i) (start|begin|get started|share my screen)\b|^(is|are) (this|that|everything|we) (ok|okay|fine|good|clear)\b|^(you know|right|okay|ok|correct|isn'?t it|no)\?$|^(how are you( doing)?( today)?|how'?s it going|how is your day( going)?|did you have lunch)[?.!]*$/i;
+
+/** Short follow-ups that only make sense after an earlier answer. */
+const SHORT_FOLLOW_UP =
+  /^(why|why not|how|how so|really|such as|for example|like what|meaning|elaborate|go on|and then|what else)[?.!]*$/i;
 
 const INCOMPLETE_TAIL =
   /\b(and|or|but|the|a|an|to|of|for|with|in|on|at|my|your|our|from|into|using|via|through|by|is|are|was|were)$/i;
@@ -124,15 +116,32 @@ export function getRollingContext(limit = 3): { who: string; text: string }[] {
   return rolling.slice(-limit).map(({ who, text }) => ({ who, text }));
 }
 
+/** Answered questions in this session, sent with each request for follow-up context. */
+const MAX_EXCHANGES = 12;
+const exchanges: { question: string; answer: string }[] = [];
+
+export function rememberExchange(question: string, answer: string) {
+  const q = question.trim().slice(0, MAX_CHARS);
+  const a = answer.trim().slice(0, 1200);
+  if (!q || !a) return;
+  const last = exchanges[exchanges.length - 1];
+  if (last && normalize(last.question) === normalize(q)) {
+    last.answer = a;
+    return;
+  }
+  exchanges.push({ question: q, answer: a });
+  while (exchanges.length > MAX_EXCHANGES) exchanges.shift();
+}
+
+export function getRecentExchanges(): { question: string; answer: string }[] {
+  return exchanges.map((e) => ({ ...e }));
+}
+
 export function clearQuestionMemory() {
   recent.length = 0;
   rolling.length = 0;
+  exchanges.length = 0;
   processingIds.clear();
-  for (const key of Object.keys(pending)) {
-    const bag = pending[key];
-    if (bag?.timer) clearTimeout(bag.timer);
-    delete pending[key];
-  }
 }
 
 export function beginQuestionProcessing(questionId: string): boolean {
@@ -145,8 +154,13 @@ export function endQuestionProcessing(questionId: string) {
   processingIds.delete(questionId);
 }
 
+const FILLER_WORD = /^(um+|uh+|hmm+|mm+|erm|ah+|so|well|like|yeah|yep|ok|okay|right|alright|you|know|i|mean)$/i;
+
 export function isFillerOnly(text: string): boolean {
-  return FILLER_ONLY.test(text.trim());
+  const t = text.trim();
+  if (FILLER_ONLY.test(t)) return true;
+  const words = t.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every((w) => FILLER_WORD.test(w));
 }
 
 export function evaluateQuestion(
@@ -157,22 +171,29 @@ export function evaluateQuestion(
     finalized?: boolean;
     /** Accept interviewer speech that fails WH/INTERVIEW heuristics (System finals). */
     forceSystem?: boolean;
+    /** The turn detector already waited for the end of the sentence. */
+    turnFinalized?: boolean;
   },
 ): QuestionDecision {
   const raw = text.trim().replace(/\s+/g, " ").slice(0, MAX_CHARS);
-  if (raw.length < MIN_CHARS) {
+  const shortFollowUp = exchanges.length > 0 && SHORT_FOLLOW_UP.test(raw);
+  if (raw.length < MIN_CHARS && !shortFollowUp) {
     return { accept: false, question: raw, reason: "too_short" };
   }
-  if (FILLER_ONLY.test(raw)) {
+  if (isFillerOnly(raw)) {
     return { accept: false, question: raw, reason: "filler" };
+  }
+  // Short only: "Can you see my screen and explain this query?" is a real question.
+  if (raw.split(" ").length <= 9 && NOT_A_QUESTION.test(raw)) {
+    return { accept: false, question: raw, reason: "logistics" };
   }
   // After stitch finalization, do not reject for missing "?" (Whisper rarely emits it).
   // forceSystem only relaxes "looks like a question" — never skip truncation checks.
   const forStitch = opts?.finalized === true ? false : true;
-  if (isIncomplete(raw, forStitch) || looksTruncatedTranscript(raw)) {
+  if (!opts?.turnFinalized && !shortFollowUp && (isIncomplete(raw, forStitch) || looksTruncatedTranscript(raw))) {
     return { accept: false, question: raw, reason: "incomplete" };
   }
-  if (!looksLikeQuestion(raw) && !opts?.forceSystem) {
+  if (!looksLikeQuestion(raw) && !opts?.forceSystem && !shortFollowUp) {
     return { accept: false, question: raw, reason: "not_question" };
   }
 
@@ -194,114 +215,4 @@ export function evaluateQuestion(
   while (recent.length > MAX_RECENT) recent.shift();
 
   return { accept: true, question: raw, reason: "ok", questionId };
-}
-
-export type AssembledUtterance = {
-  who: string;
-  text: string;
-  finalized: boolean;
-  audioEndAt?: number;
-  transcribedAt?: number;
-};
-
-/**
- * Merge consecutive STT fragments. Finalize immediately on clear `?` / complete
- * questions; otherwise wait a short stitch window for the rest of the sentence.
- */
-export function assembleUtterance(
-  who: string,
-  text: string,
-  onReady: (utterance: AssembledUtterance) => void,
-  timing?: { audioEndAt?: number; transcribedAt?: number; partial?: boolean },
-): void {
-  const cleaned = text.trim().replace(/\s+/g, " ");
-  if (!cleaned) return;
-
-  const key = who || "Speaker";
-  const now = Date.now();
-  let bag = pending[key];
-  if (!bag || now - bag.updatedAt > STITCH_INCOMPLETE_MS + 500) {
-    if (bag?.timer) clearTimeout(bag.timer);
-    bag = { parts: [], updatedAt: now, timer: null, heldOnce: false };
-    pending[key] = bag;
-  }
-
-  const last = bag.parts[bag.parts.length - 1] || "";
-  if (!last || normalize(cleaned) !== normalize(last)) {
-    if (last && normalize(cleaned).startsWith(normalize(last)) && cleaned.length > last.length) {
-      bag.parts[bag.parts.length - 1] = cleaned;
-    } else if (!last || !normalize(last).includes(normalize(cleaned))) {
-      bag.parts.push(cleaned);
-    }
-  }
-  bag.updatedAt = now;
-  if (timing?.audioEndAt != null) bag.audioEndAt = timing.audioEndAt;
-  if (timing?.transcribedAt != null) bag.transcribedAt = timing.transcribedAt;
-
-  const joined = bag.parts.join(" ").replace(/\s+/g, " ").trim();
-  const complete =
-    joined.endsWith("?") ||
-    (!isIncomplete(joined, true) && looksLikeQuestion(joined) && /[.!]$/.test(joined));
-
-  if (bag.timer) clearTimeout(bag.timer);
-
-  // Partial mid-speech chunks only extend the bag — never fire AI yet.
-  if (timing?.partial) {
-    bag.timer = setTimeout(() => {
-      const current = pending[key];
-      if (!current) return;
-      const finalText = current.parts.join(" ").replace(/\s+/g, " ").trim();
-      const meta = {
-        audioEndAt: current.audioEndAt,
-        transcribedAt: current.transcribedAt,
-      };
-      delete pending[key];
-      if (finalText) {
-        onReady({ who: key, text: finalText, finalized: true, ...meta });
-      }
-    }, STITCH_WINDOW_MS);
-    return;
-  }
-
-  if (complete && joined.length >= MIN_CHARS) {
-    const meta = { audioEndAt: bag.audioEndAt, transcribedAt: bag.transcribedAt };
-    delete pending[key];
-    onReady({ who: key, text: joined, finalized: true, ...meta });
-    return;
-  }
-
-  const waitMs = looksTruncatedTranscript(joined) || isIncomplete(joined, true)
-    ? STITCH_INCOMPLETE_MS
-    : STITCH_WINDOW_MS;
-
-  bag.timer = setTimeout(() => {
-    const current = pending[key];
-    if (!current) return;
-    const finalText = current.parts.join(" ").replace(/\s+/g, " ").trim();
-    const meta = {
-      audioEndAt: current.audioEndAt,
-      transcribedAt: current.transcribedAt,
-    };
-    if (
-      !current.heldOnce &&
-      finalText &&
-      (looksTruncatedTranscript(finalText) || isIncomplete(finalText, true))
-    ) {
-      current.heldOnce = true;
-      current.timer = setTimeout(() => {
-        const again = pending[key];
-        if (!again) return;
-        const text = again.parts.join(" ").replace(/\s+/g, " ").trim();
-        const later = {
-          audioEndAt: again.audioEndAt,
-          transcribedAt: again.transcribedAt,
-        };
-        delete pending[key];
-        if (text) onReady({ who: key, text, finalized: true, ...later });
-      }, STITCH_INCOMPLETE_MS);
-      return;
-    }
-    delete pending[key];
-    if (finalText) onReady({ who: key, text: finalText, finalized: true, ...meta });
-  }, waitMs);
 }

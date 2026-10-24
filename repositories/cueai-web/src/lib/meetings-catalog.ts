@@ -3,7 +3,10 @@
  * Demo catalog content was removed — use /api/meetings (real store) only.
  */
 
+import type { MockInterviewListSummary, MockInterviewPublic } from "@/lib/mock-interview-types";
+
 export type MeetingStatus = "live" | "summary" | "completed" | "incomplete";
+export type MeetingKind = "interview" | "regular" | "mock_interview";
 
 export type MeetingActionItem = {
   id: string;
@@ -33,6 +36,7 @@ export type MeetingAiAnswer = {
   answerHi: string;
   answerTe: string;
   pinned: boolean;
+  status?: "answered" | "unavailable";
 };
 
 export type MeetingRecord = {
@@ -55,6 +59,12 @@ export type MeetingRecord = {
   aiAnswers: MeetingAiAnswer[];
   hasMore?: boolean;
   fullSummaryAvailable?: boolean;
+  kind?: MeetingKind;
+  startedAt?: string;
+  owner?: { name: string; email: string } | null;
+  /** Mock interview fields (kind === "mock_interview"); detail is only present on single-meeting reads. */
+  mockSummary?: MockInterviewListSummary | null;
+  mock?: MockInterviewPublic | null;
   emailSubject: string;
   emailBody: string;
 };

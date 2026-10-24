@@ -69,11 +69,11 @@ export function DesktopTitleBar() {
       >
         <button
           type="button"
-          aria-label="Open companion"
+          aria-label="Show or hide the CueAI overlay"
           className="rounded-lg px-2 py-1.5 text-[11px] text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
           onClick={() => void desktop?.toggleCompanion()}
         >
-          Companion
+          Overlay
         </button>
         <DesktopWindowControls variant="windows" />
       </div>

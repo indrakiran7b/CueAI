@@ -34,6 +34,7 @@ import {
   type MacPermissionsSnapshot,
   type MeetingSession,
 } from "@/lib/desktop";
+import { DESKTOP_FEATURES } from "@/lib/desktop-features";
 import { formatShortcut } from "@/lib/shortcuts";
 
 function companionToggleShortcut() {
@@ -77,53 +78,19 @@ type BridgeStatus = {
 
 type ListenSources = { mic: boolean; systemAudio: boolean };
 
-const featureBase = [
-  {
-    icon: Mic,
-    title: "Mic audio listening",
-    desc: "Toggle microphone capture in the companion header so CueAI can listen to your side of the call.",
-  },
-  {
-    icon: Volume2,
-    title: "System audio listening",
-    desc: "Capture meeting playback through the platform audio service — Windows loopback on Windows, Screen Recording audio on macOS.",
-  },
-  {
-    icon: Camera,
-    title: "Screenshot capture",
-    desc: "Grab a clean full-screen PNG from the companion. The overlay hides briefly so it is not in the shot.",
-  },
-  {
-    icon: Layers,
-    title: "System-wide always-on-top",
-    desc: "Native Electron window floats above Zoom, Meet, Teams, and other apps — not just this browser tab.",
-  },
-  {
-    icon: EyeOff,
-    title: "Invisible in screen share",
-    desc: "Content protection excludes the overlay from capture so only you see CueAI during full-screen share.",
-  },
-  {
-    icon: Shield,
-    title: "Survives closing the page",
-    desc: "Overlay lives in the Desktop process until you hit End Session or Close — closing the website does not dismiss it.",
-  },
-  {
-    icon: Sparkles,
-    title: "Live AI answers",
-    desc: "Transcript, mic indicators, pin/copy/regenerate, presenter mode.",
-  },
-] as const;
-
 function companionFeatures() {
   return [
-    ...featureBase.slice(0, 6),
+    ...DESKTOP_FEATURES,
     {
       icon: Keyboard,
       title: "Global hotkey",
       desc: `Toggle with ${companionToggleShortcut()} without leaving your meeting.`,
     },
-    featureBase[6],
+    {
+      icon: Sparkles,
+      title: "Live AI answers",
+      desc: "Transcript, mic indicators, pin/copy/regenerate, presenter mode.",
+    },
   ];
 }
 
@@ -422,7 +389,7 @@ export default function CompanionPage() {
           Desktop app · system-wide overlay
         </Badge>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          CueAI Desktop Companion
+          CueAI Desktop Overlay
         </h1>
         <p className="mt-2 text-sm text-muted">
           Full requirements — always-on-top over other apps, screen-share privacy, and
@@ -451,7 +418,7 @@ export default function CompanionPage() {
           <div>
             <CardTitle>
               {overlayVisible
-                ? "Desktop Companion running · overlay visible"
+                ? "CueAI Desktop running · overlay visible"
                 : lastResult?.issue
                   ? "Overlay failed to open."
                   : desktopReady
@@ -465,7 +432,7 @@ export default function CompanionPage() {
                   ? overlayVisible
                     ? `Native overlay is on screen. Use ${companionToggleShortcut()} to hide or show it.`
                     : `Open the native system-wide overlay (same window as ${companionToggleShortcut()}).`
-                  : "Start Desktop so the Companion can float above meetings and stay hidden from capture."}
+                  : "Start CueAI Desktop so the overlay can float above meetings and stay hidden from supported capture."}
             </CardDescription>
           </div>
         </CardHeader>
@@ -521,7 +488,7 @@ export default function CompanionPage() {
 
         {lastResult?.mode === "native" && !lastResult.issue && (
           <p className="text-xs text-muted">
-            Native companion opened. It will keep running after this tab closes.
+            Desktop overlay opened. It will keep running after this tab closes.
             Use <kbd className="rounded border border-[var(--border)] px-1">{companionToggleShortcut()}</kbd>{" "}
             or <kbd className="rounded border border-[var(--border)] px-1">{companionToggleAlias()}</kbd> to
             toggle it anytime.
@@ -754,7 +721,7 @@ export default function CompanionPage() {
                 mark: desktopReady ? "✓ Available" : "⚠ Disconnected",
                 desc: desktopReady
                   ? "The overlay process stays up after this page is closed."
-                  : "Start CueAI Desktop to keep the companion running in the background.",
+                  : "Start CueAI Desktop to keep the overlay running in the background.",
                 settings: null,
                 fix: null,
               },

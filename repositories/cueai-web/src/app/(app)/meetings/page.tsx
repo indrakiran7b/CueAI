@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Trash2, Video, Filter } from "lucide-react";
+import { GraduationCap, Search, Trash2, Video, Filter } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,8 +16,19 @@ import { cn } from "@/lib/utils";
 import { MacGlassButton, MacSegmentedControl } from "@/components/mac";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
+import { useAuth } from "@/components/providers/auth-provider";
+import { isAdminUser } from "@/lib/app-access";
 
-type StatusFilter = "all" | "interview" | "regular";
+type StatusFilter = "all" | "interview" | "regular" | "mock_interview";
+
+function mockStatusBadge(m: StoredMeeting) {
+  const s = m.mockSummary;
+  if (!s) return <Badge>Mock interview</Badge>;
+  if (s.overallScore !== null) return <Badge variant="success">Score {s.overallScore}/100</Badge>;
+  if (s.status === "active") return <Badge variant="info">In progress</Badge>;
+  if (s.status === "interrupted") return <Badge variant="warning">Interrupted</Badge>;
+  return <Badge>Results pending</Badge>;
+}
 
 export default function MeetingsPage() {
   const [query, setQuery] = useState("");
@@ -28,6 +39,10 @@ export default function MeetingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [mac, setMac] = useState(false);
+  const { session } = useAuth();
+  const admin = isAdminUser(session?.role);
+  const [scope, setScope] = useState<"mine" | "workspace">("mine");
+  const workspaceView = admin && scope === "workspace";
 
   useEffect(() => {
     setMac(isMacDesktopApp());
@@ -36,7 +51,9 @@ export default function MeetingsPage() {
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/meetings", { cache: "no-store" })
+    void fetch(workspaceView ? "/api/meetings?scope=workspace" : "/api/meetings", {
+      cache: "no-store",
+    })
       .then(async (r) => {
         const data = (await r.json().catch(() => ({}))) as {
           meetings?: StoredMeeting[];
@@ -60,7 +77,7 @@ export default function MeetingsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [workspaceView]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,14 +88,23 @@ export default function MeetingsPage() {
         !q ||
         m.title.toLowerCase().includes(q) ||
         m.tags.some((t) => t.toLowerCase().includes(q)) ||
-        (m.company || "").toLowerCase().includes(q);
-      const matchesKind =
-        statusFilter === "all" ||
-        (statusFilter === "interview" && m.kind === "interview") ||
-        (statusFilter === "regular" && m.kind === "regular");
+        (m.company || "").toLowerCase().includes(q) ||
+        (m.owner?.name || "").toLowerCase().includes(q) ||
+        (m.owner?.email || "").toLowerCase().includes(q);
+      const matchesKind = statusFilter === "all" || m.kind === statusFilter;
       return matchesQuery && matchesKind;
     });
   }, [meetings, query, statusFilter]);
+
+  const hasLegacyRegular = meetings.some((m) => m.kind === "regular");
+  const filterOptions = (
+    [
+      ["all", "All completed"],
+      ["interview", "Interview"],
+      ["mock_interview", "Mock interview"],
+      ["regular", "Regular"],
+    ] as const
+  ).filter(([id]) => id !== "regular" || hasLegacyRegular);
 
   async function handleDelete(meetingId: string) {
     if (deletingId) return;
@@ -105,8 +131,39 @@ export default function MeetingsPage() {
             Meetings
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Completed sessions only. A live meeting appears here after you end it and the summary is saved.
+            {workspaceView
+              ? "Completed sessions from every member of your workspace."
+              : "Completed sessions and mock interviews. A session appears here after you end it and the summary is saved."}
           </p>
+          {admin && (
+            <div role="tablist" aria-label="Meeting scope" className="mt-3 inline-flex rounded-full border border-[var(--border)] p-0.5 text-xs">
+              {(
+                [
+                  ["mine", "My meetings"],
+                  ["workspace", "Workspace"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={scope === id}
+                  onClick={() => {
+                    if (scope === id) return;
+                    setLoaded(false);
+                    setMeetings([]);
+                    setScope(id);
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1 font-medium transition",
+                    scope === id ? "bg-teal-500/15 text-teal-300" : "text-muted hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <Link href={withDesktopParam("/meetings/live")}>
           {mac ? (
@@ -135,11 +192,7 @@ export default function MeetingsPage() {
           <MacSegmentedControl<StatusFilter>
             value={statusFilter}
             onChange={setStatusFilter}
-            segments={[
-              { id: "all", label: "All" },
-              { id: "interview", label: "Interview" },
-              { id: "regular", label: "Regular" },
-            ]}
+            segments={filterOptions.map(([id, label]) => ({ id, label: id === "all" ? "All" : label }))}
           />
         ) : (
           <Button
@@ -154,13 +207,7 @@ export default function MeetingsPage() {
 
       {filtersOpen && (
         <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ["all", "All completed"],
-              ["interview", "Interview"],
-              ["regular", "Regular"],
-            ] as const
-          ).map(([id, label]) => (
+          {filterOptions.map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -194,18 +241,36 @@ export default function MeetingsPage() {
               <Card hover className="h-full p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
-                    <Video className="h-5 w-5" />
+                    {m.kind === "mock_interview" ? <GraduationCap className="h-5 w-5" /> : <Video className="h-5 w-5" />}
                   </div>
-                  <Badge>Summary ready</Badge>
+                  {m.kind === "mock_interview" ? mockStatusBadge(m) : <Badge>Summary ready</Badge>}
                 </div>
                 <h3 className="mt-4 font-semibold tracking-tight">{m.title}</h3>
-                <p className="mt-1 text-sm text-muted">
-                  {formatMeetingWhen(m.startedAt)} · {formatDuration(m.durationSec)}
-                  {m.resumeName ? ` · ${m.resumeName}` : ""}
-                  {Array.isArray(m.answers) && m.answers.length > 0
-                    ? ` · ${m.answers.length} Q&A`
-                    : ""}
-                </p>
+                {m.kind === "mock_interview" && m.mockSummary ? (
+                  <>
+                    <p className="mt-1 text-sm text-muted">
+                      {formatMeetingWhen(m.startedAt)}
+                      {m.durationSec ? ` · ${formatDuration(m.durationSec)}` : ""}
+                      {workspaceView && m.owner ? ` · ${m.owner.name || m.owner.email}` : ""}
+                      {` · ${m.mockSummary.answeredCount} of ${m.mockSummary.questionCount} answered`}
+                    </p>
+                    {m.summary && <p className="mt-2 line-clamp-2 text-sm text-muted">{m.summary}</p>}
+                    {m.mockSummary.improvementAreas.length > 0 && (
+                      <p className="mt-2 line-clamp-2 text-xs text-subtle">
+                        <span className="text-amber-300">Improve:</span> {m.mockSummary.improvementAreas.join(" · ")}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-1 text-sm text-muted">
+                    {formatMeetingWhen(m.startedAt)} · {formatDuration(m.durationSec)}
+                    {workspaceView && m.owner ? ` · ${m.owner.name || m.owner.email}` : ""}
+                    {m.resumeName ? ` · ${m.resumeName}` : ""}
+                    {Array.isArray(m.answers) && m.answers.length > 0
+                      ? ` · ${m.answers.length} Q&A`
+                      : ""}
+                  </p>
+                )}
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {m.tags.map((t) => (
                     <Badge key={t} variant="info">

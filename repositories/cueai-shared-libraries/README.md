@@ -1,3 +1,3 @@
 # cueai-shared-libraries
 
-Shared TypeScript/Python types, licensing client, and utilities.
+Shared TypeScript/Python types and utilities.

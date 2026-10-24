@@ -22,6 +22,11 @@ export class PcmRingBuffer {
     return this.writePos;
   }
 
+  /** Absolute sample index of the oldest sample still held. */
+  get startIndex() {
+    return this.writePos - this.filled;
+  }
+
   push(chunk: Float32Array) {
     for (let i = 0; i < chunk.length; i++) {
       this.buf[this.writePos % this.buf.length] = chunk[i]!;

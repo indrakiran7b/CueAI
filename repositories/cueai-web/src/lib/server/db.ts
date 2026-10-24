@@ -3,6 +3,14 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import type { OnboardingProfile } from "@/lib/onboarding";
+import type { ProfessionalProfile } from "@/lib/professional-profile";
+import type {
+  MockInterviewStatus,
+  MockReport,
+  MockResumeProfile,
+  MockSetup,
+  MockTurn,
+} from "@/lib/mock-interview-types";
 import { hashPassword, verifyPassword } from "@/lib/server/session";
 import {
   DEV_ONLY_BOOTSTRAP_EMAIL,
@@ -25,6 +33,8 @@ export type DbUser = {
   lastActiveAt?: string;
   /** Post-signup questionnaire answers; absent until the user finishes onboarding. */
   onboarding?: OnboardingProfile;
+  /** Settings → Profile professional details; absent until the user saves them. */
+  professionalProfile?: ProfessionalProfile;
   /** Optional billing entitlement. Absent means free. */
   plan?: "free" | "premium";
   /** Stripe Customer id (cus_…). Never expose secret keys. */
@@ -276,8 +286,11 @@ export type DbMeeting = {
   workspaceId: string;
   userId?: string;
   title: string;
-  kind: "interview" | "regular";
-  /** live = active session (hidden from history). completed/summary = history. incomplete = interrupted. */
+  kind: "interview" | "regular" | "mock_interview";
+  /**
+   * live = active session (hidden from history). completed/summary = history. incomplete = interrupted.
+   * Mock interviews are never "live": incomplete while in progress, completed once finished.
+   */
   status: "live" | "summary" | "completed" | "incomplete";
   startedAt: string;
   endedAt?: string;
@@ -298,6 +311,25 @@ export type DbMeeting = {
   transcript: DbMeetingLine[];
   answers: DbMeetingAnswer[];
   summary?: string;
+  /** Idempotency key from the client so retried create requests don't duplicate a session. */
+  clientRequestId?: string;
+  /** Present only when kind === "mock_interview". */
+  mock?: DbMockInterviewData;
+};
+
+export type DbMockInterviewData = {
+  status: MockInterviewStatus;
+  setup: MockSetup;
+  profile: MockResumeProfile;
+  /** Private to the owner; used only to generate questions. Never returned to clients. */
+  resumeText: string;
+  welcome: string;
+  turns: MockTurn[];
+  questionLimit: number;
+  endsAt: string;
+  updatedAt: string;
+  report?: MockReport;
+  reportError?: string;
 };
 
 export type WorkspaceStore = {
@@ -311,6 +343,8 @@ export type WorkspaceStore = {
   /** User BYOK credentials (encrypted). Scoped by userId + workspaceId. */
   userApiCredentials?: DbUserApiCredential[];
   meetings?: DbMeeting[];
+  /** Legacy standalone mock interviews; migrated into meetings on load. */
+  mockInterviews?: unknown[];
   devices?: DbDevice[];
   activeMeetingId?: string | null;
   /**
@@ -440,6 +474,102 @@ async function storeFileMtime(): Promise<number> {
   }
 }
 
+type LegacyMockInterview = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  status: MockInterviewStatus;
+  setup: { jobTitle: string; jobDescription?: string; experienceLevel?: string; durationMin: 10 | 20 | 30; interviewType?: string; resumeName?: string };
+  profile: MockResumeProfile;
+  resumeText: string;
+  welcome: string;
+  turns: MockTurn[];
+  questionLimit: number;
+  startedAt: string;
+  endsAt: string;
+  endedAt?: string;
+  updatedAt: string;
+  report?: Omit<Partial<MockReport>, "improvements"> & { improvements?: { area: string; whyItMatters?: string; howToImprove?: string; exampleAnswer?: string }[] };
+  reportError?: string;
+};
+
+/** Move standalone mock interviews (earlier layout) into meeting records; idempotent. */
+function migrateLegacyMockInterviews(store: WorkspaceStore) {
+  const legacy = (store.mockInterviews || []) as LegacyMockInterview[];
+  if (!legacy.length) return;
+  store.meetings = store.meetings || [];
+  for (const m of legacy) {
+    if (store.meetings.some((x) => x.id === m.id)) continue;
+    const type = m.setup.interviewType === "hr" || m.setup.interviewType === "behavioral" ? "hr_behavioral" : m.setup.interviewType;
+    const difficulty = m.setup.experienceLevel === "fresher" ? "beginner" : m.setup.experienceLevel === "experienced" ? "advanced" : "intermediate";
+    const score = m.report?.overallScore;
+    const report: MockReport | undefined =
+      m.report && typeof score === "number"
+        ? {
+            overallScore: score,
+            assessmentLabel: m.report.assessmentLabel || "AI practice assessment — not an official evaluation",
+            readiness: score >= 80 ? "ready" : score >= 60 ? "nearly_ready" : score >= 40 ? "needs_practice" : "not_ready",
+            readinessNote: "",
+            summary: m.report.summary || "",
+            categories: m.report.categories || [],
+            strengths: m.report.strengths || [],
+            improvements: (m.report.improvements || []).map((i) => ({
+              area: i.area,
+              whyItMatters: i.whyItMatters || "",
+              whatToPractice: i.howToImprove || "",
+              exercise: "",
+              nextSteps: "",
+            })),
+            practicePlan: m.report.practicePlan || [],
+            practiceQuestions: [],
+            questionFeedback: [],
+            generatedAt: m.report.generatedAt || m.updatedAt,
+            provider: m.report.provider || "",
+            model: m.report.model || "",
+          }
+        : undefined;
+    const ended = m.endedAt || (m.status !== "active" ? m.updatedAt : undefined);
+    store.meetings.unshift({
+      id: m.id,
+      workspaceId: m.workspaceId,
+      userId: m.userId,
+      title: `Mock Interview · ${m.setup.jobTitle}`,
+      kind: "mock_interview",
+      status: report || m.status === "completed" ? "completed" : "incomplete",
+      startedAt: m.startedAt,
+      endedAt: ended,
+      durationSec: ended ? Math.max(0, Math.round((Date.parse(ended) - Date.parse(m.startedAt)) / 1000)) : 0,
+      attendees: 1,
+      tags: ["Mock Interview"],
+      resumeName: m.setup.resumeName,
+      transcript: [],
+      answers: [],
+      summary: report?.summary,
+      mock: {
+        status: m.status,
+        setup: {
+          jobTitle: m.setup.jobTitle,
+          jobDescription: m.setup.jobDescription,
+          difficulty,
+          durationMin: m.setup.durationMin,
+          interviewType: (["technical", "hr_behavioral", "coding", "project", "mixed"].includes(type || "") ? type : "mixed") as MockSetup["interviewType"],
+          resumeName: m.setup.resumeName,
+        },
+        profile: m.profile,
+        resumeText: m.resumeText,
+        welcome: m.welcome,
+        turns: m.turns,
+        questionLimit: m.questionLimit,
+        endsAt: m.endsAt,
+        updatedAt: m.updatedAt,
+        report,
+        reportError: m.reportError,
+      },
+    });
+  }
+  delete store.mockInterviews;
+}
+
 async function ensureLoaded(): Promise<WorkspaceStore> {
   const mtime = await storeFileMtime();
   if (memory && mtime && loadedMtimeMs && mtime <= loadedMtimeMs) {
@@ -463,6 +593,7 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     for (const device of memory.devices) {
       if (!device.updatedAt) device.updatedAt = device.lastVerifiedAt || device.registeredAt;
     }
+    migrateLegacyMockInterviews(memory);
     assertNoDefaultBootstrapInProduction(memory);
     return memory;
   } catch (err) {

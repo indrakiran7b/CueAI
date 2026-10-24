@@ -1,5 +1,5 @@
 /**
- * Live answers from the CueAI web API (Groq primary, Gemini fallback).
+ * Live answers from the CueAI web API (OpenAI primary, Groq then Gemini fallback on the server).
  * Supports streaming SSE for ~2–3s overlay latency targets.
  */
 
@@ -12,6 +12,7 @@ export type LiveAnswer = {
   answer: string;
   confidence: number;
   model: string;
+  provider?: string;
 };
 
 let apiBase = "http://127.0.0.1:3000";
@@ -65,11 +66,16 @@ export async function probeLiveAnswerHealth(): Promise<LiveAnswerHealth> {
 }
 
 export class LiveAnswerUnavailable extends Error {
-  constructor(message: string) {
+  /** The server already ran its full provider fallback chain for this question. */
+  serverReported: boolean;
+  constructor(message: string, serverReported = false) {
     super(message);
     this.name = "LiveAnswerUnavailable";
+    this.serverReported = serverReported;
   }
 }
+
+export type LiveAnswerMeta = { responseType?: string; isFollowUp?: boolean; contextMs?: number };
 
 async function refreshSessionContext() {
   const now = Date.now();
@@ -182,7 +188,10 @@ export async function requestLiveAnswer(
 export type StreamLiveAnswerHandlers = {
   onToken?: (token: string, full: string) => void;
   onConnected?: () => void;
+  onMeta?: (meta: LiveAnswerMeta) => void;
   signal?: AbortSignal;
+  /** Earlier answered questions in this session (bounded by the caller). */
+  history?: { question: string; answer: string }[];
 };
 
 function needsLiveKnowledge(question: string) {
@@ -219,7 +228,8 @@ export async function requestLiveAnswerStream(
       signal: handlers.signal,
       body: JSON.stringify({
         prompt,
-        transcript: transcript.slice(-3),
+        transcript: transcript.slice(-6),
+        history: (handlers.history || []).slice(-12),
         sessionContext,
         stream: true,
         mode: "answer",
@@ -276,6 +286,7 @@ export async function requestLiveAnswerStream(
   let full = "";
   let confidence = 0.7;
   let model = "groq";
+  let provider: string | undefined;
   let sawFirst = false;
 
   while (true) {
@@ -298,9 +309,20 @@ export async function requestLiveAnswerStream(
           model?: string;
           error?: string;
           provider?: string;
+          responseType?: string;
+          isFollowUp?: boolean;
+          contextMs?: number;
         };
         if (evt.type === "error") {
-          throw new LiveAnswerUnavailable(evt.error || "Stream failed.");
+          throw new LiveAnswerUnavailable(evt.error || "Stream failed.", true);
+        }
+        if (evt.type === "meta") {
+          handlers.onMeta?.({
+            responseType: evt.responseType,
+            isFollowUp: evt.isFollowUp,
+            contextMs: typeof evt.contextMs === "number" ? evt.contextMs : undefined,
+          });
+          continue;
         }
         if (evt.type === "token" && evt.text) {
           full += evt.text;
@@ -317,8 +339,9 @@ export async function requestLiveAnswerStream(
           if (evt.answer) full = evt.answer;
           if (typeof evt.confidence === "number") confidence = evt.confidence;
           if (evt.model) model = evt.model;
-          if (evt.provider === "gemini") {
-            pipelineLog("fallback", "Answer served via Gemini fallback");
+          if (evt.provider) provider = evt.provider;
+          if (evt.provider && evt.provider !== "openai") {
+            pipelineLog("fallback", `Answer served via ${evt.provider}`);
           }
         }
       } catch (err) {
@@ -333,5 +356,5 @@ export async function requestLiveAnswerStream(
 
   latency.mark("answerVisible");
   latency.report("stream_answer");
-  return { answer: full.trim(), confidence, model };
+  return { answer: full.trim(), confidence, model, provider };
 }

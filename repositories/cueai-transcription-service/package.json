@@ -2,7 +2,11 @@
   "name": "@cueai/transcription-service",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "test": "npx tsx --test scripts/test-whisper-filter.mts"
+  },
   "exports": {
-    "./routes/transcribe": "./src/routes/transcribe.ts"
+    "./routes/transcribe": "./src/routes/transcribe.ts",
+    "./whisper-filter": "./src/whisper-filter.ts"
   }
 }

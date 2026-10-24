@@ -65,11 +65,32 @@ export class LiveAnswerUnavailable extends Error {
   }
 }
 
-async function loadSessionContext() {
-  const now = Date.now();
-  if (cachedSessionContext && now - cachedSessionAt < SESSION_CACHE_MS) {
-    return cachedSessionContext;
+let sessionContextInFlight: Promise<string> | null = null;
+
+/** Warm the briefing cache when a live session starts so the first answer does not wait on it. */
+export function prefetchSessionContext(force = false) {
+  if (force) {
+    cachedSessionContext = "";
+    cachedSessionAt = 0;
   }
+  void loadSessionContext();
+}
+
+/** Stale-while-revalidate: once loaded, answers never wait on the briefing fetch again. */
+async function loadSessionContext(): Promise<string> {
+  const now = Date.now();
+  if (cachedSessionAt && now - cachedSessionAt < SESSION_CACHE_MS) return cachedSessionContext;
+  if (!sessionContextInFlight) {
+    sessionContextInFlight = fetchSessionContext().finally(() => {
+      sessionContextInFlight = null;
+    });
+  }
+  if (cachedSessionAt) return cachedSessionContext;
+  return sessionContextInFlight;
+}
+
+async function fetchSessionContext(): Promise<string> {
+  const now = Date.now();
   try {
     const res = await fetch(`${apiBase}/api/live/briefing`, {
       cache: "no-store",
@@ -161,7 +182,16 @@ export async function requestLiveAnswer(
 export type StreamLiveAnswerHandlers = {
   onToken?: (token: string, full: string) => void;
   signal?: AbortSignal;
+  /** Earlier question/answer pairs from this session, oldest first. */
+  history?: { question: string; answer: string }[];
+  /** The transcript was flagged low-confidence by STT. */
+  uncertain?: boolean;
 };
+
+/** No first token within this window means the provider is stuck; fail so the caller can recover. */
+const FIRST_TOKEN_TIMEOUT_MS = 12_000;
+/** Hard cap for a whole streamed answer. */
+const STREAM_TOTAL_TIMEOUT_MS = 45_000;
 
 function needsLiveKnowledge(question: string) {
   const q = question.toLowerCase();
@@ -183,7 +213,40 @@ export async function requestLiveAnswerStream(
   latency.mark("aiRequest");
   pipelineLog("ai", "Sending question", { chars: prompt.length });
 
-  const sessionContext = await loadSessionContext();
+  const [sessionContext, authHeaders] = await Promise.all([loadSessionContext(), deviceAuthHeaders()]);
+  const ctl = new AbortController();
+  let timeoutReason = "";
+  const abortFromCaller = () => ctl.abort();
+  handlers.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  if (handlers.signal?.aborted) ctl.abort();
+  let firstTokenTimer: number | null = window.setTimeout(() => {
+    timeoutReason = "The AI provider did not respond in time.";
+    ctl.abort();
+  }, FIRST_TOKEN_TIMEOUT_MS);
+  const totalTimer = window.setTimeout(() => {
+    timeoutReason = "The answer took too long and was stopped.";
+    ctl.abort();
+  }, STREAM_TOTAL_TIMEOUT_MS);
+  const cleanup = () => {
+    if (firstTokenTimer != null) window.clearTimeout(firstTokenTimer);
+    firstTokenTimer = null;
+    window.clearTimeout(totalTimer);
+    handlers.signal?.removeEventListener("abort", abortFromCaller);
+  };
+
+  try {
+    return await streamAnswer();
+  } catch (err) {
+    if (timeoutReason && !handlers.signal?.aborted) {
+      pipelineLog("ai", "Answer timed out", { reason: timeoutReason });
+      throw new LiveAnswerUnavailable(timeoutReason);
+    }
+    throw err;
+  } finally {
+    cleanup();
+  }
+
+  async function streamAnswer(): Promise<LiveAnswer> {
   let res: Response;
   try {
     res = await fetch(`${apiBase}/api/live/answer`, {
@@ -191,12 +254,14 @@ export async function requestLiveAnswerStream(
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        ...(await deviceAuthHeaders()),
+        ...authHeaders,
       },
-      signal: handlers.signal,
+      signal: ctl.signal,
       body: JSON.stringify({
         prompt,
-        transcript: transcript.slice(-3),
+        transcript: transcript.slice(-6),
+        history: handlers.history?.length ? handlers.history : undefined,
+        uncertain: handlers.uncertain || undefined,
         sessionContext,
         stream: true,
         mode: "answer",
@@ -204,7 +269,7 @@ export async function requestLiveAnswerStream(
       }),
     });
   } catch (err) {
-    if (handlers.signal?.aborted) throw err;
+    if (ctl.signal.aborted) throw err;
     throw new LiveAnswerUnavailable("CueAI server unreachable. Is the web app running?");
   }
 
@@ -275,6 +340,8 @@ export async function requestLiveAnswerStream(
           full += evt.text;
           if (!sawFirst) {
             sawFirst = true;
+            if (firstTokenTimer != null) window.clearTimeout(firstTokenTimer);
+            firstTokenTimer = null;
             latency.mark("firstToken");
             pipelineLog("response", "First token received", {
               ms: Math.round((latency.marks.firstToken || 0) - (latency.marks.aiRequest || 0)),
@@ -303,4 +370,5 @@ export async function requestLiveAnswerStream(
   latency.mark("answerVisible");
   latency.report("stream_answer");
   return { answer: full.trim(), confidence, model };
+  }
 }

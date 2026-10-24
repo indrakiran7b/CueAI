@@ -21,7 +21,7 @@ export function setOverlayCaptureProtection(
       requested: enabled,
       applied: false,
       supported: false,
-      message: "Companion window unavailable",
+      message: "Overlay window unavailable",
     };
   }
 

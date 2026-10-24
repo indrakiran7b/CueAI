@@ -66,9 +66,10 @@ export function listBillingPlans(): BillingPlanDefinition[] {
       currency: "usd",
       features: [
         "Dashboard & meetings",
-        "Live Session",
-        "Desktop Companion",
-        "Up to 5 Q&A per meeting summary",
+        "Live Session with live audio assistance",
+        "Desktop overlay (Windows & macOS)",
+        "Complete meeting Q&A summaries",
+        "AI Mock Interview practice",
       ],
     },
     {
@@ -88,7 +89,7 @@ export function listBillingPlans(): BillingPlanDefinition[] {
       highlighted: true,
       features: [
         "Everything in Free",
-        "Complete meeting Q&A",
+        "Full meeting transcripts",
         "Full meeting insights",
         "Priority AI responses",
       ],
@@ -108,7 +109,7 @@ export function listBillingPlans(): BillingPlanDefinition[] {
       highlighted: true,
       features: [
         "Everything in Free",
-        "Complete meeting Q&A",
+        "Full meeting transcripts",
         "Full meeting insights",
         "Priority AI responses",
       ],

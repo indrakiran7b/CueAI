@@ -16,15 +16,16 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { BillingPanel } from "@/components/billing/billing-panel";
 import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preferences";
 import { PersonalizationCard } from "@/components/settings/personalization-card";
+import { ProfileSettings } from "@/components/settings/profile-settings";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
-import { deleteAccountLocal, updateSessionProfile } from "@/lib/auth";
+import { deleteAccountLocal } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
 import { cn } from "@/lib/utils";
 import { CUEAI_SHORTCUTS, formatShortcut } from "@/lib/shortcuts";
@@ -49,11 +50,6 @@ export default function SettingsPage() {
   const { session, refresh, logout } = useAuth();
   const admin = isAdminUser(session?.role);
   const visibleSections = sections.filter((item) => admin || item.id !== "workspace");
-  const [name, setName] = useState(session?.name || "");
-  const [email, setEmail] = useState(session?.email || "");
-  const [role, setRole] = useState(() =>
-    typeof window !== "undefined" ? localStorage.getItem("cueai-role") || "" : ""
-  );
   const [workspace, setWorkspace] = useState(session?.workspace || "");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [shortcutRows, setShortcutRows] = useState(() =>
@@ -82,8 +78,6 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    setName(session?.name || "");
-    setEmail(session?.email || "");
     setWorkspace(session?.workspace || "");
   }, [session]);
 
@@ -111,13 +105,6 @@ export default function SettingsPage() {
       const next = id === "profile" ? "/settings" : `/settings#${id}`;
       window.history.replaceState(null, "", next);
     }
-  }
-
-  function saveProfile() {
-    updateSessionProfile({ name, email });
-    if (role.trim()) localStorage.setItem("cueai-role", role.trim());
-    void refresh();
-    setSaveMsg("Profile saved.");
   }
 
   async function saveWorkspace() {
@@ -180,35 +167,7 @@ export default function SettingsPage() {
       </aside>
 
       <div className="min-w-0 flex-1 space-y-4">
-        {section === "profile" && (
-          <Card className="space-y-4 p-6">
-            <CardHeader>
-              <div>
-                <CardTitle>Profile</CardTitle>
-                <CardDescription>Your public workspace identity</CardDescription>
-              </div>
-            </CardHeader>
-            <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input
-              label="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-            />
-            <Input
-              label="Role"
-              placeholder="Your role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            />
-            <Button variant="primary" onClick={saveProfile}>
-              Save changes
-            </Button>
-            {saveMsg && section === "profile" && (
-              <p className="text-xs text-teal-300">{saveMsg}</p>
-            )}
-          </Card>
-        )}
+        {section === "profile" && <ProfileSettings />}
 
         {section === "profile" && <PersonalizationCard />}
 

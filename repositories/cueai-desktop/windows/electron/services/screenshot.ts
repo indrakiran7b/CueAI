@@ -65,7 +65,7 @@ function classifyWindow(win: BrowserWindow, companion: BrowserWindow | null): Wi
   if (companion && win.id === companion.id) return "companion";
   try {
     const url = win.webContents.getURL() || "";
-    if (url.includes("15174") || win.getTitle() === "CueAI Companion") return "companion";
+    if (url.includes("15174") || win.getTitle() === "CueAI Overlay") return "companion";
   } catch {
     // ignore
   }

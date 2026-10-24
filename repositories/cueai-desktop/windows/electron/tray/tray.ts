@@ -43,11 +43,11 @@ export function createTray(getMainWindow: () => BrowserWindow | null) {
     },
     { type: "separator" },
     {
-      label: "Open Companion",
+      label: "Open Overlay",
       click: () => showCompanion(),
     },
     {
-      label: "Toggle Companion",
+      label: "Show/Hide Overlay",
       accelerator: "CommandOrControl+Shift+Space",
       click: () => toggleCompanion(),
     },

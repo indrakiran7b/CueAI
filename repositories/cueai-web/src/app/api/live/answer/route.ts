@@ -5,10 +5,21 @@ import {
   clampConfidence,
   inferMode,
   LIVE_ANSWER_MAX_TOKENS,
+  LIVE_HISTORY_MAX,
   LIVE_TRANSCRIPT_WINDOW,
   type LiveAnswerMode,
+  type LiveExchange,
   type LiveTranscriptLine,
 } from "@/lib/live-answer";
+import { analyzeQuestion, describeAnalysis, type QuestionAnalysis } from "@/lib/live-question";
+import { groundingNotes, splitBriefing } from "@/lib/live-grounding";
+import { guardLiveAnswer } from "@/lib/live-answer-guard";
+import {
+  LiveAnswerStreamError,
+  streamLiveAnswer,
+  type LiveStreamResult,
+} from "@/lib/server/live-answer-providers";
+import { resolveOpenAiApiKey } from "@/lib/server/openai";
 import { requireAuthOrDevice, upstreamSessionCookieHeader } from "@/lib/server/api-auth";
 import {
   GeminiError,
@@ -16,13 +27,7 @@ import {
   resolveGeminiCredentials,
   type GeminiJsonSchema,
 } from "@/lib/server/gemini";
-import {
-  GroqError,
-  generateGroqText,
-  isRetryableGroqStatus,
-  resolveGroqApiKey,
-  streamGroqText,
-} from "@/lib/server/groq";
+import { GroqError, resolveGroqApiKey } from "@/lib/server/groq";
 import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
 import {
   forceLiveAnswerLocal,
@@ -94,6 +99,154 @@ function parseTranscript(input: unknown): LiveTranscriptLine[] {
     .filter((line) => line.text.length > 0);
 }
 
+function parseHistory(input: unknown): LiveExchange[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .slice(-LIVE_HISTORY_MAX)
+    .map((row) => {
+      const obj = (row || {}) as { question?: unknown; answer?: unknown };
+      return {
+        question: String(obj.question || "").trim().slice(0, 600),
+        answer: String(obj.answer || "").trim().slice(0, 1200),
+      };
+    })
+    .filter((h) => h.question.length > 0);
+}
+
+/** Optional context must never hold the first token hostage. */
+const CONTEXT_BUDGET_MS = Math.max(
+  200,
+  Number(process.env.LIVE_CONTEXT_BUDGET_MS || 900) || 900,
+);
+
+function withBudget<T>(work: Promise<T>, fallback: T, ms = CONTEXT_BUDGET_MS): Promise<T> {
+  return Promise.race([
+    work.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+type LiveContext = {
+  sessionContext: string;
+  profileContext: string;
+  knowledgeContext: string;
+  history: LiveExchange[];
+  meetingId: string | null;
+  knowledgeMeta: { knowledgeUsed: boolean; sourceType: string; sources: unknown[] };
+};
+
+/**
+ * Gather briefing, profile, meeting history and KB in parallel for this session only.
+ * Personal context is fetched only when the question needs it.
+ */
+async function gatherLiveContext(
+  session: NonNullable<Awaited<ReturnType<typeof requireAuthOrDevice>>["session"]>,
+  input: {
+    prompt: string;
+    analysis: QuestionAnalysis;
+    sessionContext: string;
+    history: LiveExchange[];
+    skipKnowledge: boolean;
+    kbMaxChars: number;
+    /** Test CueAI: never borrow questions from (or attach to) a live meeting. */
+    isTest: boolean;
+  },
+): Promise<LiveContext> {
+  const out: LiveContext = {
+    sessionContext: input.sessionContext,
+    profileContext: "",
+    knowledgeContext: "",
+    history: input.history,
+    meetingId: null,
+    knowledgeMeta: { knowledgeUsed: false, sourceType: "general_ai", sources: [] },
+  };
+  const { needsLiveKnowledge, retrieveKnowledgeForMeeting } = await import(
+    "@/lib/server/knowledge-retrieve"
+  );
+  const wantKb = !input.skipKnowledge && needsLiveKnowledge(input.prompt);
+  const wantPersonal = input.analysis.needsPersonalContext;
+  const wantBriefing =
+    wantKb || !input.history.length || (wantPersonal && !input.sessionContext.includes("CANDIDATE RESUME"));
+
+  const profileTask = wantPersonal
+    ? import("@/lib/server/user-profile").then((m) => m.getProfileContext(session.userId, "full"))
+    : Promise.resolve("");
+
+  const briefingTask = wantBriefing
+    ? (async () => {
+        const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
+        const resolved = await resolveAnswerBriefing(session);
+        out.meetingId = input.isTest ? null : resolved.meeting?.id || null;
+        if (!input.isTest && !input.history.length && resolved.meeting?.answers?.length) {
+          out.history = resolved.meeting.answers
+            .filter((a) => a.prompt?.trim())
+            .slice(-LIVE_HISTORY_MAX)
+            .map((a) => ({ question: a.prompt, answer: a.answer || "" }));
+        }
+        if (wantPersonal && !input.sessionContext.includes("CANDIDATE RESUME")) {
+          const { describeLiveSessionContext } = await import("@/lib/live-session-config");
+          const fromStore = describeLiveSessionContext({
+            kind: resolved.briefing.kind === "regular" ? "regular" : "interview",
+            company: resolved.briefing.company,
+            jobDescription: resolved.briefing.jobDescription,
+            jobLink: resolved.briefing.jobLink,
+            resumeName: resolved.briefing.resumeName,
+            resumeText: resolved.briefing.resumeText,
+            callTitle: resolved.briefing.callTitle,
+            description: resolved.briefing.description,
+            documentScope: "all",
+            guidance: "balanced",
+            startMode: "private",
+            autoAnswer: true,
+          });
+          if (fromStore.includes("CANDIDATE RESUME") || !out.sessionContext) {
+            out.sessionContext = fromStore;
+          }
+        }
+        if (wantKb) {
+          const kb = await retrieveKnowledgeForMeeting(input.prompt, {
+            workspaceId: session.workspaceId,
+            meetingId: out.meetingId || undefined,
+            documentIds: resolved.briefing.documentIds,
+            includeWorkspace: true,
+            maxChars: input.kbMaxChars,
+          });
+          out.knowledgeContext = kb.context;
+          out.knowledgeMeta = {
+            knowledgeUsed: kb.knowledgeUsed,
+            sourceType: kb.sourceType,
+            sources: kb.sources.slice(0, 3),
+          };
+        }
+      })()
+    : Promise.resolve();
+
+  const [profile] = await Promise.all([
+    withBudget(profileTask, ""),
+    withBudget(briefingTask, undefined),
+  ]);
+  out.profileContext = profile;
+  return out;
+}
+
+/** Everything an answer may legitimately draw facts from; used to check personal claims. */
+function evidenceText(parts: { sessionContext: string; profileContext: string; knowledgeContext: string; history: LiveExchange[]; transcript: LiveTranscriptLine[] }) {
+  return [
+    parts.sessionContext,
+    parts.profileContext,
+    parts.knowledgeContext,
+    ...parts.history.map((h) => h.answer),
+    ...parts.transcript.map((l) => l.text),
+  ].join("\n");
+}
+
+function errorCategory(result: LiveStreamResult | null, attempts: { provider: string; reason?: string }[]) {
+  return (result?.attempts || attempts)
+    .filter((a) => a.reason)
+    .map((a) => `${a.provider}:${a.reason}`)
+    .join(",");
+}
+
 export async function POST(request: NextRequest) {
   const { error, session } = await requireAuthOrDevice(request);
   if (error || !session) {
@@ -130,7 +283,7 @@ export async function POST(request: NextRequest) {
       return new Response(proxied.response.body, { status: proxied.response.status, headers });
     }
     const local = localProvidersConfigured();
-    if (!local.groq && !local.gemini) {
+    if (!local.openai && !local.groq && !local.gemini) {
       console.error("live_answer_upstream_unavailable", {
         requestId,
         reason: proxied.error,
@@ -173,8 +326,12 @@ export async function POST(request: NextRequest) {
         : groqKey;
   const byokGroqModel =
     userByok?.provider === "groq" ? userByok.model : undefined;
+  // A user's own key is used alone; server keys are the default chain.
+  const effectiveOpenAiKey =
+    userByok?.provider === "openai" ? userByok.apiKey : userByok ? "" : resolveOpenAiApiKey();
+  const chainGemini = userByok ? null : credentials;
 
-  if (!userByok && !effectiveGroqKey && !credentials) {
+  if (!userByok && !effectiveOpenAiKey && !effectiveGroqKey && !credentials) {
     return json(
       {
         error: "AI provider is not configured.",
@@ -194,6 +351,9 @@ export async function POST(request: NextRequest) {
           image?: unknown;
           stream?: unknown;
           skipKnowledge?: unknown;
+          history?: unknown;
+          uncertain?: unknown;
+          test?: unknown;
         };
       } catch {
         return null;
@@ -206,6 +366,7 @@ export async function POST(request: NextRequest) {
     }
 
     const wantStream = body?.stream === true;
+    const isTest = body?.test === true;
     const transcript = parseTranscript(body?.transcript).slice(-LIVE_TRANSCRIPT_WINDOW);
     const mode: LiveAnswerMode =
       typeof body?.mode === "string" &&
@@ -220,46 +381,41 @@ export async function POST(request: NextRequest) {
     let hasResume = sessionContext.includes("CANDIDATE RESUME");
     let profileContext = "";
 
-    if (wantStream && effectiveGroqKey && !inlineImage) {
-      let knowledgeContext = "";
-      let knowledgeMeta: {
-        knowledgeUsed: boolean;
-        sourceType: string;
-        sources: unknown[];
-      } = { knowledgeUsed: false, sourceType: "general_ai", sources: [] };
-      try {
-        const { needsLiveKnowledge, retrieveKnowledgeForMeeting } = await import(
-          "@/lib/server/knowledge-retrieve"
-        );
-        if (body?.skipKnowledge !== true && needsLiveKnowledge(prompt)) {
-          const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-          const resolved = await resolveAnswerBriefing(session);
-          const kb = await retrieveKnowledgeForMeeting(prompt, {
-            workspaceId: session.workspaceId,
-            meetingId: resolved.meeting?.id,
-            documentIds: resolved.briefing.documentIds,
-            includeWorkspace: true,
-            maxChars: 700,
-          });
-          knowledgeContext = kb.context;
-          knowledgeMeta = {
-            knowledgeUsed: kb.knowledgeUsed,
-            sourceType: kb.sourceType,
-            sources: kb.sources.slice(0, 3),
-          };
-        }
-      } catch {
-        // KB is optional for latency.
-      }
+    const history = parseHistory(body?.history);
+    const analysis = analyzeQuestion(prompt, {
+      history,
+      transcript,
+      uncertain: body?.uncertain === true,
+    });
 
-      const system = buildSystemInstruction("", Boolean(sessionContext));
+    if (wantStream && !inlineImage && (userByok || effectiveOpenAiKey || effectiveGroqKey)) {
+      const contextStarted = Date.now();
+      const ctx = await gatherLiveContext(session, {
+        prompt,
+        analysis,
+        sessionContext,
+        history,
+        skipKnowledge: body?.skipKnowledge === true,
+        kbMaxChars: 700,
+        isTest,
+      });
+      const contextMs = Date.now() - contextStarted;
+
+      const system = buildSystemInstruction(
+        ctx.profileContext,
+        Boolean(ctx.sessionContext) || Boolean(ctx.profileContext),
+      );
       const userPrompt = buildUserPrompt({
         prompt,
         transcript,
         mode: mode === "screen" ? "answer" : mode,
-        sessionContext: sessionContext.slice(0, 4500),
-        knowledgeContext,
+        sessionContext: ctx.sessionContext.slice(0, 4500),
+        knowledgeContext: ctx.knowledgeContext,
+        history: ctx.history,
+        analysis: describeAnalysis(analysis, ctx.history),
+        grounding: groundingNotes(prompt, analysis, splitBriefing(ctx.sessionContext, ctx.profileContext)),
       });
+      const evidence = evidenceText({ ...ctx, transcript });
       const encoder = new TextEncoder();
       const streamStarted = Date.now();
       const stream = new ReadableStream<Uint8Array>({
@@ -267,40 +423,81 @@ export async function POST(request: NextRequest) {
           const send = (payload: unknown) => {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
           };
-          let tokensEmitted = false;
+          send({
+            type: "meta",
+            requestId,
+            responseType: analysis.responseType,
+            isFollowUp: analysis.isFollowUp,
+            contextMs,
+          });
           let firstTokenAt = 0;
+          let result: Omit<LiveStreamResult, "provider"> & { provider: string };
+          const answerPrompt = `${userPrompt}\n\nReply with the speakable answer only. No JSON. No preamble.`;
+          const onToken = (token: string) => {
+            if (!firstTokenAt) firstTokenAt = Date.now();
+            send({ type: "token", text: token });
+          };
           try {
-            const result = await streamGroqText({
-              system,
-              prompt: `${userPrompt}\n\nReply with the speakable interview answer only. No JSON. No preamble. Medium depth — not a one-liner.`,
-              temperature: 0.35,
-              maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-              signal: request.signal,
-              onToken: (token) => {
-                if (!tokensEmitted) firstTokenAt = Date.now();
-                tokensEmitted = true;
-                send({ type: "token", text: token });
-              },
-              apiKey: effectiveGroqKey,
-              model: byokGroqModel,
-            });
+            if (userByok) {
+              // The user's saved key is used alone, with the provider, model and endpoint chosen in Settings.
+              const { streamWithCredential } = await import("@/lib/server/llm-generate");
+              const r = await streamWithCredential(
+                userByok,
+                {
+                  system,
+                  prompt: answerPrompt,
+                  temperature: 0.3,
+                  maxOutputTokens: analysis.maxTokens,
+                  signal: request.signal,
+                },
+                onToken,
+              );
+              result = { ...r, attempts: [] };
+            } else {
+              result = await streamLiveAnswer({
+                system,
+                prompt: answerPrompt,
+                maxTokens: analysis.maxTokens,
+                complexity: analysis.complexity,
+                temperature: 0.3,
+                signal: request.signal,
+                openAiKey: effectiveOpenAiKey,
+                groqKey: effectiveGroqKey,
+                groqModel: byokGroqModel,
+                gemini: chainGemini,
+                onToken,
+              });
+            }
+            const guarded = guardLiveAnswer(result.text, { analysis, context: evidence });
             console.info("live_answer_stream", {
               requestId,
-              provider: "groq",
+              provider: result.provider,
+              model: result.model,
+              source: userByok ? "user" : "server",
+              responseType: analysis.responseType,
+              category: analysis.category,
+              followUp: analysis.isFollowUp,
+              contextMs,
               ttftMs: firstTokenAt ? firstTokenAt - streamStarted : -1,
               totalMs: Date.now() - streamStarted,
+              fallbacks: errorCategory(result as LiveStreamResult, []),
+              guard: guarded.changes.join(",") || undefined,
+              validation: guarded.validationStatus,
             });
             send({
               type: "done",
-              answer: result.text,
+              answer: guarded.answer,
+              validationStatus: guarded.validationStatus,
               confidence: 0.78,
               model: result.model,
-              provider: "groq",
+              provider: result.provider,
               requestId,
-              knowledgeUsed: knowledgeMeta.knowledgeUsed,
-              sourceType: knowledgeMeta.sourceType,
-              sources: knowledgeMeta.sources,
+              responseType: analysis.responseType,
+              knowledgeUsed: ctx.knowledgeMeta.knowledgeUsed,
+              sourceType: ctx.knowledgeMeta.sourceType,
+              sources: ctx.knowledgeMeta.sources,
             });
+            const done = { ...result, text: guarded.answer };
             // Usage / history are best-effort and must not delay tokens.
             void (async () => {
               try {
@@ -309,22 +506,22 @@ export async function POST(request: NextRequest) {
                 const { getActiveMeetingForSession, appendMeetingExchange } = await import(
                   "@/lib/server/meetings"
                 );
-                const total = Math.max(1, result.inputTokens + result.outputTokens);
+                const total = Math.max(1, done.inputTokens + done.outputTokens);
                 await recordUsageEvent(session, {
                   type: "tokens",
                   quantity: total,
-                  inputTokens: result.inputTokens,
-                  outputTokens: result.outputTokens,
-                  provider: "groq",
-                  model: result.model,
+                  inputTokens: done.inputTokens,
+                  outputTokens: done.outputTokens,
+                  provider: done.provider,
+                  model: done.model,
                   idempotencyKey: `tokens:live_answer_stream:${randomUUID()}`,
-                  metadata: { feature: "live_answer_stream", mode },
+                  metadata: { feature: "live_answer_stream", mode, ...(isTest ? { test: true } : {}) },
                 });
-                const active = await getActiveMeetingForSession(session);
-                if (active?.id && result.text.trim()) {
-                  await appendMeetingExchange(active.id, prompt, result.text, {
-                    provider: "groq",
-                    model: result.model,
+                const active = isTest ? null : await getActiveMeetingForSession(session);
+                if (active?.id && done.text.trim()) {
+                  await appendMeetingExchange(active.id, prompt, done.text, {
+                    provider: done.provider,
+                    model: done.model,
                     source: "auto",
                     questionWho: "Interviewer",
                   });
@@ -334,102 +531,41 @@ export async function POST(request: NextRequest) {
               }
             })();
           } catch (err) {
-            if (tokensEmitted) {
+            if (request.signal.aborted) return;
+            if (userByok) {
+              const { classifyAiError } = await import("@/lib/server/ai-router");
+              const classified = classifyAiError(err, userByok);
+              console.error("live_answer_stream_failed", { requestId, source: "user", code: classified.code, partial: Boolean(firstTokenAt) });
               send({
                 type: "error",
-                error: "Answer stream interrupted. Ask again if the reply looks incomplete.",
+                error: firstTokenAt ? "Answer stream interrupted. Ask again if the reply looks incomplete." : classified.message,
+                code: classified.code,
+                retryable: classified.retryable,
                 requestId,
               });
               return;
             }
-            const groqStatus = err instanceof GroqError ? err.status : 502;
-            const canFallback =
-              Boolean(credentials) &&
-              groqStatus !== 400 &&
-              (isRetryableGroqStatus(groqStatus) || groqStatus === 401 || groqStatus === 403);
-            if (canFallback && credentials) {
-              try {
-                console.error("live_answer_stream_groq_fallback", {
-                  requestId,
-                  errorCategory:
-                    groqStatus === 429
-                      ? "rate_limit"
-                      : groqStatus === 401 || groqStatus === 403
-                        ? "auth"
-                        : groqStatus === 504
-                          ? "timeout"
-                          : "unavailable",
-                });
-                const gemini = await generateGeminiText({
-                  credentials,
-                  system,
-                  prompt: userPrompt,
-                  temperature: 0.35,
-                  maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-                  thinkingLevel: "MINIMAL",
-                  jsonSchema: ANSWER_SCHEMA,
-                });
-                let answer = gemini.text;
-                let confidence = 0.7;
-                try {
-                  const parsed = JSON.parse(gemini.text) as {
-                    answer?: unknown;
-                    confidence?: unknown;
-                  };
-                  if (typeof parsed.answer === "string" && parsed.answer.trim()) {
-                    answer = parsed.answer.trim();
-                    confidence = clampConfidence(parsed.confidence);
-                  }
-                } catch {
-                  // raw text
-                }
-                send({ type: "token", text: answer });
-                send({
-                  type: "done",
-                  answer,
-                  confidence,
-                  model: gemini.model,
-                  provider: "gemini",
-                  requestId,
-                  knowledgeUsed: knowledgeMeta.knowledgeUsed,
-                  sourceType: knowledgeMeta.sourceType,
-                  sources: knowledgeMeta.sources,
-                });
-                void (async () => {
-                  try {
-                    const { getActiveMeetingForSession, appendMeetingExchange } = await import(
-                      "@/lib/server/meetings"
-                    );
-                    const active = await getActiveMeetingForSession(session);
-                    if (active?.id && answer.trim()) {
-                      await appendMeetingExchange(active.id, prompt, answer, {
-                        provider: "gemini",
-                        model: gemini.model,
-                        source: "auto",
-                        questionWho: "Interviewer",
-                      });
-                    }
-                  } catch {
-                    // ignore
-                  }
-                })();
-              } catch (fallbackErr) {
-                send({
-                  type: "error",
-                  error:
-                    fallbackErr instanceof Error
-                      ? fallbackErr.message
-                      : "Streaming answer failed.",
-                });
-              }
-            } else {
-              send({
-                type: "error",
-                error: err instanceof Error ? err.message : "Streaming answer failed.",
-              });
-            }
+            const attempts = err instanceof LiveAnswerStreamError ? err.attempts : [];
+            console.error("live_answer_stream_failed", {
+              requestId,
+              partial: err instanceof LiveAnswerStreamError ? err.partial : false,
+              attempts: errorCategory(null, attempts),
+            });
+            send({
+              type: "error",
+              error:
+                err instanceof LiveAnswerStreamError && err.partial
+                  ? "Answer stream interrupted. Ask again if the reply looks incomplete."
+                  : "AI providers are busy right now. Retry in a moment.",
+              retryable: true,
+              requestId,
+            });
           } finally {
-            controller.close();
+            try {
+              controller.close();
+            } catch {
+              // client already disconnected
+            }
           }
         },
       });
@@ -438,7 +574,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const { getProfileContext } = await import("@/lib/server/user-profile");
-      profileContext = await getProfileContext(session.userId);
+      profileContext = await getProfileContext(session.userId, "full");
     } catch {
       // Personalization is best-effort; never block a live answer.
     }
@@ -447,7 +583,7 @@ export async function POST(request: NextRequest) {
       const { describeLiveSessionContext } = await import("@/lib/live-session-config");
       const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
       const resolved = await resolveAnswerBriefing(session);
-      meetingId = resolved.meeting?.id || null;
+      meetingId = isTest ? null : resolved.meeting?.id || null;
       hasResume = Boolean(resolved.briefing.resumeText?.trim()) || hasResume;
       const fromStore = describeLiveSessionContext({
         kind: resolved.briefing.kind === "regular" ? "regular" : "interview",
@@ -487,7 +623,7 @@ export async function POST(request: NextRequest) {
       if (body?.skipKnowledge !== true && needsLiveKnowledge(prompt)) {
         const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
         const resolved = await resolveAnswerBriefing(session);
-        meetingId = meetingId || resolved.meeting?.id || null;
+        meetingId = isTest ? null : meetingId || resolved.meeting?.id || null;
         const kb = await retrieveKnowledgeForMeeting(prompt, {
           workspaceId: session.workspaceId,
           meetingId,
@@ -511,7 +647,14 @@ export async function POST(request: NextRequest) {
       mode,
       sessionContext,
       knowledgeContext,
+      history,
+      analysis: inlineImage || mode !== "answer" ? undefined : describeAnalysis(analysis, history),
+      grounding:
+        inlineImage || mode !== "answer"
+          ? undefined
+          : groundingNotes(prompt, analysis, splitBriefing(sessionContext, profileContext)),
     });
+    const answerTokens = mode === "answer" && !inlineImage ? analysis.maxTokens : LIVE_ANSWER_MAX_TOKENS;
 
     let result: {
       text: string;
@@ -533,7 +676,7 @@ export async function POST(request: NextRequest) {
         if (local?.answer) {
           return json({
             ok: true,
-            answer: local.answer,
+            answer: guardLiveAnswer(local.answer).answer,
             confidence: local.confidence,
             model: local.model,
             provider: "qwen",
@@ -549,14 +692,16 @@ export async function POST(request: NextRequest) {
     // Screen analysis needs vision — chat providers cannot take the screenshot.
     const preferGemini = Boolean(inlineImage);
 
-    // Prefer active user BYOK (any provider + saved model) for non-vision answers.
-    if (userByok && !preferGemini) {
-      const { generateWithCredential } = await import("@/lib/server/llm-generate");
+    const { generateWithCredential, supportsVision } = await import("@/lib/server/llm-generate");
+    // Prefer the user's own key; screenshots only go to it when its model accepts images.
+    if (userByok && (!preferGemini || supportsVision(userByok.provider, userByok.model))) {
       const byokResult = await generateWithCredential(userByok, {
         system,
         prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
         temperature: 0.4,
-        maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+        maxOutputTokens: answerTokens,
+        image: inlineImage || undefined,
+        signal: request.signal,
       });
       result = {
         text: byokResult.text,
@@ -565,61 +710,30 @@ export async function POST(request: NextRequest) {
         outputTokens: byokResult.outputTokens,
       };
       provider = byokResult.provider;
-    } else if (effectiveGroqKey && !preferGemini) {
+    } else if (!preferGemini && (effectiveOpenAiKey || effectiveGroqKey || chainGemini)) {
       try {
-        console.log("[GROQ] Request started");
-        result = await generateGroqText({
+        const chained = await streamLiveAnswer({
           system,
-          prompt: `${userPrompt}\n\nReturn JSON only: {"answer":"speakable reply","confidence":0.0}`,
-          temperature: 0.4,
-          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-          jsonObject: true,
-          apiKey: effectiveGroqKey,
-          model: byokGroqModel,
+          prompt: `${userPrompt}\n\nReply with the speakable answer only. No JSON. No preamble.`,
+          maxTokens: answerTokens,
+          complexity: analysis.complexity,
+          temperature: 0.3,
+          signal: request.signal,
+          openAiKey: effectiveOpenAiKey,
+          groqKey: effectiveGroqKey,
+          groqModel: byokGroqModel,
+          gemini: chainGemini,
+          onToken: () => undefined,
         });
-        provider = "groq";
+        result = chained;
+        provider = chained.provider;
       } catch (err) {
-        const groqStatus = err instanceof GroqError ? err.status : 502;
-        const canFallback =
-          Boolean(credentials) &&
-          groqStatus !== 400 &&
-          (isRetryableGroqStatus(groqStatus) || groqStatus === 401 || groqStatus === 403);
-        if (!canFallback) throw err;
-        console.error("live_answer_groq_fallback", {
-          requestId,
-          errorCategory:
-            groqStatus === 429
-              ? "rate_limit"
-              : groqStatus === 401 || groqStatus === 403
-                ? "auth"
-                : groqStatus === 504
-                  ? "timeout"
-                  : "unavailable",
-        });
-        console.log("[GEMINI] Fallback started");
-        result = await generateGeminiText({
-          credentials: credentials!,
-          system,
-          prompt: userPrompt,
-          temperature: 0.4,
-          maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-          thinkingLevel: "MINIMAL",
-          jsonSchema: ANSWER_SCHEMA,
-        });
-        provider = "gemini";
+        if (err instanceof LiveAnswerStreamError) {
+          console.error("live_answer_failed", { requestId, attempts: errorCategory(null, err.attempts) });
+          return json({ error: "AI providers are busy right now. Retry in a moment.", requestId }, 503);
+        }
+        throw err;
       }
-    } else if (credentials && !preferGemini) {
-      console.log("[GEMINI] Request started");
-      result = await generateGeminiText({
-        credentials,
-        system,
-        prompt: userPrompt,
-        temperature: 0.4,
-        maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
-        thinkingLevel: "MINIMAL",
-        jsonSchema: ANSWER_SCHEMA,
-      });
-      provider = "gemini";
     } else {
       if (!credentials) {
         return json(
@@ -636,7 +750,7 @@ export async function POST(request: NextRequest) {
         prompt: userPrompt,
         inlineImage,
         temperature: 0.25,
-        maxOutputTokens: LIVE_ANSWER_MAX_TOKENS,
+        maxOutputTokens: answerTokens,
         thinkingLevel: "MINIMAL",
         jsonSchema: ANSWER_SCHEMA,
       });
@@ -654,6 +768,12 @@ export async function POST(request: NextRequest) {
     } catch {
       // Schema mode should always return JSON; fall back to the raw text.
     }
+    const guarded = guardLiveAnswer(answer, {
+      analysis: mode === "answer" && !inlineImage ? analysis : undefined,
+      context: evidenceText({ sessionContext, profileContext, knowledgeContext, history, transcript }),
+    });
+    answer = guarded.answer;
+    if (guarded.changes.length) console.info("live_answer_guard", { requestId, changes: guarded.changes.join(",") });
 
     try {
       const { randomUUID } = await import("node:crypto");
@@ -700,28 +820,43 @@ export async function POST(request: NextRequest) {
       model: result.model,
       provider,
       requestId,
+      validationStatus: guarded.validationStatus,
       knowledgeUsed: knowledgeMeta.knowledgeUsed,
       sourceType: knowledgeMeta.sourceType,
       sources: knowledgeMeta.sources,
+      ...(userByok && inlineImage && provider !== userByok.provider
+        ? { notice: "Your selected model cannot analyze images, so the workspace vision model was used for this screenshot." }
+        : {}),
     });
   } catch (err) {
-    const { LlmAuthError, BYOK_AUTH_FAILED_MESSAGE } = await import(
+    const { LlmAuthError, LlmProviderError, BYOK_AUTH_FAILED_MESSAGE } = await import(
       "@/lib/server/llm-generate"
     );
     if (err instanceof LlmAuthError) {
       return json({ error: err.message }, 401);
+    }
+    if (err instanceof LlmProviderError && userByok) {
+      const { classifyAiError } = await import("@/lib/server/ai-router");
+      const classified = classifyAiError(err, userByok);
+      console.error("live_answer_byok_error", { requestId, code: classified.code });
+      return json(
+        { error: classified.message, code: classified.code, retryable: classified.retryable, requestId },
+        classified.status,
+      );
     }
     if (err instanceof GroqError || err instanceof GeminiError) {
       if (err.status === 401 || err.status === 403) {
         return json({ error: BYOK_AUTH_FAILED_MESSAGE }, 401);
       }
       const status = err.status === 429 ? 429 : err.status >= 500 ? 502 : err.status;
-      return json({ error: err.message }, status);
+      console.error("live_answer_provider_error", { requestId, status: err.status });
+      // Provider messages can include org/project identifiers; keep them server-side.
+      return json(
+        { error: status === 429 ? "AI provider is rate limited. Retry in a moment." : "AI provider error. Retry in a moment.", requestId },
+        status,
+      );
     }
     console.error("live_answer_error", err);
-    return json(
-      { error: err instanceof Error ? err.message : "Unexpected live answer error" },
-      500,
-    );
+    return json({ error: "Unexpected live answer error.", requestId }, 500);
   }
 }

@@ -100,7 +100,7 @@ async function pollReady(origin: string, state: string, abort: AbortSignal): Pro
     try {
       const res = await fetch(
         `${origin}/api/auth/desktop/google/status?state=${encodeURIComponent(state)}`,
-        { cache: "no-store", signal: abort },
+        { headers: { "Cache-Control": "no-store" }, signal: abort },
       );
       const body = (await res.json().catch(() => ({}))) as { ready?: boolean; code?: string };
       if (body.ready) {

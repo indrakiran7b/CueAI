@@ -238,7 +238,7 @@ export default function SettingsPage() {
             <CardTitle className="mb-4">Keyboard Shortcuts</CardTitle>
             <div className="space-y-2">
               {[
-                ["Toggle Companion", "⌘⇧Space"],
+                ["Show/Hide Overlay", "⌘⇧Space"],
                 ["Start / pause session", "⌘⇧L"],
                 ["Pin last answer", "⌘⇧P"],
                 ["Command palette", "⌘K"],

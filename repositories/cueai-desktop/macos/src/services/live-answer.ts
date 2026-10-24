@@ -156,6 +156,10 @@ export type StreamLiveAnswerHandlers = {
   onToken?: (token: string, full: string) => void;
   onConnected?: () => void;
   signal?: AbortSignal;
+  /** Earlier question/answer pairs from this session, oldest first. */
+  history?: { question: string; answer: string }[];
+  /** The transcript was flagged low-confidence by STT. */
+  uncertain?: boolean;
 };
 
 function needsLiveKnowledge(question: string) {
@@ -183,7 +187,9 @@ export async function requestLiveAnswerStream(
       signal: handlers.signal,
       body: JSON.stringify({
         prompt,
-        transcript: transcript.slice(-3),
+        transcript: transcript.slice(-6),
+        history: handlers.history?.length ? handlers.history : undefined,
+        uncertain: handlers.uncertain || undefined,
         sessionContext,
         stream: true,
         mode: "answer",

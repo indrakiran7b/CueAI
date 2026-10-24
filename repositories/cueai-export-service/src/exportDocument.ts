@@ -161,12 +161,16 @@ export function downloadTextFile(filename: string, content: string) {
   downloadBlob(filename, new Blob([content], { type: "text/plain;charset=utf-8" }));
 }
 
-export function downloadDocxFile(filename: string, content: string) {
-  const blob = zipStore([
+/** Package a complete `word/document.xml` as a .docx file. */
+export function docxBlob(documentXmlContent: string): Blob {
+  return zipStore([
     { path: "[Content_Types].xml", data: utf8(CONTENT_TYPES) },
     { path: "_rels/.rels", data: utf8(ROOT_RELS) },
     { path: "word/_rels/document.xml.rels", data: utf8(DOCUMENT_RELS) },
-    { path: "word/document.xml", data: utf8(documentXml(content)) },
+    { path: "word/document.xml", data: utf8(documentXmlContent) },
   ]);
-  downloadBlob(filename, blob);
+}
+
+export function downloadDocxFile(filename: string, content: string) {
+  downloadBlob(filename, docxBlob(documentXml(content)));
 }

@@ -7,7 +7,6 @@ import {
   HelpCircle,
   Languages,
   MessageSquare,
-  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -16,7 +15,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/auth-provider";
 import { isAdminUser } from "@/lib/app-access";
-import { FREE_MEETING_QA_LIMIT, canViewFullMeetingQa, canViewFullTranscript } from "@/lib/entitlements";
+import { canViewFullTranscript } from "@/lib/entitlements";
+import { MeetingQaList } from "@/components/meetings/meeting-qa-list";
+import { MockMeetingView } from "@/components/mock-interview/mock-meeting-view";
 import { fetchMeeting } from "@/lib/meetings-client";
 import type { MeetingRecord } from "@/lib/meetings-catalog";
 import { cn } from "@/lib/utils";
@@ -26,7 +27,6 @@ export default function MeetingSummaryPage() {
   const meetingId = typeof params.id === "string" ? params.id : "";
   const { session } = useAuth();
   const admin = isAdminUser(session?.role);
-  const sessionFullQa = canViewFullMeetingQa({ role: session?.role, plan: session?.plan });
   const fullTranscript = canViewFullTranscript({ role: session?.role, plan: session?.plan });
 
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
@@ -84,18 +84,21 @@ export default function MeetingSummaryPage() {
     );
   }
 
+  if (meeting.kind === "mock_interview" && meeting.mock) {
+    return <MockMeetingView meeting={meeting} initial={meeting.mock} viewerEmail={session?.email} />;
+  }
+
   const openCount = meeting.actionItems.filter((item) => item.status === "open").length;
   const answers = meeting.aiAnswers || [];
-  const flagsKnown =
-    typeof meeting.hasMore === "boolean" || typeof meeting.fullSummaryAvailable === "boolean";
-  const visibleAnswers = flagsKnown
-    ? answers
-    : sessionFullQa
-      ? answers
-      : answers.slice(0, FREE_MEETING_QA_LIMIT);
-  const showUpgrade =
-    meeting.hasMore === true ||
-    (!flagsKnown && !sessionFullQa && answers.length > FREE_MEETING_QA_LIMIT);
+  const started = meeting.startedAt ? new Date(meeting.startedAt) : null;
+  const dateLabel =
+    started && !Number.isNaN(started.getTime())
+      ? started.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+      : meeting.time;
+  const ownerLabel =
+    meeting.owner && meeting.owner.email !== session?.email
+      ? meeting.owner.name || meeting.owner.email
+      : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
@@ -108,8 +111,9 @@ export default function MeetingSummaryPage() {
             {meeting.title}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {meeting.time} · {meeting.duration} · {meeting.attendees} attendees
-            {meeting.generatedIn ? ` · Generated in ${meeting.generatedIn}` : ""}
+            {dateLabel} · {meeting.duration} · {answers.length} question
+            {answers.length === 1 ? "" : "s"}
+            {ownerLabel ? ` · ${ownerLabel}` : ""}
           </p>
         </div>
         {admin && (
@@ -152,46 +156,19 @@ export default function MeetingSummaryPage() {
           </Card>
         )}
 
-        {visibleAnswers.length > 0 && (
-          <Card className="p-5 md:col-span-2">
-            <CardHeader>
-              <CardTitle>Questions &amp; Answers</CardTitle>
-            </CardHeader>
-            <ul className="space-y-4">
-              {visibleAnswers.map((answer, index) => (
-                <li key={answer.id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
-                  <p className="font-medium text-foreground">
-                    {index + 1}. {answer.question}
-                  </p>
-                  <p className="mt-2 text-muted">{answer.answer}</p>
-                </li>
-              ))}
-            </ul>
-            {showUpgrade && (
-              <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--background)]/50 p-5">
-                <p className="font-semibold tracking-tight">Want to view more Q&amp;A?</p>
-                <p className="mt-1 text-sm text-muted">
-                  Upgrade to unlock the rest of this meeting&apos;s questions and answers.
-                </p>
-                <ul className="mt-3 space-y-1 text-sm text-foreground/90">
-                  <li className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                    All questions and answers
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                    Full meeting insights
-                  </li>
-                </ul>
-                <Link href="/settings#billing" className="mt-4 inline-block">
-                  <Button variant="gradient" size="sm">
-                    Upgrade for more Q&amp;A
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </Card>
-        )}
+        <Card className="p-5 md:col-span-2">
+          <CardHeader>
+            <CardTitle>Questions &amp; Answers</CardTitle>
+          </CardHeader>
+          <MeetingQaList
+            items={answers.map((a) => ({
+              id: a.id,
+              question: a.question,
+              answer: a.answer,
+              status: a.status,
+            }))}
+          />
+        </Card>
 
         {meeting.risks.length > 0 && (
           <Card className="p-5">

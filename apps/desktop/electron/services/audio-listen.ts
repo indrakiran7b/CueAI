@@ -31,9 +31,9 @@ export function registerMediaPermissionHandler() {
   });
 
   session.defaultSession.setDevicePermissionHandler((details) => {
-    const granted = details.deviceType === "audio" || details.deviceType === "unknown";
-    console.log("[PERM] device", details.deviceType, "granted", granted);
-    return granted;
+    // Audio capture is governed by the media permission handlers above; HID/serial/USB stay denied.
+    console.log("[PERM] device", details.deviceType, "granted", false);
+    return false;
   });
 
   // Prefer silent Windows loopback for getDisplayMedia (Teams/Zoom/browser audio).

@@ -34,8 +34,8 @@ export function createTray(getMainWindow: () => BrowserWindow | null) {
 
   const popup = () => {
     const contextMenu = Menu.buildFromTemplate([
-      { label: "Show Companion", accelerator: "Command+Shift+Space", click: () => showCompanion() },
-      { label: "Hide Companion", click: () => hideCompanion() },
+      { label: "Show Overlay", accelerator: "Command+Shift+Space", click: () => showCompanion() },
+      { label: "Hide Overlay", click: () => hideCompanion() },
       { type: "separator" },
       {
         label: "Open CueAI",

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { clipMeetingAnswers } from "@/lib/entitlements";
 import {
   readStore,
   updateStore,
@@ -9,20 +8,31 @@ import {
 import { hasEntitlement } from "@/lib/server/billing";
 import type { SessionPayload } from "@/lib/server/session";
 import { normalizeRole } from "@/lib/roles";
+import { isMockMeeting, mockListSummary, publicMock } from "@/lib/server/mock-interview";
 
-export async function meetingQaForSession(session: SessionPayload) {
+const MAX_MEETING_ANSWERS = 400;
+
+/** Full transcript stays a premium feature; Q&A summaries are available to everyone. */
+export async function canSessionViewTranscript(session: SessionPayload): Promise<boolean> {
+  if (canManageWorkspaceMeetings(session)) return true;
   const store = await readStore();
   const user = store.users.find((u) => u.id === session.userId);
-  const paid = user ? hasEntitlement(user, "meeting.full_summary") : false;
-  return {
-    role: session.role,
-    plan: paid ? "premium" : "free",
-  };
+  return user ? hasEntitlement(user, "meeting.full_summary") : false;
+}
+
+export function canManageWorkspaceMeetings(session: Pick<SessionPayload, "role">): boolean {
+  const role = normalizeRole(session.role);
+  return role === "Admin" || role === "Manager";
 }
 
 /** Meetings that belong in the Meetings history page. */
 export function isCompletedMeeting(m: DbMeeting): boolean {
   return m.status === "completed" || m.status === "summary";
+}
+
+/** History also lists mock interviews still in progress so they can be resumed or finished. */
+function isHistoryMeeting(m: DbMeeting): boolean {
+  return isCompletedMeeting(m) || (isMockMeeting(m) && m.status === "incomplete");
 }
 
 export function isLiveMeeting(m: DbMeeting): boolean {
@@ -39,11 +49,11 @@ export function publicMeeting(
   m: DbMeeting,
   includePrivate = false,
   includeTranscript = false,
-  qa?: { role?: string | null; plan?: string | null },
+  owner?: { name: string; email: string } | null,
+  /** When set, mock interview detail (turns, evaluations, results) is included for this viewer. */
+  viewer?: Pick<SessionPayload, "userId" | "workspaceId" | "role">,
 ) {
-  const clipped = qa
-    ? clipMeetingAnswers(m.answers, qa)
-    : { answers: m.answers, hasMore: false, fullSummaryAvailable: true };
+  const mock = isMockMeeting(m) ? m : null;
   return {
     id: m.id,
     title: m.title,
@@ -62,12 +72,20 @@ export function publicMeeting(
     transcript: includeTranscript ? m.transcript : [],
     transcriptLocked: !includeTranscript,
     transcriptLineCount: m.transcript.length,
-    answers: clipped.answers,
-    hasMore: clipped.hasMore,
-    fullSummaryAvailable: clipped.fullSummaryAvailable,
+    answers: [...m.answers].sort((a, b) => a.at.localeCompare(b.at)).map((a) => ({
+      prompt: a.prompt,
+      answer: a.answer,
+      at: a.at,
+      status: a.status === "failed" || !a.answer?.trim() ? "unavailable" : "answered",
+    })),
+    hasMore: false,
+    fullSummaryAvailable: true,
+    owner: owner ? { name: owner.name, email: owner.email } : null,
     summary: m.summary || null,
     questionCount: m.answers.length,
     answerCount: m.answers.filter((a) => Boolean(a.answer?.trim())).length,
+    mockSummary: mock ? mockListSummary(mock) : null,
+    mock: mock && viewer ? publicMock(mock, viewer) : null,
     ...(includePrivate
       ? { jobDescription: m.jobDescription || null, resumeText: m.resumeText || null }
       : {}),
@@ -79,16 +97,9 @@ export function canAccessMeeting(
   meeting: DbMeeting,
   session: SessionPayload,
 ): boolean {
-  if (meeting.workspaceId && meeting.workspaceId !== session.workspaceId) {
-    return false;
-  }
-  if (meeting.userId) {
-    if (meeting.userId === session.userId) return true;
-    const role = normalizeRole(session.role);
-    return role === "Admin" || role === "Manager";
-  }
-  const role = normalizeRole(session.role);
-  return role === "Admin" || role === "Manager";
+  if (meeting.workspaceId !== session.workspaceId) return false;
+  if (meeting.userId && meeting.userId === session.userId) return true;
+  return canManageWorkspaceMeetings(session);
 }
 
 export async function listMeetings() {
@@ -106,10 +117,34 @@ export async function listCompletedMeetingsForUser(session: SessionPayload) {
   const all = await listMeetings();
   return all.filter(
     (m) =>
-      isCompletedMeeting(m) &&
+      isHistoryMeeting(m) &&
       m.workspaceId === session.workspaceId &&
       m.userId === session.userId,
   );
+}
+
+export async function meetingOwner(meeting: DbMeeting) {
+  if (!meeting.userId) return null;
+  const store = await readStore();
+  const user = store.users.find(
+    (u) => u.id === meeting.userId && u.workspaceId === meeting.workspaceId,
+  );
+  return user ? { name: user.name, email: user.email } : null;
+}
+
+/** Completed history for every member of the caller's workspace. Admin/Manager only. */
+export async function listCompletedWorkspaceMeetings(session: SessionPayload) {
+  if (!canManageWorkspaceMeetings(session)) return null;
+  const store = await readStore();
+  const owners = new Map(
+    store.users
+      .filter((u) => u.workspaceId === session.workspaceId)
+      .map((u) => [u.id, { name: u.name, email: u.email }]),
+  );
+  return (store.meetings || [])
+    .filter((m) => isHistoryMeeting(m) && m.workspaceId === session.workspaceId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .map((m) => ({ meeting: m, owner: (m.userId && owners.get(m.userId)) || null }));
 }
 
 export function buildMeetingSummary(meeting: DbMeeting): string {
@@ -125,13 +160,7 @@ export function buildMeetingSummary(meeting: DbMeeting): string {
   lines.push(
     `Recorded ${qa.length} question${qa.length === 1 ? "" : "s"} with ${answered.length} CueAI answer${answered.length === 1 ? "" : "s"}.`,
   );
-  if (answered.length) {
-    lines.push("Key Q&A:");
-    for (const row of answered.slice(0, 8)) {
-      lines.push(`Q: ${row.prompt.slice(0, 200)}`);
-      lines.push(`A: ${row.answer.slice(0, 320)}`);
-    }
-  } else if (meeting.transcript.length) {
+  if (!qa.length && meeting.transcript.length) {
     const speakers = meeting.transcript
       .filter((t) => t.who !== "CueAI")
       .slice(0, 6)
@@ -142,6 +171,54 @@ export function buildMeetingSummary(meeting: DbMeeting): string {
     }
   }
   return lines.join("\n").slice(0, 4000);
+}
+
+/**
+ * Short AI overview of a finished session, grounded only in recorded Q&A/transcript.
+ * Returns null when there is nothing to summarize or every provider fails,
+ * so callers fall back to the factual buildMeetingSummary text.
+ */
+export async function generateMeetingSummaryText(
+  meeting: DbMeeting,
+  session: Pick<SessionPayload, "userId" | "workspaceId">,
+): Promise<string | null> {
+  const qa = [...meeting.answers]
+    .filter((a) => a.prompt.trim())
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .slice(-30);
+  const lines = meeting.transcript.filter((t) => t.text.trim()).slice(-40);
+  if (!qa.length && !lines.length) return null;
+
+  const material = [
+    qa.length
+      ? `QUESTIONS AND ANSWERS:\n${qa
+          .map((a, i) => `Q${i + 1}: ${a.prompt.slice(0, 400)}\nA${i + 1}: ${a.answer.trim() ? a.answer.slice(0, 600) : "(no answer recorded)"}`)
+          .join("\n")}`
+      : "",
+    !qa.length && lines.length
+      ? `TRANSCRIPT EXCERPT:\n${lines.map((t) => `${t.who}: ${t.text.slice(0, 300)}`).join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  try {
+    const { generateAi } = await import("@/lib/server/ai-router");
+    const result = await generateAi({
+      feature: "meeting_summary",
+      userId: session.userId,
+      workspaceId: session.workspaceId,
+      system:
+        "You write short, factual session summaries. Use only the material provided. Never invent questions, answers, names, decisions, or outcomes. If answers are missing, say so.",
+      prompt: `Session: ${meeting.title} (${meeting.kind === "interview" ? "interview" : "meeting"}).\n\n${material}\n\nWrite a 2–4 sentence overview of the main topics covered. Plain text, no lists, no headings.`,
+      temperature: 0.2,
+      maxOutputTokens: 260,
+      timeoutMs: 15_000,
+    });
+    return result.text.trim().slice(0, 1200) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getMeeting(id: string) {
@@ -344,7 +421,7 @@ export async function createMeeting(input: {
       const prev = s.liveBriefings[key] || { updatedAt: now };
       s.liveBriefings[key] = {
         ...prev,
-        kind: meeting.kind,
+        kind: input.kind,
         company: meeting.company,
         jobDescription: meeting.jobDescription,
         jobLink: meeting.jobLink,
@@ -403,7 +480,7 @@ export async function appendMeetingExchange(
       status: meta?.status || "ok",
       questionWho: who,
     });
-    meeting.answers = meeting.answers.slice(0, 80);
+    meeting.answers = meeting.answers.slice(0, MAX_MEETING_ANSWERS);
     meeting.transcript.push({
       who,
       text: prompt.slice(0, 1000),
@@ -464,7 +541,7 @@ export async function appendMeetingQuestionOnly(
       source: "auto",
       questionWho,
     });
-    meeting.answers = meeting.answers.slice(0, 80);
+    meeting.answers = meeting.answers.slice(0, MAX_MEETING_ANSWERS);
     meeting.transcript.push({
       who: questionWho,
       text: question.slice(0, 1000),

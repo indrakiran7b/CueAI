@@ -84,10 +84,13 @@ export type CompanionAPI = {
   beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") => Promise<boolean>;
   endResize: () => Promise<boolean>;
   getWindowState: () => Promise<CompanionWindowState | null>;
-  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string }) => Promise<{
+  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => Promise<{
     text?: string;
     who?: string;
     error?: string;
+    uncertain?: boolean;
+    status?: number;
+    retryAfter?: number;
   }>;
   getSession: () => Promise<MeetingSession>;
   onMode: (cb: (mode: CompanionMode) => void) => () => void;

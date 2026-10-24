@@ -17,9 +17,12 @@ export async function OPTIONS() {
 
 /** Companion and other signed-in clients. Not admin-only. */
 export async function POST(request: NextRequest) {
-  const { error } = await requireAuth(request);
-  if (error) return error;
+  const { error, session } = await requireAuth(request);
+  if (error || !session) return error;
   const body = await request.json().catch(() => null);
-  const result = await runTranslateRequest(body);
+  const result = await runTranslateRequest(body, {
+    userId: session.userId,
+    workspaceId: session.workspaceId,
+  });
   return NextResponse.json(result.body, { status: result.status, headers: CORS_HEADERS });
 }

@@ -1,9 +1,4 @@
-import { GroqError, generateGroqText, resolveGroqApiKey } from "@cueai/ai-orchestrator/server/groq";
-import {
-  GeminiError,
-  generateGeminiText,
-  resolveGeminiCredentials,
-} from "@cueai/ai-orchestrator/server/gemini";
+import { AiRouterError, generateAi } from "@cueai/ai-orchestrator/server/ai-router";
 
 export const TRANSLATE_LANGS = ["en", "hi", "te"] as const;
 export type TranslateLang = (typeof TRANSLATE_LANGS)[number];
@@ -99,73 +94,38 @@ function parseBatch(raw: string, count: number): string[] | null {
   return null;
 }
 
+export type TranslateCaller = { userId?: string | null; workspaceId?: string | null };
+
 async function generateTranslationRaw(
   system: string,
   prompt: string,
   maxOutputTokens: number,
+  caller: TranslateCaller,
 ): Promise<string> {
-  const groqKey = resolveGroqApiKey();
-  const credentials = await resolveGeminiCredentials();
-  if (!groqKey && !credentials) {
-    throw new TranslateError("AI provider is not configured.", 503);
+  try {
+    const result = await generateAi({
+      feature: "translation",
+      userId: caller.userId,
+      workspaceId: caller.workspaceId,
+      system,
+      prompt,
+      temperature: 0.1,
+      maxOutputTokens,
+      jsonObject: true,
+      timeoutMs: 30_000,
+    });
+    return result.text;
+  } catch (err) {
+    if (err instanceof AiRouterError) throw new TranslateError(err.message, err.status);
+    throw new TranslateError("Translation failed.", 502);
   }
-
-  const geminiModels = credentials
-    ? [credentials.model, "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash"].filter(
-        (v, i, arr) => arr.indexOf(v) === i,
-      )
-    : [];
-
-  let lastError: TranslateError | null = null;
-
-  if (groqKey) {
-    try {
-      const result = await generateGroqText({
-        system,
-        prompt,
-        temperature: 0.1,
-        maxOutputTokens,
-        jsonObject: true,
-      });
-      return result.text;
-    } catch (err) {
-      lastError =
-        err instanceof GroqError
-          ? new TranslateError(err.message, err.status === 429 ? 429 : err.status >= 500 ? 502 : err.status)
-          : new TranslateError(err instanceof Error ? err.message : "Translation failed.", 502);
-      if (!credentials) throw lastError;
-    }
-  }
-
-  for (const model of geminiModels) {
-    try {
-      const result = await generateGeminiText({
-        credentials: { ...credentials!, model },
-        system,
-        prompt,
-        temperature: 0.1,
-        maxOutputTokens: 2500,
-        thinkingLevel: "MINIMAL",
-      });
-      return result.text;
-    } catch (err) {
-      lastError =
-        err instanceof GeminiError
-          ? new TranslateError(err.message, err.status === 429 ? 429 : err.status >= 500 ? 502 : err.status)
-          : new TranslateError(err instanceof Error ? err.message : "Translation failed.", 502);
-      if (err instanceof GeminiError && (err.status === 401 || err.status === 403)) {
-        throw lastError;
-      }
-    }
-  }
-
-  throw lastError || new TranslateError("Translation failed.", 502);
 }
 
 async function translateBatchWithLlm(
   texts: string[],
   sourceLanguage: TranslateLang | "auto",
   targetLanguage: TranslateLang,
+  caller: TranslateCaller,
 ): Promise<string[]> {
   const targetName = LANG_NAME[targetLanguage];
   const sourceName =
@@ -186,6 +146,7 @@ async function translateBatchWithLlm(
     system,
     prompt,
     Math.min(4000, 200 + texts.reduce((n, t) => n + t.length, 0)),
+    caller,
   );
 
   const parsed = parseBatch(raw, texts.length);
@@ -199,7 +160,9 @@ export async function translateTexts(input: {
   texts: string[];
   targetLanguage: TranslateLang;
   sourceLanguage?: string;
+  caller?: TranslateCaller;
 }): Promise<{ sourceLanguage: TranslateLang | "auto"; translated: string[] }> {
+  const caller = input.caller || {};
   const target = input.targetLanguage;
   const requestedSource = input.sourceLanguage?.trim() || "auto";
   const source: TranslateLang | "auto" =
@@ -251,7 +214,7 @@ export async function translateTexts(input: {
     const chunk = unique.slice(i, i + CHUNK);
     const chunkSource =
       source === "auto" ? detectSourceLanguage(chunk[0] || "") : source;
-    uniqueOut.push(...(await translateBatchWithLlm(chunk, chunkSource, target)));
+    uniqueOut.push(...(await translateBatchWithLlm(chunk, chunkSource, target, caller)));
   }
 
   pendingIdx.forEach((origIndex, pendingI) => {

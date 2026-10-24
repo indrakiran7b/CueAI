@@ -5,7 +5,9 @@
   "exports": {
     "./server/gemini": "./src/server/gemini.ts",
     "./server/groq": "./src/server/groq.ts",
+    "./server/openai": "./src/server/openai.ts",
     "./server/llm-generate": "./src/server/llm-generate.ts",
+    "./server/ai-router": "./src/server/ai-router.ts",
     "./server/ai-config": "./src/server/ai-config.ts",
     "./server/credential-resolver": "./src/server/credential-resolver.ts"
   }

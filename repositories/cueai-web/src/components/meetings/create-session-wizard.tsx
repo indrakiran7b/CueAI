@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  Briefcase,
   ChevronDown,
-  Phone,
   Sparkles,
   Upload,
   X,
@@ -16,7 +14,6 @@ import {
   DEFAULT_LIVE_SESSION_CONFIG,
   type LiveGuidanceLevel,
   type LiveSessionConfig,
-  type LiveSessionKind,
 } from "@/lib/live-session-config";
 import {
   extractAndRememberResume,
@@ -65,7 +62,10 @@ export function CreateSessionWizard({
   onComplete: (config: LiveSessionConfig) => void;
 }) {
   const [step, setStep] = useState<WizardStep>(1);
-  const [config, setConfig] = useState<LiveSessionConfig>(DEFAULT_LIVE_SESSION_CONFIG);
+  const [config, setConfig] = useState<LiveSessionConfig>({
+    ...DEFAULT_LIVE_SESSION_CONFIG,
+    kind: "interview",
+  });
   const [jobLinkOpen, setJobLinkOpen] = useState(false);
   const [jobLinkDraft, setJobLinkDraft] = useState("");
   const [resumeUploadBusy, setResumeUploadBusy] = useState(false);
@@ -195,10 +195,6 @@ export function CreateSessionWizard({
     setConfig((c) => ({ ...c, ...partial }));
   }
 
-  function setKind(kind: LiveSessionKind) {
-    patch({ kind });
-  }
-
   function onJobLinkConfirm(e: FormEvent) {
     e.preventDefault();
     const url = jobLinkDraft.trim();
@@ -279,25 +275,6 @@ export function CreateSessionWizard({
               <span>Preferences</span>
             </li>
           </ol>
-
-          <div className="mt-auto space-y-2">
-            <button
-              type="button"
-              className="ls-wizard-side-btn"
-              onClick={() => {
-                patch({
-                  kind: "interview",
-                  company: "",
-                  jobDescription:
-                    "Practice interview — answer behavioral and system design questions for a software engineer role. (No specific company selected.)",
-                });
-                setStep(1);
-              }}
-            >
-              <Briefcase className="h-4 w-4" />
-              Mock Interview
-            </button>
-          </div>
         </aside>
 
         {/* Main panel */}
@@ -315,30 +292,6 @@ export function CreateSessionWizard({
 
           {step === 1 ? (
             <div className="ls-wizard-body">
-              <div className="ls-kind-toggle" role="tablist" aria-label="Session type">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={config.kind === "interview"}
-                  className={cn(config.kind === "interview" && "is-active")}
-                  onClick={() => setKind("interview")}
-                >
-                  <Briefcase className="h-4 w-4" />
-                  Interview
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={config.kind === "regular"}
-                  className={cn(config.kind === "regular" && "is-active")}
-                  onClick={() => setKind("regular")}
-                >
-                  <Phone className="h-4 w-4" />
-                  Regular
-                </button>
-              </div>
-
-              {config.kind === "interview" ? (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm text-muted">
@@ -468,44 +421,6 @@ export function CreateSessionWizard({
                     />
                   </fieldset>
                 </div>
-              ) : (
-                <div className="space-y-5">
-                  <Input
-                    label="Call Title (Optional)"
-                    placeholder="Enter call title"
-                    value={config.callTitle || ""}
-                    onChange={(e) => patch({ callTitle: e.target.value })}
-                  />
-
-                  <div className="flex flex-col gap-1.5">
-                    <label htmlFor="call-description" className="text-sm font-medium text-foreground/90">
-                      Description (Optional)
-                    </label>
-                    <textarea
-                      id="call-description"
-                      rows={6}
-                      placeholder="Enter description"
-                      value={config.description || ""}
-                      onChange={(e) => patch({ description: e.target.value })}
-                      className="ls-wizard-textarea"
-                    />
-                  </div>
-
-                  <fieldset className="space-y-3">
-                    <legend className="text-sm font-medium text-foreground/90">
-                      Knowledge for this meeting
-                    </legend>
-                    <MeetingKnowledgePanel
-                      docs={meetingDocs}
-                      busy={knowledgeBusy}
-                      error={knowledgeError}
-                      inputRef={knowledgeInputRef}
-                      onUpload={(files) => void onKnowledgeUpload(files)}
-                      onRemove={(id) => void onRemoveMeetingDoc(id)}
-                    />
-                  </fieldset>
-                </div>
-              )}
             </div>
           ) : (
             <div className="ls-wizard-body space-y-6">
@@ -542,7 +457,7 @@ export function CreateSessionWizard({
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-foreground/90">
-                  Start the companion in
+                  Start the overlay in
                 </legend>
                 <div className="flex gap-2">
                   {(

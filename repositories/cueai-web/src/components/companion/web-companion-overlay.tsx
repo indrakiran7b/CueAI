@@ -334,7 +334,7 @@ export function WebCompanionOverlay() {
     <div
       ref={panelRef}
       role="dialog"
-      aria-label="CueAI Companion"
+      aria-label="CueAI overlay"
       aria-modal="false"
       className={cn(
         "cue-web-companion ov-root fixed z-[80]",

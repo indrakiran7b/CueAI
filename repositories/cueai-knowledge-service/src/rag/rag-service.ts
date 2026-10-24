@@ -349,71 +349,29 @@ export async function retrieveForMeeting(input: {
   };
 }
 
+async function llmFailure(err: unknown): Promise<NonNullable<KnowledgeQueryResult["error"]>> {
+  const { classifyAiError } = await import("@/lib/server/ai-router");
+  const classified = classifyAiError(err);
+  return { code: classified.code, message: classified.message, retryable: classified.retryable };
+}
+
 async function generateAnswer(
   query: string,
   context: string,
   opts?: { userId?: string | null; workspaceId?: string | null },
 ): Promise<{ answer: string; llmMs: number }> {
-  const system = buildRagSystemPrompt();
-  const user = buildRagUserPrompt(query, context);
-  const t0 = Date.now();
-
-  const { resolveCredential } = await import("@/lib/server/credential-resolver");
-  const { generateWithCredential } = await import("@/lib/server/llm-generate");
-
-  const cred = await resolveCredential({
+  const { generateAi } = await import("@/lib/server/ai-router");
+  const result = await generateAi({
+    feature: "knowledge",
     userId: opts?.userId,
     workspaceId: opts?.workspaceId,
-    capability: "rag",
-  });
-  if (cred) {
-    try {
-      const result = await generateWithCredential(cred, {
-        system,
-        prompt: user,
-        temperature: 0.2,
-        maxOutputTokens: 900,
-      });
-      return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
-    } catch (err) {
-      logRag("query.byok_failed", {
-        provider: cred.provider,
-        source: cred.source,
-        error: err instanceof Error ? err.message : "llm",
-      });
-      // Fall through to legacy env Groq → Gemini.
-    }
-  }
-
-  try {
-    const { generateGroqText, resolveGroqApiKey } = await import("@cueai/ai-orchestrator/server/groq");
-    if (resolveGroqApiKey()) {
-      const result = await generateGroqText({
-        system,
-        prompt: user,
-        temperature: 0.2,
-        maxOutputTokens: 900,
-      });
-      return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
-    }
-  } catch {
-    // fall through to Gemini
-  }
-
-  const { resolveGeminiCredentials, generateGeminiText } = await import(
-    "@/lib/server/gemini"
-  );
-  const credentials = await resolveGeminiCredentials();
-  if (!credentials) {
-    throw new Error("No LLM provider configured for Knowledge answers.");
-  }
-  const result = await generateGeminiText({
-    credentials,
-    prompt: user,
-    system,
+    system: buildRagSystemPrompt(),
+    prompt: buildRagUserPrompt(query, context),
     temperature: 0.2,
+    maxOutputTokens: 900,
+    timeoutMs: 30_000,
   });
-  return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
+  return { answer: result.text.trim(), llmMs: result.latencyMs };
 }
 
 async function generateGeneralAnswer(
@@ -424,64 +382,18 @@ async function generateGeneralAnswer(
 You do NOT have access to the user's uploaded Knowledge Base for this question.
 Do not invent citations or claim that an answer came from uploaded documents.
 Be concise and clear.`;
-  const user = `USER QUESTION:\n${query.trim()}\n\nAnswer directly. Do not invent document sources.`;
-  const t0 = Date.now();
-
-  const { resolveCredential } = await import("@/lib/server/credential-resolver");
-  const { generateWithCredential } = await import("@/lib/server/llm-generate");
-
-  const cred = await resolveCredential({
+  const { generateAi } = await import("@/lib/server/ai-router");
+  const result = await generateAi({
+    feature: "knowledge",
     userId: opts?.userId,
     workspaceId: opts?.workspaceId,
-    capability: "general_ai",
-  });
-  if (cred) {
-    try {
-      const result = await generateWithCredential(cred, {
-        system,
-        prompt: user,
-        temperature: 0.35,
-        maxOutputTokens: 700,
-      });
-      return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
-    } catch (err) {
-      logRag("query.general_byok_failed", {
-        provider: cred.provider,
-        source: cred.source,
-        error: err instanceof Error ? err.message : "llm",
-      });
-    }
-  }
-
-  try {
-    const { generateGroqText, resolveGroqApiKey } = await import("@cueai/ai-orchestrator/server/groq");
-    if (resolveGroqApiKey()) {
-      const result = await generateGroqText({
-        system,
-        prompt: user,
-        temperature: 0.35,
-        maxOutputTokens: 700,
-      });
-      return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
-    }
-  } catch {
-    // fall through
-  }
-
-  const { resolveGeminiCredentials, generateGeminiText } = await import(
-    "@/lib/server/gemini"
-  );
-  const credentials = await resolveGeminiCredentials();
-  if (!credentials) {
-    throw new Error("No LLM provider configured.");
-  }
-  const result = await generateGeminiText({
-    credentials,
-    prompt: user,
     system,
+    prompt: `USER QUESTION:\n${query.trim()}\n\nAnswer directly. Do not invent document sources.`,
     temperature: 0.35,
+    maxOutputTokens: 700,
+    timeoutMs: 30_000,
   });
-  return { answer: (result.text || "").trim(), llmMs: Date.now() - t0 };
+  return { answer: result.text.trim(), llmMs: result.latencyMs };
 }
 
 function chunksAreRelevant(
@@ -554,6 +466,7 @@ export async function queryKnowledge(input: {
 
     let answer: string;
     let llmMs = 0;
+    let error: KnowledgeQueryResult["error"];
     try {
       const gen = await generateGeneralAnswer(q, {
         userId: input.userId,
@@ -562,11 +475,9 @@ export async function queryKnowledge(input: {
       answer = gen.answer;
       llmMs = gen.llmMs;
     } catch (err) {
-      logRag("query.general_llm_failed", {
-        error: err instanceof Error ? err.message : "llm",
-      });
-      answer =
-        "No relevant information was found in the Knowledge Base, and the language model is temporarily unavailable.";
+      error = await llmFailure(err);
+      logRag("query.general_llm_failed", { code: error.code });
+      answer = `No relevant information was found in the Knowledge Base, and no AI answer could be generated. ${error.message}`;
     }
 
     logRag("query.general_fallback", {
@@ -582,6 +493,7 @@ export async function queryKnowledge(input: {
       sourceType: "general_ai",
       sources: [],
       retrievalMethod: "none",
+      ...(error ? { error } : {}),
       diagnostics: {
         chunksRetrieved: 0,
         retrievalMs,
@@ -597,6 +509,7 @@ export async function queryKnowledge(input: {
   const context = buildRagContext(ranked);
   let answer: string;
   let llmMs = 0;
+  let error: KnowledgeQueryResult["error"];
   try {
     const gen = await generateAnswer(q, context, {
       userId: input.userId,
@@ -605,9 +518,9 @@ export async function queryKnowledge(input: {
     answer = gen.answer;
     llmMs = gen.llmMs;
   } catch (err) {
-    logRag("query.llm_failed", { error: err instanceof Error ? err.message : "llm" });
-    answer =
-      "The Knowledge Base retrieved relevant sources, but the language model is temporarily unavailable.";
+    error = await llmFailure(err);
+    logRag("query.llm_failed", { code: error.code });
+    answer = `The Knowledge Base found relevant sources, but no AI answer could be generated. ${error.message}`;
   }
 
   if (!answer) {
@@ -639,6 +552,7 @@ export async function queryKnowledge(input: {
     sourceType: "knowledge_base",
     sources,
     retrievalMethod,
+    ...(error ? { error } : {}),
     diagnostics: {
       chunksRetrieved: ranked.length,
       retrievalMs,

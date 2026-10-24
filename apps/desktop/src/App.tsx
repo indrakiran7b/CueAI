@@ -16,27 +16,43 @@ import {
 import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
-import { configureAnswerApi, probeLiveAnswerHealth } from "./services/live-answer";
+import {
+  configureAnswerApi,
+  LiveAnswerUnavailable,
+  probeLiveAnswerHealth,
+  requestLiveAnswerStream,
+} from "./services/live-answer";
 import {
   configureLiveTranscription,
   getListenActive,
+  resetLivePipeline,
   stopAllListen,
   syncListenSources,
 } from "./services/audio-listen";
 import {
   clearQuestionMemory,
-  assembleUtterance,
-  beginQuestionProcessing,
-  endQuestionProcessing,
   evaluateQuestion,
+  getRecentExchanges,
   getRollingContext,
   pushRollingTranscript,
   cleanQuestionText,
+  rememberExchange,
 } from "./services/question-detection";
-import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "./services/speech-capture";
-import { createLatencyTracker, pipelineLog, prewarmAnswerApi } from "./services/pipeline-log";
-import { createCueaiLatency } from "./services/cueai-latency";
-import { requestLiveAnswerStream } from "./services/live-answer";
+import { isFirstMeaningfulAnswer } from "./services/speech-capture";
+import { pipelineLog, prewarmAnswerApi } from "./services/pipeline-log";
+import {
+  AutoAnswerController,
+  type AnswerSnapshot,
+  type GenerateRequest,
+} from "./services/auto-answer-controller";
+import {
+  debugLog,
+  finishTimeline,
+  markTimeline,
+  pipelineCounters,
+  startTimeline,
+  timelineFor,
+} from "./services/utterance-timeline";
 import {
   configureMeetingPersist,
   persistFailedQuestion,
@@ -99,9 +115,9 @@ export default function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [shotBusy, setShotBusy] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const startedAtRef = useRef(Date.now());
-  const aiBusyRef = useRef(false);
-  const streamingRef = useRef(false);
   const autoAnswerRef = useRef(autoAnswer);
   autoAnswerRef.current = autoAnswer;
   const transcriptRef = useRef(transcript);
@@ -113,23 +129,36 @@ export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
   const lastCompleteRef = useRef("");
-  const answerHeardRef = useRef<
-    (
-      questionText: string,
-      opts?: {
-        questionId?: string;
-        questionWho?: string;
-        source?: "auto" | "manual" | "screen";
-        latency?: ReturnType<typeof createLatencyTracker>;
-        cueLat?: ReturnType<typeof createCueaiLatency>;
+  const lastSyncedAnswerRef = useRef("");
+  const sessionActiveRef = useRef(false);
+  const generateRef = useRef<(req: GenerateRequest) => Promise<{ answer: string }>>(async () => ({
+    answer: "",
+  }));
+  const controllerRef = useRef<AutoAnswerController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = new AutoAnswerController({
+      generate: (req) => generateRef.current(req),
+      onChange: (snap) => syncAnswerSnapshot(snap),
+      onEvent: (e) => {
+        if (e.type === "requested") {
+          pipelineCounters.triggered += 1;
+          markTimeline(e.utteranceId, "llmRequest", e.at);
+          debugLog("answer requested", { utterance: e.utteranceId, merged: e.merged });
+        } else if (e.type === "rejected") {
+          if (e.reason.startsWith("duplicate")) pipelineCounters.duplicates += 1;
+          finishTimeline(e.utteranceId, "skipped", { reason: e.reason });
+          debugLog("answer not triggered", { utterance: e.utteranceId, reason: e.reason });
+        }
       },
-    ) => Promise<void>
-  >(async () => undefined);
+    });
+  }
+  const controller = controllerRef.current;
 
   const privacyOn = capture?.requested !== false;
   const lastHeard = [...transcript].reverse().find((t) => t.who !== "CueAI");
   const hasAnswer = Boolean(answer.trim());
-  const boardOpen = streaming || hasAnswer || Boolean(question.trim());
+  const boardOpen =
+    streaming || hasAnswer || Boolean(question.trim()) || Boolean(pendingQuestion?.trim());
 
   useEffect(() => {
     void window.cueai?.pin(pinned);
@@ -146,6 +175,7 @@ export default function App() {
     const offWindow = window.cueai?.onWindowState?.((s) => s && setExpanded(s.expanded));
     const offPush = window.cueai?.onPushAnswer?.((payload) => {
       if (!payload?.answer?.trim()) return;
+      controllerRef.current?.cancel();
       rememberQuestion(payload.question?.trim() || "Screen context");
       setAnswer(payload.answer.trim());
       setStreaming(false);
@@ -207,287 +237,197 @@ export default function App() {
     configureLiveTranscription({
       apiBase: webApiBase,
       onResult: (line) => {
-        appendTranscript(line);
+        if (line.partial) return;
+        appendTranscript({ who: line.who, text: line.text });
         pushRollingTranscript(line.who, line.text);
         setStatusMsg(null);
-        if (line.partial && line.who === "System") {
-          console.log("[SYSTEM-AUDIO] Partial transcript:", line.text);
+        persistTranscriptLine({
+          who: line.who,
+          text: line.text,
+          source: line.who === "You" ? "microphone" : line.who === "System" ? "system" : undefined,
+          meetingId: meetingIdRef.current,
+        });
+      },
+      onPending: (who, text) => {
+        // Only the interviewer's in-progress question drives the overlay preview.
+        if (who !== "System") return;
+        setPendingQuestion(text);
+        controllerRef.current?.pending(text);
+      },
+      onDrop: (who, _text, reason) => {
+        if (reason.startsWith("incomplete")) pipelineCounters.droppedIncomplete += 1;
+        debugLog("turn not answered", { who, reason });
+      },
+      onSegmentTiming: (t) => {
+        pipelineCounters.transcribeRequests += t.attempts;
+        if (t.attempts > 1) pipelineCounters.transcribeRetries += t.attempts - 1;
+        if (!t.ok) pipelineCounters.transcribeErrors += 1;
+      },
+      onDebug: (d) => debugLog("turn", d as Record<string, unknown>),
+      onCaptureNotice: (msg) => setCaptureNotice(msg),
+      onUtterance: (u) => {
+        startTimeline(u);
+        const assembled = cleanQuestionText(u.text);
+        lastCompleteRef.current = assembled;
+
+        // Never auto-answer the candidate's own microphone.
+        if (u.lane === "You") {
+          finishTimeline(u.id, "skipped", { reason: "own_microphone" });
+          return;
         }
-        pipelineLog(
-          "transcription",
-          line.partial ? "Partial transcript" : "Final transcript fragment",
-          { who: line.who, chars: line.text.length },
-        );
-
-        // Persist finalized speech only (not partials).
-        if (!line.partial && line.text.trim()) {
-          persistTranscriptLine({
-            who: line.who,
-            text: line.text,
-            source:
-              line.who === "You"
-                ? "microphone"
-                : line.who === "System"
-                  ? "system"
-                  : undefined,
-            meetingId: meetingIdRef.current,
-          });
+        if (!autoAnswerRef.current) {
+          finishTimeline(u.id, "skipped", { reason: "auto_answer_off" });
+          setQuestion(assembled);
+          return;
         }
-
-        assembleUtterance(
-          line.who,
-          line.text,
-          (utterance) => {
-            const assembled = cleanQuestionText(utterance.text);
-            if (!looksTruncatedTranscript(assembled)) {
-              lastCompleteRef.current = assembled;
-              rememberQuestion(assembled);
-            }
-
-            // System Audio alone drives auto-answer — Mic is not required.
-            // Never auto-answer the candidate's own mic ("You").
-            if (utterance.who === "You") return;
-
-            console.log(
-              "[SYSTEM-AUDIO] FINAL TRANSCRIPT:\n" + JSON.stringify(utterance.text),
-            );
-            console.log("[AUTO-ANSWER] Final system question received");
-            console.log(
-              "[AUTO-ANSWER] Auto-answer enabled:",
-              autoAnswerRef.current,
-            );
-            console.log("[AUTO-ANSWER] Current setting:", autoAnswerRef.current);
-
-            if (!autoAnswerRef.current) {
-              pipelineLog("question", "Auto-answer off — transcript only");
-              return;
-            }
-
-            const decision = evaluateQuestion(utterance.text, {
-              who: utterance.who,
-              allowSelfQuestions: true,
-              finalized: true,
-              forceSystem: utterance.who === "System",
-            });
-
-            if (!decision.accept) {
-              pipelineLog("question", "Skipped segment", { reason: decision.reason });
-              console.log("[AUTO-ANSWER] Skipped", decision.reason);
-              return;
-            }
-
-            const questionText = decision.question;
-            const qid = decision.questionId || questionText;
-            if (!beginQuestionProcessing(qid)) {
-              pipelineLog("question", "Duplicate in-flight — skipped", { id: qid });
-              console.log("[AUTO-ANSWER] Duplicate skipped", qid);
-              return;
-            }
-
-            console.log("[AUTO-ANSWER] Question ID:", qid);
-            console.log("[AUTO-ANSWER] Triggering existing answer function");
-            pipelineLog("question", "Complete question detected", {
-              who: utterance.who,
-              chars: questionText.length,
-            });
-
-            const latency = createLatencyTracker(questionText);
-            if (utterance.audioEndAt != null) latency.mark("audioEnd", utterance.audioEndAt);
-            else if (line.audioEndAt != null) latency.mark("audioEnd", line.audioEndAt);
-            if (utterance.transcribedAt != null) {
-              latency.mark("transcriptionFinal", utterance.transcribedAt);
-            } else if (line.transcribedAt != null) {
-              latency.mark("transcriptionFinal", line.transcribedAt);
-            }
-            latency.mark("questionDetected");
-            const cueLat = createCueaiLatency(String(qid).replace(/\D/g, "").slice(-2) || "01");
-            if (utterance.audioEndAt != null) cueLat.mark("speechEnded", utterance.audioEndAt);
-            if (line.transcribeStartedAt != null) cueLat.mark("transcriptionStarted", line.transcribeStartedAt);
-            if (utterance.transcribedAt != null) cueLat.mark("transcriptionReceived", utterance.transcribedAt);
-
-            // Pass the FINAL QUESTION TEXT directly — never rely on React state.
-            void answerHeardRef
-              .current(questionText, {
-                questionId: qid,
-                questionWho:
-                  utterance.who === "System" ? "Interviewer" : utterance.who,
-                source: "auto",
-                latency,
-                cueLat,
-              })
-              .finally(() => endQuestionProcessing(qid));
-          },
-          {
-            audioEndAt: line.audioEndAt,
-            transcribedAt: line.transcribedAt,
-            partial: line.partial,
-          },
-        );
+        const decision = evaluateQuestion(u.text, {
+          who: u.lane,
+          allowSelfQuestions: true,
+          finalized: true,
+          turnFinalized: true,
+          forceSystem: true,
+        });
+        if (!decision.accept) {
+          if (decision.reason === "duplicate") pipelineCounters.duplicates += 1;
+          pipelineCounters.skipped += 1;
+          finishTimeline(u.id, "skipped", { reason: decision.reason });
+          debugLog("answer not triggered", { utterance: u.id, reason: decision.reason });
+          return;
+        }
+        controllerRef.current?.submit({
+          utteranceId: u.id,
+          text: cleanQuestionText(decision.question),
+          finalizedAt: u.finalizedAt,
+          source: "auto",
+        });
       },
       onError: (msg) => setStatusMsg(msg),
     });
     return () => {
       configureLiveTranscription(null);
-      answerAbortRef.current?.abort();
     };
   }, [appendTranscript, webApiBase]);
 
-  function rollingLinesFallback(utterance: { who: string; text: string }) {
-    return [
-      ...transcriptRef.current.slice(-4).map((t) => `${t.who}: ${t.text}`),
-      `${utterance.who}: ${utterance.text}`,
-    ];
-  }
-
-  /**
-   * Shared answer path used by Auto-answer AND the manual Answer button.
-   * Streams via Groq (Gemini fallback on server) and renders in the companion.
-   */
-  async function answerHeardQuestion(
-    questionText: string,
-    opts?: {
-      questionId?: string;
-      questionWho?: string;
-      source?: "auto" | "manual" | "screen";
-      latency?: ReturnType<typeof createLatencyTracker>;
-      cueLat?: ReturnType<typeof createCueaiLatency>;
-    },
-  ) {
-    const q = cleanQuestionText(questionText);
-    if (!q) return;
-
-    // Abort any in-flight stream so follow-ups / auto-answer are never
-    // silently dropped by a stale `streaming` React state guard.
-    answerAbortRef.current?.abort();
-    const abort = new AbortController();
-    answerAbortRef.current = abort;
-
-    bumpActivity();
-    rememberQuestion(q);
-    streamingRef.current = true;
-    setStreaming(true);
-    setAnswer("");
-    setStatusMsg("Answering...");
-    aiBusyRef.current = true;
-
-    const latency = opts?.latency || createLatencyTracker(q);
-    const cueLat = opts?.cueLat || createCueaiLatency("00");
-    latency.mark("aiRequest");
-    cueLat.mark("questionSent");
-    console.log("[GROQ] Request started");
-    pipelineLog("ai", "Request started", {
-      source: opts?.source || "unknown",
-      chars: q.length,
-      questionId: opts?.questionId,
-    });
-
-    try {
-      const rolling = getRollingContext(3);
-      let flushTimer: number | null = null;
-      let pendingFull = "";
-      const result = await requestLiveAnswerStream(q, rolling, {
-        signal: abort.signal,
-        onConnected: () => cueLat.mark("llmConnected"),
-        onToken: (_token, full) => {
-          pendingFull = full;
-          if (!latency.marks.firstToken) {
-            latency.mark("firstToken");
-            cueLat.mark("firstToken");
-            console.log("[GROQ] First token received");
-            pipelineLog("response", "First token received");
-          }
-          if (!cueLat.marks.firstRender) {
-            if (!isFirstMeaningfulAnswer(full)) return;
-            setStatusMsg(null);
-            setAnswer(full);
-            latency.mark("answerVisible");
-            cueLat.mark("firstRender");
-            return;
-          }
-          if (flushTimer != null) return;
-          flushTimer = window.setTimeout(() => {
-            flushTimer = null;
-            setAnswer(pendingFull);
-          }, 32);
-        },
-      });
-      if (abort.signal.aborted) return;
-      if (flushTimer != null) window.clearTimeout(flushTimer);
-      setAnswer(result.answer);
-      setStatusMsg(null);
-      latency.mark("answerVisible");
-      cueLat.mark("complete");
-      cueLat.report();
-      latency.report(opts?.source === "manual" ? "manual_answer" : "auto_answer");
-      appendTranscript({ who: "CueAI", text: result.answer });
-      console.log("[ANSWER] Answer rendered");
-      pipelineLog("overlay", "Answer rendered");
-      console.log("[MEETING] Question saved");
-      console.log("[MEETING] Answer saved");
-    } catch (err) {
-      if (abort.signal.aborted) return;
-      try {
-        const result = await AIService.ask(q, {
-          transcript: rollingLinesFallback({
-            who: opts?.questionWho || "Interviewer",
-            text: q,
-          }),
-        }, { fallback: false });
-        if (abort.signal.aborted) return;
-        setAnswer(result.answer);
-        appendTranscript({ who: "CueAI", text: result.answer });
-        console.log("[ANSWER] Answer rendered");
-        pipelineLog("fallback", "Used non-stream AIService path");
-        console.log("[MEETING] Question saved");
-        console.log("[MEETING] Answer saved");
-      } catch (inner) {
-        persistFailedQuestion({
-          prompt: q,
-          questionWho: opts?.questionWho || "Interviewer",
-          meetingId: meetingIdRef.current,
-        });
-        setStatusMsg(
-          inner instanceof Error
-            ? inner.message
-            : err instanceof Error
-              ? err.message
-              : "Unable to generate an answer.",
-        );
-      }
-    } finally {
-      if (!abort.signal.aborted) {
-        streamingRef.current = false;
-        setStreaming(false);
-        aiBusyRef.current = false;
+  function syncAnswerSnapshot(snap: AnswerSnapshot) {
+    const generating = snap.state === "generating";
+    setStreaming(generating);
+    if (snap.question) setQuestion(snap.question);
+    if (snap.answer !== lastSyncedAnswerRef.current) {
+      lastSyncedAnswerRef.current = snap.answer;
+      // Do not flash single-character fragments; show once the answer is speakable.
+      if (!generating || isFirstMeaningfulAnswer(snap.answer)) {
+        setAnswer(snap.answer);
+        if (snap.answer && generating) markTimeline(snap.utteranceId, "firstRender");
       }
     }
+    if (snap.state === "error_recovery" && snap.error) setStatusMsg(snap.error);
+    if (generating) setStatusMsg(null);
   }
-  answerHeardRef.current = answerHeardQuestion;
+
+  /** The single answer path for auto-answer, typed questions and the Answer button. */
+  generateRef.current = async ({ utteranceId, question: q, signal, onToken }: GenerateRequest) => {
+    bumpActivity();
+    const record = timelineFor(utteranceId);
+    pipelineLog("ai", "Request started", { utterance: utteranceId, chars: q.length });
+    try {
+      const result = await requestLiveAnswerStream(q, getRollingContext(4), {
+        signal,
+        history: getRecentExchanges(),
+        onMeta: (meta) => {
+          if (record && typeof meta.contextMs === "number") record.contextMs = meta.contextMs;
+        },
+        onToken: (_token, full) => {
+          markTimeline(utteranceId, "firstToken");
+          onToken(full);
+        },
+      });
+      if (signal.aborted) throw new DOMException("superseded", "AbortError");
+      markTimeline(utteranceId, "complete");
+      finishTimeline(utteranceId, "answered", { provider: result.provider || result.model });
+      rememberExchange(q, result.answer);
+      appendTranscript({ who: "CueAI", text: result.answer });
+      return { answer: result.answer };
+    } catch (err) {
+      if (signal.aborted) {
+        finishTimeline(utteranceId, "superseded");
+        throw err;
+      }
+      // The server already ran its whole provider chain; a second call would duplicate it.
+      if (err instanceof LiveAnswerUnavailable && err.serverReported) {
+        persistFailedQuestion({ prompt: q, questionWho: "Interviewer", meetingId: meetingIdRef.current });
+        finishTimeline(utteranceId, "failed", { reason: "provider_chain_failed" });
+        throw err;
+      }
+      try {
+        const result = await AIService.ask(
+          q,
+          { transcript: getRollingContext(4).map((t) => `${t.who}: ${t.text}`) },
+          { fallback: false },
+        );
+        if (signal.aborted) throw new DOMException("superseded", "AbortError");
+        onToken(result.answer);
+        markTimeline(utteranceId, "complete");
+        finishTimeline(utteranceId, "answered", { provider: "non_stream" });
+        rememberExchange(q, result.answer);
+        appendTranscript({ who: "CueAI", text: result.answer });
+        return { answer: result.answer };
+      } catch (inner) {
+        if (signal.aborted) {
+          finishTimeline(utteranceId, "superseded");
+          throw inner;
+        }
+        persistFailedQuestion({ prompt: q, questionWho: "Interviewer", meetingId: meetingIdRef.current });
+        finishTimeline(utteranceId, "failed", { reason: "stream_and_fallback_failed" });
+        throw inner instanceof Error ? inner : err;
+      }
+    }
+  };
+
+  /** Manual entry points (typed question, Answer button) share the controller. */
+  function answerHeardQuestion(questionText: string, source: "manual" | "auto" = "manual") {
+    const q = cleanQuestionText(questionText);
+    if (!q) return;
+    controller.submit({
+      utteranceId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: q,
+      finalizedAt: performance.now(),
+      source,
+    });
+  }
 
   async function onAsk(e: FormEvent) {
     e.preventDefault();
     const prompt = ask.trim();
     if (!prompt) return;
     setAsk("");
-    await answerHeardQuestion(prompt, { source: "manual", questionWho: "You" });
+    answerHeardQuestion(prompt);
   }
 
-  async function generateAnswer() {
+  function generateAnswer() {
     const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
-    if (!last) {
-      await answerHeardQuestion(
-        "Give me a ready-to-say self-introduction from my resume and the job briefing.",
-        { source: "manual", questionWho: "You" },
-      );
-      return;
-    }
-    // Same function as Auto-answer — re-trigger / retry for the last heard question.
-    console.log("[AUTO-ANSWER] Manual Answer button → same answer function");
-    await answerHeardQuestion(last, {
-      source: "manual",
-      questionWho: lastHeard?.who === "System" ? "Interviewer" : lastHeard?.who || "Interviewer",
-    });
+    // Same path as auto-answer — re-trigger / retry for the last heard question.
+    answerHeardQuestion(
+      last || "Give me a ready-to-say self-introduction from my resume and the job briefing.",
+    );
   }
+
+  useEffect(() => {
+    controller.setListening(listen.mic || listen.systemAudio);
+  }, [controller, listen.mic, listen.systemAudio]);
+
+  useEffect(() => {
+    const wasActive = sessionActiveRef.current;
+    sessionActiveRef.current = Boolean(session.active);
+    if (!session.active || wasActive) return;
+    // A live session just started: capture the interviewer right away instead of
+    // waiting for someone to find the System toggle.
+    void window.cueai?.getListenSources().then(async (current) => {
+      if (current && (current.mic || current.systemAudio)) return;
+      const saved = await window.cueai?.setListenSources({ systemAudio: true });
+      if (saved) setListen(saved);
+      pipelineLog("audio", "Live session started — system audio listening enabled");
+    });
+  }, [session.active, setListen]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -567,6 +507,11 @@ export default function App() {
     setCopied(false);
     clearTranscript();
     clearQuestionMemory();
+    resetLivePipeline();
+    controllerRef.current?.reset();
+    lastSyncedAnswerRef.current = "";
+    setPendingQuestion(null);
+    setCaptureNotice(null);
     lastCompleteRef.current = "";
     answerAbortRef.current?.abort();
     startedAtRef.current = Date.now();
@@ -597,6 +542,7 @@ export default function App() {
     if (shotBusy) return;
     setShotBusy(true);
     setStatusMsg(null);
+    controller.cancel();
     rememberQuestion("What's on screen?");
     setStreaming(true);
     setAnswer("");
@@ -794,7 +740,16 @@ export default function App() {
       {boardOpen && (
         <section className="ov-card no-drag">
           <header>
-            <p>{question || lastHeard?.text || "Working…"}</p>
+            <p>
+              {pendingQuestion && !streaming ? (
+                <>
+                  <span className="ov-muted">Hearing: </span>
+                  {pendingQuestion}
+                </>
+              ) : (
+                question || lastHeard?.text || "Working…"
+              )}
+            </p>
             <div>
               {hasAnswer && (
                 <button type="button" onClick={() => void copyAnswer()}>
@@ -809,7 +764,8 @@ export default function App() {
             <p className="ov-error">{apiHealthError}</p>
           )}
           {statusMsg && <p className="ov-error">{statusMsg}</p>}
-          {streaming ? (
+          {captureNotice && !statusMsg && <p className="ov-muted">{captureNotice}</p>}
+          {streaming && !hasAnswer ? (
             <p className="ov-muted">Thinking…</p>
           ) : (
             <div className="ov-answer">

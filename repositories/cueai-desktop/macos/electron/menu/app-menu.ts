@@ -75,12 +75,12 @@ export function installMacAppMenu(getMainWindow: () => BrowserWindow | null) {
       label: "View",
       submenu: [
         {
-          label: "Show Desktop Companion",
+          label: "Show CueAI Overlay",
           accelerator: "CommandOrControl+Shift+Space",
           click: () => void toggleCompanion(),
         },
         {
-          label: "Hide Desktop Companion",
+          label: "Hide CueAI Overlay",
           accelerator: "CommandOrControl+Shift+H",
           click: () => void hideCompanion(),
         },
@@ -110,7 +110,7 @@ export function installMacAppMenu(getMainWindow: () => BrowserWindow | null) {
           click: () => showMain(),
         },
         {
-          label: "Desktop Companion",
+          label: "CueAI Overlay",
           click: () => void showCompanion(),
         },
         { type: "separator" },

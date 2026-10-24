@@ -13,9 +13,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.modules.live.answer_service import (
     LiveAnswerError,
     _groq_key,
-    build_prompts,
     generate_live_answer,
     iter_groq_tokens,
+    plan_live_answer,
 )
 from app.modules.live.gemini import gemini_api_key
 from app.modules.live.screen_service import ScreenAnalysisError, enqueue_screen_analysis
@@ -90,18 +90,19 @@ async def live_answer(request: Request, body: dict[str, Any]):
                         yield _sse({
                             "type": "done",
                             "answer": text,
+                            "validationStatus": payload.get("validationStatus"),
                             "confidence": payload.get("confidence", 0.78),
                             "model": payload.get("model"),
                             "provider": payload.get("provider"),
                             "requestId": request_id,
                         })
                         return
-                    system, user_prompt, _session = build_prompts(body)
+                    plan = plan_live_answer(body)
                     parts: list[str] = []
                     model = ""
                     first_token_ms: int | None = None
                     try:
-                        async for delta, used in iter_groq_tokens(system, user_prompt):
+                        async for delta, used in iter_groq_tokens(plan.system, plan.user_prompt, plan.max_tokens):
                             if first_token_ms is None:
                                 first_token_ms = _ms(started)
                             parts.append(delta)
@@ -159,16 +160,22 @@ async def live_answer(request: Request, body: dict[str, Any]):
                             return
                         yield _sse({"type": "error", "error": str(exc), "requestId": request_id})
                         return
-                    text = "".join(parts)
+                    guarded = plan.guard("".join(parts))
+                    text = guarded.answer
                     logger.info(
-                        "live_answer_stream request_id=%s provider=groq ttft_ms=%s total_ms=%s",
+                        "live_answer_stream request_id=%s provider=groq type=%s category=%s ttft_ms=%s total_ms=%s guard=%s validation=%s",
                         request_id,
+                        plan.analysis.response_type,
+                        plan.analysis.category,
                         first_token_ms if first_token_ms is not None else -1,
                         _ms(started),
+                        ",".join(guarded.changes) or "-",
+                        guarded.validation_status,
                     )
                     yield _sse({
                         "type": "done",
                         "answer": text,
+                        "validationStatus": guarded.validation_status,
                         "confidence": 0.78,
                         "model": model,
                         "provider": "groq",

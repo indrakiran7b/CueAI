@@ -104,7 +104,7 @@ function showCompanionLoadError(win: BrowserWindow, url: string, desc: string, c
       <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">Keep that terminal open so the companion UI can load on port 15174.</p>`;
   const html = `<!doctype html><html><body style="margin:0;background:rgba(11,15,16,0.92);color:#e5e7eb;font-family:Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh">
     <div style="max-width:420px;padding:20px;border:1px solid rgba(255,255,255,0.12);border-radius:16px">
-      <h1 style="font-size:16px;margin:0 0 8px;color:#f4f4f5">Companion UI failed to load</h1>
+      <h1 style="font-size:16px;margin:0 0 8px;color:#f4f4f5">CueAI overlay failed to load</h1>
       <p style="color:#9ca3af;font-size:13px">Could not open ${url}</p>
       <p style="color:#9ca3af;font-size:13px">${companionLoadError}</p>
       ${hint}
@@ -289,7 +289,7 @@ export function ensureOverlayWindow(): BrowserWindow {
     hasShadow: true,
     roundedCorners: true,
     focusable: true,
-    title: "CueAI Companion",
+    title: "CueAI Overlay",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,

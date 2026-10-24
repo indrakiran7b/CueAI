@@ -129,96 +129,8 @@ export type CueDesktopAPI = {
   openPrivacySettings?: (
     pane?: "microphone" | "screen" | "systemAudio" | "privacy"
   ) => Promise<boolean>;
-  getAccountDevice?: () => Promise<{
-    deviceId: string;
-    maskedId: string;
-    deviceName: string;
-    platform: "macos" | "windows";
-    appVersion: string;
-    keychainAvailable: boolean;
-    hasCredential?: boolean;
-  }>;
-  registerAccountDevice?: () => Promise<{
-    ok: boolean;
-    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-    authorized: boolean;
-    httpStatus?: number;
-    message?: string;
-  }>;
-  verifyAccountDevice?: () => Promise<{
-    ok: boolean;
-    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-    authorized: boolean;
-    httpStatus?: number;
-    message?: string;
-  }>;
-  clearAccountDeviceSession?: () => Promise<{
-    cleared: boolean;
-    identityPreserved: boolean;
-  }>;
   getDeviceAuthHeaders?: () => Promise<Record<string, string>>;
   startGoogleSignIn?: () => Promise<{ ok: boolean; error?: string }>;
-  getMacDevice?: () => Promise<{
-    deviceId: string;
-    maskedId: string;
-    deviceName: string;
-    platform: "macos" | "windows";
-    appVersion: string;
-    keychainAvailable: boolean;
-    hasCredential?: boolean;
-  }>;
-  registerMacDevice?: () => Promise<{
-    ok: boolean;
-    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-    authorized: boolean;
-    httpStatus?: number;
-    message?: string;
-  }>;
-  verifyMacDevice?: () => Promise<{
-    ok: boolean;
-    status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-    authorized: boolean;
-    httpStatus?: number;
-    message?: string;
-  }>;
-  clearMacDeviceSession?: () => Promise<{
-    cleared: boolean;
-    identityPreserved: boolean;
-  }>;
-  getLicenseDevice?: () => Promise<{
-    deviceId: string;
-    maskedId: string;
-    deviceName: string;
-    platform: "windows" | "macos";
-    appVersion: string;
-    secureStorageAvailable: boolean;
-  }>;
-  getLicenseStatus?: () => Promise<LicenseStatusPayload>;
-  activateLicense?: (licenseKey: string) => Promise<LicenseStatusPayload>;
-  validateLicense?: () => Promise<LicenseStatusPayload>;
-  deactivateLicense?: () => Promise<LicenseStatusPayload>;
-};
-
-export type LicenseStatusPayload = {
-  ok: boolean;
-  state:
-    | "ACTIVE"
-    | "EXPIRED"
-    | "REVOKED"
-    | "INVALID"
-    | "DEVICE_LIMIT_REACHED"
-    | "NOT_ACTIVATED"
-    | "NETWORK_ERROR";
-  authorized: boolean;
-  message?: string;
-  clientName?: string;
-  licenseType?: string;
-  expiresAt?: string;
-  devicesActive?: number;
-  maxDevices?: number;
-  licenseId?: string;
-  deviceId?: string;
-  platform?: "windows" | "macos";
 };
 
 declare global {
@@ -397,7 +309,7 @@ export async function openCompanionOverlay(): Promise<CompanionOpenResult> {
       return {
         mode: "native",
         issue: "load_error",
-        loadError: err instanceof Error ? err.message : "Companion IPC failed",
+        loadError: err instanceof Error ? err.message : "Desktop overlay connection failed",
       };
     }
     return { mode: "native", issue: "not_visible" };

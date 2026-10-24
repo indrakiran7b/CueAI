@@ -1,8 +1,10 @@
 /**
- * Continuous mic + system loopback → PCM ring buffer → VAD segment with
- * prefix/tail → 16 kHz mono WAV → Groq Whisper (Gemini STT fallback server-side).
+ * Continuous mic + system loopback capture → LivePipeline
+ * (audio-clock VAD segments → ordered Groq Whisper queue → turn detector).
  *
- * Streams stay open while Mic/System are ON. MediaRecorder is not used.
+ * Streams stay open while Mic/System are ON. Each source is its own lane and is
+ * never substituted for the other. Capture survives answers, stalls, ended
+ * tracks and device changes (bounded automatic recovery).
  */
 
 import {
@@ -22,27 +24,11 @@ import {
   tryBeginSystemStart,
   type AudioSessionSnapshot,
 } from "./audio-session-manager";
-import {
-  mixToMono,
-  prepareGroqWav,
-  PcmRingBuffer,
-  rmsLevel,
-} from "./audio-pcm";
+import { mixToMono } from "./audio-pcm";
 import { pipelineLog } from "./pipeline-log";
-import {
-  PREFIX_MS,
-  POST_ROLL_MS,
-  SPEECH_END_SILENCE_MS,
-  MIN_SPEECH_MS,
-  MAX_SPEECH_MS,
-  VOICE_THRESHOLD,
-  VOICE_HANGOVER_THRESHOLD,
-  adaptiveSilenceMs,
-  captureQuality,
-  looksTruncatedTranscript,
-  logCaptureMetrics,
-  wordCount,
-} from "./speech-capture";
+import { LivePipeline, type LaneHandle, type LaneName, type PipelineTranscript, type SegmentTiming } from "./live-pipeline";
+import type { FinalUtterance, TurnDebug } from "./turn-detector";
+import { TranscribeError, type TranscribeJob } from "./transcription-queue";
 
 export type ListenActiveState = AudioSessionSnapshot;
 
@@ -55,52 +41,160 @@ export type LiveTranscribeConfig = {
     transcribedAt?: number;
     transcribeStartedAt?: number;
     partial?: boolean;
+    uncertain?: boolean;
   }) => void;
   onError: (msg: string) => void;
+  /** A finished turn (question boundary) on a lane. */
+  onUtterance?: (u: FinalUtterance) => void;
+  /** Text of the turn still being spoken (null when it ends). */
+  onPending?: (who: LaneName, text: string | null) => void;
+  onDrop?: (who: LaneName, text: string, reason: string) => void;
+  onSegmentTiming?: (t: SegmentTiming) => void;
+  onDebug?: (d: TurnDebug | { lane: string; action: string; reason: string }) => void;
+  /** Informational capture status (e.g. "System audio is silent"); null clears. */
+  onCaptureNotice?: (msg: string | null) => void;
 };
 
 type CaptureLane = {
-  who: "You" | "System";
+  who: LaneName;
   kind: "mic" | "system";
   stream: MediaStream;
   ctx: AudioContext;
   source: MediaStreamAudioSourceNode;
   processor: ScriptProcessorNode;
   mute: GainNode;
-  ring: PcmRingBuffer;
-  speechActive: boolean;
-  speechStartAbs: number;
-  lastVoiceAbs: number;
+  handle: LaneHandle;
+  startedAt: number;
+  lastChunkAt: number;
   lastVoiceAt: number;
-  speechStartedPerf: number | null;
-  flushTimer: number | null;
-  maxTimer: number | null;
-  onEnded: (() => void) | null;
+  silentNoticeShown: boolean;
+  trackHandlers: { track: MediaStreamTrack; type: string; fn: () => void }[];
 };
 
-export { SPEECH_END_SILENCE_MS, PREFIX_MS, POST_ROLL_MS };
 const MIN_WAV_BYTES = 1600;
-const MAX_IN_FLIGHT = 2;
+const WATCHDOG_MS = 1000;
+const STALL_MS = 2500;
+const SILENT_NOTICE_MS = 20_000;
+const MAX_RECOVERY = 3;
+
+function envNumber(name: string): number | undefined {
+  const raw = (import.meta as { env?: Record<string, string | undefined> }).env?.[name];
+  const n = Number(raw);
+  return raw != null && raw !== "" && Number.isFinite(n) ? n : undefined;
+}
+
+function envFlag(name: string, fallback: boolean) {
+  const raw = (import.meta as { env?: Record<string, string | undefined> }).env?.[name];
+  if (raw == null || raw === "") return fallback;
+  return raw === "1" || raw.toLowerCase() === "true";
+}
 
 let micStream: MediaStream | null = null;
 let systemStream: MediaStream | null = null;
 let micLane: CaptureLane | null = null;
 let systemLane: CaptureLane | null = null;
 let liveConfig: LiveTranscribeConfig | null = null;
-let transcribeInFlight = 0;
 let micStartPromise: Promise<void> | null = null;
 let systemStartPromise: Promise<void> | null = null;
+let pipeline: LivePipeline | null = null;
+let watchdog: number | null = null;
+let systemSourceGetter: (() => Promise<string | null>) | null = null;
+const wanted = { mic: false, system: false };
+const recoveries = { mic: 0, system: 0 };
+let deviceChangeBound = false;
+
+function getPipeline(): LivePipeline {
+  if (pipeline) return pipeline;
+  pipeline = new LivePipeline({
+    partials: envFlag("VITE_PARTIAL_TRANSCRIPTS", true),
+    segmenter: compact({
+      segmentSilenceMs: envNumber("VITE_SEGMENT_SILENCE_MS"),
+      prefixMs: envNumber("VITE_SPEECH_PREFIX_MS"),
+      postRollMs: envNumber("VITE_SPEECH_POST_ROLL_MS"),
+    }),
+    turn: compact({
+      completeSilenceMs: envNumber("VITE_TURN_COMPLETE_SILENCE_MS"),
+      softSilenceMs: envNumber("VITE_TURN_SOFT_SILENCE_MS"),
+      neutralSilenceMs: envNumber("VITE_TURN_NEUTRAL_SILENCE_MS"),
+      incompleteSilenceMs: envNumber("VITE_TURN_INCOMPLETE_SILENCE_MS"),
+    }),
+    transcribe: (job, signal) => transcribeJob(job, signal),
+    onTranscript: (line) => deliverTranscript(line),
+    onUtterance: (u) => liveConfig?.onUtterance?.(u),
+    onPending: (who, text) => liveConfig?.onPending?.(who, text),
+    onDrop: (who, text, reason) => liveConfig?.onDrop?.(who, text, reason),
+    onSegmentTiming: (t) => {
+      pipelineLog("transcription", t.ok ? "Segment transcribed" : "Segment failed", {
+        who: t.who,
+        kind: t.kind,
+        audio_ms: t.audioMs,
+        queue_ms: t.queueMs,
+        transcribe_ms: t.transcribeMs,
+        attempts: t.attempts,
+        error: t.error,
+      });
+      liveConfig?.onSegmentTiming?.(t);
+    },
+    onTranscribeError: (_who, message) => {
+      const msg = humanizeFetchError(new Error(message));
+      setAudioError(msg);
+      liveConfig?.onError(msg);
+    },
+    onDebug: (d) => liveConfig?.onDebug?.(d),
+  });
+  return pipeline;
+}
+
+// Remove undefined overrides so module defaults apply.
+function compact<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+function deliverTranscript(line: PipelineTranscript) {
+  if (!line.partial) clearAudioError();
+  liveConfig?.onResult({
+    who: line.who,
+    text: line.text,
+    audioEndAt: line.lastVoiceAt,
+    transcribeStartedAt: line.timing.startedAt,
+    transcribedAt: line.timing.finishedAt,
+    partial: line.partial,
+    uncertain: line.uncertain,
+  });
+}
+
+async function transcribeJob(job: TranscribeJob, signal: AbortSignal) {
+  const lane = job.lane === "You" ? "mic" : "system";
+  if (job.kind !== "partial") (lane === "mic" ? setMicState : setSystemState)("processing");
+  try {
+    const res = await transcribeAudioBlob(job.wav, job.lane, liveConfig?.apiBase, {
+      prompt: job.prompt,
+      signal,
+    });
+    return { text: res?.text || "", uncertain: res?.uncertain };
+  } finally {
+    const stream = lane === "mic" ? micStream : systemStream;
+    if (stream) (lane === "mic" ? setMicState : setSystemState)("listening");
+  }
+}
 
 export function configureLiveTranscription(config: LiveTranscribeConfig | null) {
   liveConfig = config;
 }
 
+/** Forget pending speech/transcripts (new session). Capture keeps running. */
+export function resetLivePipeline() {
+  pipeline?.reset();
+}
+
+export function isLivePipelineBusy() {
+  return Boolean(pipeline?.busy());
+}
+
 export function getListenActive(): { mic: boolean; systemAudio: boolean } {
   return {
     mic: Boolean(micStream?.getAudioTracks().some((t) => t.readyState === "live")),
-    systemAudio: Boolean(
-      systemStream?.getAudioTracks().some((t) => t.readyState === "live"),
-    ),
+    systemAudio: Boolean(systemStream?.getAudioTracks().some((t) => t.readyState === "live")),
   };
 }
 
@@ -116,9 +210,7 @@ function humanizeMediaError(err: unknown, kind: "mic" | "system"): string {
       : "System audio permission denied.";
   }
   if (name === "NotFoundError" || msg.includes("not found") || msg.includes("device")) {
-    return kind === "mic"
-      ? "No microphone device found."
-      : "No system audio / loopback device found.";
+    return kind === "mic" ? "No microphone device found." : "No system audio / loopback device found.";
   }
   if (name === "NotReadableError" || msg.includes("in use") || msg.includes("busy")) {
     return kind === "mic"
@@ -131,203 +223,21 @@ function humanizeMediaError(err: unknown, kind: "mic" | "system"): string {
   return humanizeFetchError(err);
 }
 
-async function maybeTranscribeWav(blob: Blob, who: string, audioEndAt: number) {
-  if (!liveConfig) return;
-  if (blob.size < MIN_WAV_BYTES) return;
-  if (transcribeInFlight >= MAX_IN_FLIGHT) {
-    pipelineLog("transcription", "Dropped segment — too many in flight", {
-      who,
-      bytes: blob.size,
-    });
-    return;
-  }
-
-  transcribeInFlight++;
-  if (who === "You") setMicState("processing");
-  else setSystemState("processing");
-  const transcribeStarted = performance.now();
-  pipelineLog("transcription", "Finalizing speech segment (WAV→Groq)", {
-    who,
-    bytes: blob.size,
-  });
-
-  try {
-    const line = await transcribeAudioBlob(blob, who, liveConfig.apiBase);
-    const transcribedAt = performance.now();
-    if (line?.text) {
-      // Always use the capture-lane speaker label — never trust STT "who".
-      const speaker = who;
-      console.log(
-        speaker === "System"
-          ? `[SYSTEM-AUDIO] FINAL TRANSCRIPT:\n"${line.text.trim()}"`
-          : `[MIC] FINAL TRANSCRIPT:\n"${line.text.trim()}"`,
-      );
-      pipelineLog("transcription", "Final transcript received", {
-        who: speaker,
-        chars: line.text.length,
-      });
-      const text = line.text.trim();
-      logCaptureMetrics("transcription", {
-        who: speaker,
-        transcription_latency: Math.round(transcribedAt - transcribeStarted),
-        transcript_length: text.length,
-        question_capture_quality: captureQuality({
-          transcriptChars: text.length,
-          words: wordCount(text),
-          truncated: looksTruncatedTranscript(text),
-        }),
-      });
-      liveConfig.onResult({
-        who: speaker,
-        text,
-        audioEndAt,
-        transcribedAt,
-        transcribeStartedAt: transcribeStarted,
-        partial: false,
-      });
-    }
-    clearAudioError();
-  } catch (err) {
-    const msg = humanizeFetchError(err);
-    setAudioError(msg);
-    liveConfig.onError(msg);
-    pipelineLog("transcription", "Transcription failed", {
-      who,
-      error: msg.slice(0, 120),
-    });
-  } finally {
-    transcribeInFlight--;
-    if (who === "You" && micStream) setMicState("listening");
-    else if (who === "System" && systemStream) setSystemState("listening");
-  }
+function describeTracks(stream: MediaStream) {
+  return stream
+    .getAudioTracks()
+    .map((t) => `${t.readyState}${t.enabled ? "" : ":disabled"}${t.muted ? ":muted" : ""}`)
+    .join(",");
 }
 
-function finalizeSpeech(lane: CaptureLane, reason: string) {
-  if (lane.flushTimer != null) {
-    window.clearTimeout(lane.flushTimer);
-    lane.flushTimer = null;
-  }
-  if (lane.maxTimer != null) {
-    window.clearTimeout(lane.maxTimer);
-    lane.maxTimer = null;
-  }
-  if (!lane.speechActive || lane.speechStartedPerf == null) {
-    lane.speechActive = false;
-    lane.speechStartedPerf = null;
-    return;
-  }
-
-  const durationMs = performance.now() - lane.speechStartedPerf;
-  const prefixSamples = Math.floor((PREFIX_MS / 1000) * lane.ring.sampleRate);
-  const postRollSamples = Math.floor((POST_ROLL_MS / 1000) * lane.ring.sampleRate);
-  const startAbs = Math.max(0, lane.speechStartAbs - prefixSamples);
-  const endAbs = Math.min(lane.ring.endIndex, Math.max(lane.lastVoiceAbs + postRollSamples, lane.ring.endIndex));
-
-  lane.speechActive = false;
-  lane.speechStartedPerf = null;
-
-  if (durationMs < MIN_SPEECH_MS) {
-    pipelineLog("audio", "Speech too short — holding for continuation", {
-      who: lane.who,
-      reason,
-      durationMs: Math.round(durationMs),
-    });
-    logCaptureMetrics("audio", {
-      who: lane.who,
-      audio_duration: Math.round(durationMs),
-      question_capture_quality: captureQuality({ durationMs }),
-    });
-    return;
-  }
-
-  const samples = lane.ring.slice(startAbs, endAbs);
-  if (samples.length < lane.ring.sampleRate * 0.25) {
-    pipelineLog("audio", "Speech buffer too small — discarded", { who: lane.who, reason });
-    return;
-  }
-
-  const audioEndAt = performance.now();
-  const wav = prepareGroqWav(samples, lane.ring.sampleRate);
-  pipelineLog("audio", "Speech segment ended", {
-    who: lane.who,
-    reason,
-    durationMs: Math.round(durationMs),
-    samples: samples.length,
-    wavBytes: wav.size,
-    pre_roll: PREFIX_MS,
-    post_roll: POST_ROLL_MS,
-  });
-  logCaptureMetrics("audio", {
-    who: lane.who,
-    speech_end: Math.round(audioEndAt),
-    audio_duration: Math.round(durationMs),
-    pre_roll: PREFIX_MS,
-    post_roll: POST_ROLL_MS,
-    vad_finalize_time: Math.round(durationMs),
-    question_capture_quality: captureQuality({ durationMs }),
-  });
-  void maybeTranscribeWav(wav, lane.who, audioEndAt);
-}
-
-function onPcmChunk(lane: CaptureLane, mono: Float32Array) {
-  lane.ring.push(mono);
-  const level = rmsLevel(mono);
-  if (lane.kind === "mic") setMicLevel(level);
-  else setSystemLevel(level);
-  emitLevelsThrottled(125);
-
-  const now = performance.now();
-  const stayThreshold = lane.speechActive ? VOICE_HANGOVER_THRESHOLD : VOICE_THRESHOLD;
-  const voiced = level >= stayThreshold;
-
-  if (voiced) {
-    lane.lastVoiceAt = now;
-    lane.lastVoiceAbs = lane.ring.endIndex;
-    if (!lane.speechActive) {
-      lane.speechActive = true;
-      lane.speechStartedPerf = now;
-      lane.speechStartAbs = Math.max(0, lane.ring.endIndex - mono.length);
-      pipelineLog("audio", "Speech segment started", { who: lane.who, pre_roll: PREFIX_MS });
-      logCaptureMetrics("audio", { who: lane.who, speech_start: Math.round(now), pre_roll: PREFIX_MS });
-      if (lane.who === "System") {
-        console.log("[SYSTEM-AUDIO] Speech started");
-      }
-      if (lane.maxTimer != null) window.clearTimeout(lane.maxTimer);
-      lane.maxTimer = window.setTimeout(() => {
-        finalizeSpeech(lane, "max_duration");
-      }, MAX_SPEECH_MS);
-    }
-    if (lane.flushTimer != null) {
-      window.clearTimeout(lane.flushTimer);
-      lane.flushTimer = null;
-    }
-  } else if (lane.speechActive) {
-    const silentFor = now - lane.lastVoiceAt;
-    const needed = adaptiveSilenceMs(
-      lane.speechStartedPerf != null ? now - lane.speechStartedPerf : 0,
-    );
-    if (silentFor >= needed && lane.flushTimer == null) {
-      lane.flushTimer = window.setTimeout(() => {
-        lane.flushTimer = null;
-        finalizeSpeech(lane, "silence");
-      }, POST_ROLL_MS);
-    }
-  }
-}
-
-function attachPcmLane(
-  stream: MediaStream,
-  who: "You" | "System",
-  kind: "mic" | "system",
-): CaptureLane {
+function attachLane(stream: MediaStream, who: LaneName, kind: "mic" | "system"): CaptureLane {
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
-  // Prefer stereo in → mix in onaudioprocess; works for mic (mono) and loopback.
   const processor = ctx.createScriptProcessor(2048, 2, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
-  const ring = new PcmRingBuffer(ctx.sampleRate, 24);
-
+  const handle = getPipeline().addLane(who, ctx.sampleRate);
+  const now = performance.now();
   const lane: CaptureLane = {
     who,
     kind,
@@ -336,68 +246,173 @@ function attachPcmLane(
     source,
     processor,
     mute,
-    ring,
-    speechActive: false,
-    speechStartAbs: 0,
-    lastVoiceAbs: 0,
+    handle,
+    startedAt: now,
+    lastChunkAt: now,
     lastVoiceAt: 0,
-    speechStartedPerf: null,
-    flushTimer: null,
-    maxTimer: null,
-    onEnded: null,
+    silentNoticeShown: false,
+    trackHandlers: [],
   };
 
-  let pcmChunks = 0;
   processor.onaudioprocess = (ev) => {
     const input = ev.inputBuffer;
     const channels: Float32Array[] = [];
-    for (let c = 0; c < input.numberOfChannels; c++) {
-      channels.push(input.getChannelData(c));
-    }
-    const mono = mixToMono(channels);
-    pcmChunks += 1;
-    if (lane.kind === "mic" && (pcmChunks === 1 || pcmChunks % 100 === 0)) {
-      console.log("audio chunks received:", pcmChunks);
-    }
-    onPcmChunk(lane, mono);
+    for (let c = 0; c < input.numberOfChannels; c++) channels.push(input.getChannelData(c));
+    const t = performance.now();
+    lane.lastChunkAt = t;
+    const level = handle.push(mixToMono(channels), t);
+    if (handle.speaking) lane.lastVoiceAt = t;
+    if (kind === "mic") setMicLevel(level);
+    else setSystemLevel(level);
+    emitLevelsThrottled(125);
   };
 
   source.connect(processor);
   processor.connect(mute);
   mute.connect(ctx.destination);
   void ctx.resume();
+  pipelineLog("audio", `${kind === "mic" ? "Microphone" : "System audio"} lane attached`, {
+    sample_rate: ctx.sampleRate,
+    tracks: describeTracks(stream),
+    ctx_state: ctx.state,
+  });
   return lane;
 }
 
-function tearDownLane(lane: CaptureLane | null) {
+function detachLane(lane: CaptureLane | null) {
   if (!lane) return;
-  if (lane.flushTimer != null) window.clearTimeout(lane.flushTimer);
-  if (lane.maxTimer != null) window.clearTimeout(lane.maxTimer);
-  if (lane.onEnded) {
-    lane.stream.getTracks().forEach((t) => t.removeEventListener("ended", lane.onEnded!));
-  }
+  for (const h of lane.trackHandlers) h.track.removeEventListener(h.type, h.fn);
+  lane.trackHandlers = [];
+  lane.processor.onaudioprocess = null;
   try {
     lane.processor.disconnect();
     lane.source.disconnect();
     lane.mute.disconnect();
   } catch {
-    /* ignore */
+    /* already disconnected */
   }
-  void lane.ctx.close();
-  lane.ring.clear();
+  void lane.ctx.close().catch(() => undefined);
+  pipeline?.removeLane(lane.who, performance.now());
 }
 
-function wireTrackEnded(lane: CaptureLane, onDead: () => void) {
-  const handler = () => {
-    pipelineLog("audio", "Audio device disconnected", { who: lane.who });
-    onDead();
-  };
-  lane.onEnded = handler;
-  lane.stream.getTracks().forEach((t) => t.addEventListener("ended", handler));
+function wireTracks(lane: CaptureLane) {
+  for (const track of lane.stream.getAudioTracks()) {
+    const onEnded = () => {
+      pipelineLog("audio", "Audio track ended", { who: lane.who });
+      void recoverLane(lane.kind, "track_ended");
+    };
+    const onMute = () => {
+      pipelineLog("audio", "Audio track muted", { who: lane.who });
+      liveConfig?.onCaptureNotice?.(
+        lane.kind === "mic" ? "Microphone is muted by the system." : "System audio track is muted.",
+      );
+    };
+    const onUnmute = () => {
+      pipelineLog("audio", "Audio track unmuted", { who: lane.who });
+      liveConfig?.onCaptureNotice?.(null);
+    };
+    for (const [type, fn] of [["ended", onEnded], ["mute", onMute], ["unmute", onUnmute]] as const) {
+      track.addEventListener(type, fn);
+      lane.trackHandlers.push({ track, type, fn });
+    }
+  }
 }
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
+}
+
+/** Keeps capture alive across the whole session; never touches answer state. */
+function ensureWatchdog() {
+  if (watchdog != null) return;
+  watchdog = window.setInterval(() => {
+    const now = performance.now();
+    pipeline?.tick(now);
+    for (const lane of [micLane, systemLane]) {
+      if (!lane) continue;
+      if (lane.ctx.state === "suspended") {
+        pipelineLog("audio", "AudioContext suspended — resuming", { who: lane.who });
+        void lane.ctx.resume();
+      }
+      if (now - lane.lastChunkAt > STALL_MS) {
+        pipelineLog("audio", "Audio callbacks stalled — restarting lane", {
+          who: lane.who,
+          stalled_ms: Math.round(now - lane.lastChunkAt),
+          tracks: describeTracks(lane.stream),
+        });
+        lane.lastChunkAt = now;
+        void recoverLane(lane.kind, "stalled");
+      }
+      if (
+        lane.kind === "system" &&
+        !lane.silentNoticeShown &&
+        !lane.lastVoiceAt &&
+        now - lane.startedAt > SILENT_NOTICE_MS
+      ) {
+        lane.silentNoticeShown = true;
+        pipelineLog("audio", "System audio silent since start", { who: lane.who });
+        liveConfig?.onCaptureNotice?.(
+          "System audio is silent — check that the meeting plays through this computer's default output.",
+        );
+      }
+      if (lane.kind === "system" && lane.silentNoticeShown && lane.lastVoiceAt) {
+        lane.silentNoticeShown = false;
+        liveConfig?.onCaptureNotice?.(null);
+      }
+    }
+    if (!micLane && !systemLane && !pipeline?.busy()) {
+      window.clearInterval(watchdog!);
+      watchdog = null;
+    }
+  }, WATCHDOG_MS);
+}
+
+function bindDeviceChange() {
+  if (deviceChangeBound || !navigator.mediaDevices?.addEventListener) return;
+  deviceChangeBound = true;
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    const micDead = micStream && !micStream.getAudioTracks().some((t) => t.readyState === "live");
+    pipelineLog("audio", "Audio devices changed", { mic_live: !micDead });
+    if (wanted.mic && micDead) void recoverLane("mic", "device_change");
+  });
+}
+
+async function recoverLane(kind: "mic" | "system", reason: string) {
+  if (!(kind === "mic" ? wanted.mic : wanted.system)) return;
+  if (recoveries[kind] >= MAX_RECOVERY) {
+    const msg = kind === "mic" ? "Microphone disconnected." : "System audio disconnected.";
+    setAudioError(msg);
+    (kind === "mic" ? setMicState : setSystemState)("error");
+    liveConfig?.onError(msg);
+    return;
+  }
+  recoveries[kind] += 1;
+  const attempt = recoveries[kind];
+  pipelineLog("audio", "Recovering capture", { kind, reason, attempt });
+  if (kind === "mic") {
+    detachLane(micLane);
+    micLane = null;
+    stopStream(micStream);
+    micStream = null;
+  } else {
+    detachLane(systemLane);
+    systemLane = null;
+    stopStream(systemStream);
+    systemStream = null;
+  }
+  await new Promise((r) => setTimeout(r, 400 * attempt));
+  try {
+    if (kind === "mic") await startMicListenInternal();
+    else if (systemSourceGetter) await startSystemAudioListenInternal(systemSourceGetter);
+    pipelineLog("audio", "Capture recovered", { kind, attempt });
+  } catch (err) {
+    pipelineLog("audio", "Capture recovery failed", {
+      kind,
+      attempt,
+      error: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+    });
+    if (recoveries[kind] < MAX_RECOVERY) void recoverLane(kind, "retry");
+  }
 }
 
 export function subscribeListenLevels(cb: (state: ListenActiveState) => void) {
@@ -410,40 +425,29 @@ async function startMicListenInternal(): Promise<void> {
     if (micStartPromise) await micStartPromise;
     return;
   }
-
   micStartPromise = (async () => {
     let ok = false;
     try {
       setMicState("connecting");
       try {
         const perm = await navigator.permissions?.query({ name: "microphone" as PermissionName });
-        console.log("mic permission:", perm?.state || "query-unavailable");
+        pipelineLog("audio", "Microphone permission", { state: perm?.state || "unknown" });
       } catch {
-        console.log("mic permission:", "query-unavailable");
+        /* permissions API unavailable */
       }
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         video: false,
       });
       const tracks = micStream.getAudioTracks();
-      console.log("microphone stream created:", true);
-      console.log("audio track count:", tracks.length);
-      console.log("audio track state:", tracks.map((t) => t.readyState).join(",") || "none");
-      micLane = attachPcmLane(micStream, "You", "mic");
-      wireTrackEnded(micLane, () => {
-        void stopMicListen();
-        setAudioError("Microphone disconnected.");
-        setMicState("error");
-      });
+      if (!tracks.some((t) => t.readyState === "live")) throw new Error("Microphone track is not live.");
+      micLane = attachLane(micStream, "You", "mic");
+      wireTracks(micLane);
       setMicState("listening");
       clearAudioError();
-      console.log("recording started:", true);
-      pipelineLog("audio", "Microphone capture started (continuous PCM)");
+      pipelineLog("audio", "Microphone capture started", { tracks: describeTracks(micStream) });
+      ensureWatchdog();
+      bindDeviceChange();
       ok = true;
     } catch (err) {
       const msg = humanizeMediaError(err, "mic");
@@ -459,18 +463,19 @@ async function startMicListenInternal(): Promise<void> {
       micStartPromise = null;
     }
   })();
-
   await micStartPromise;
 }
 
 export async function startMicListen(): Promise<void> {
+  wanted.mic = true;
+  recoveries.mic = 0;
   return startMicListenInternal();
 }
 
 export async function stopMicListen(): Promise<Blob | null> {
+  wanted.mic = false;
   setMicState("stopping");
-  if (micLane?.speechActive) finalizeSpeech(micLane, "stop");
-  tearDownLane(micLane);
+  detachLane(micLane);
   micLane = null;
   stopStream(micStream);
   micStream = null;
@@ -480,15 +485,10 @@ export async function stopMicListen(): Promise<Blob | null> {
   return null;
 }
 
-async function captureSystemStream(
-  getSourceId: () => Promise<string | null>,
-): Promise<MediaStream> {
+async function captureSystemStream(getSourceId: () => Promise<string | null>): Promise<MediaStream> {
   if (typeof navigator.mediaDevices.getDisplayMedia === "function") {
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       if (display.getAudioTracks().length) {
         display.getVideoTracks().forEach((t) => {
           t.enabled = false;
@@ -505,14 +505,8 @@ async function captureSystemStream(
 
   const sourceId = await getSourceId();
   if (!sourceId) throw new Error("System audio capture is unavailable on this device.");
-
   const constraints = {
-    audio: {
-      mandatory: {
-        chromeMediaSource: "desktop",
-        chromeMediaSourceId: sourceId,
-      },
-    },
+    audio: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: sourceId } },
     video: {
       mandatory: {
         chromeMediaSource: "desktop",
@@ -523,7 +517,6 @@ async function captureSystemStream(
       },
     },
   } as unknown as MediaStreamConstraints;
-
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   stream.getVideoTracks().forEach((t) => {
     t.enabled = false;
@@ -535,29 +528,23 @@ async function captureSystemStream(
   return stream;
 }
 
-async function startSystemAudioListenInternal(
-  getSourceId: () => Promise<string | null>,
-): Promise<void> {
+async function startSystemAudioListenInternal(getSourceId: () => Promise<string | null>): Promise<void> {
   if (systemStream) return;
   if (!tryBeginSystemStart()) {
     if (systemStartPromise) await systemStartPromise;
     return;
   }
-
   systemStartPromise = (async () => {
     let ok = false;
     try {
       setSystemState("connecting");
       systemStream = await captureSystemStream(getSourceId);
-      systemLane = attachPcmLane(systemStream, "System", "system");
-      wireTrackEnded(systemLane, () => {
-        void stopSystemAudioListen();
-        setAudioError("System audio disconnected.");
-        setSystemState("error");
-      });
+      systemLane = attachLane(systemStream, "System", "system");
+      wireTracks(systemLane);
       setSystemState("listening");
       clearAudioError();
-      pipelineLog("audio", "System loopback capture started (continuous PCM)");
+      pipelineLog("audio", "System loopback capture started", { tracks: describeTracks(systemStream) });
+      ensureWatchdog();
       ok = true;
     } catch (err) {
       const msg = humanizeMediaError(err, "system");
@@ -573,20 +560,20 @@ async function startSystemAudioListenInternal(
       systemStartPromise = null;
     }
   })();
-
   await systemStartPromise;
 }
 
-export async function startSystemAudioListen(
-  getSourceId: () => Promise<string | null>,
-): Promise<void> {
+export async function startSystemAudioListen(getSourceId: () => Promise<string | null>): Promise<void> {
+  wanted.system = true;
+  recoveries.system = 0;
+  systemSourceGetter = getSourceId;
   return startSystemAudioListenInternal(getSourceId);
 }
 
 export async function stopSystemAudioListen(): Promise<Blob | null> {
+  wanted.system = false;
   setSystemState("stopping");
-  if (systemLane?.speechActive) finalizeSpeech(systemLane, "stop");
-  tearDownLane(systemLane);
+  detachLane(systemLane);
   systemLane = null;
   stopStream(systemStream);
   systemStream = null;
@@ -602,7 +589,6 @@ export async function syncListenSources(opts: {
   getDesktopSourceId: () => Promise<string | null>;
 }): Promise<{ mic: boolean; systemAudio: boolean }> {
   const errors: string[] = [];
-
   if (opts.mic) {
     if (!getListenActive().mic) {
       try {
@@ -614,7 +600,6 @@ export async function syncListenSources(opts: {
   } else if (micStream) {
     await stopMicListen();
   }
-
   if (opts.systemAudio) {
     if (!getListenActive().systemAudio) {
       try {
@@ -626,7 +611,6 @@ export async function syncListenSources(opts: {
   } else if (systemStream) {
     await stopSystemAudioListen();
   }
-
   const active = getListenActive();
   if (errors.length) {
     const msg = errors.join(" · ");
@@ -636,12 +620,10 @@ export async function syncListenSources(opts: {
   return active;
 }
 
-export async function stopAllListen(): Promise<{
-  micBlob: Blob | null;
-  systemBlob: Blob | null;
-}> {
+export async function stopAllListen(): Promise<{ micBlob: Blob | null; systemBlob: Blob | null }> {
   const micBlob = micStream ? await stopMicListen() : null;
   const systemBlob = systemStream ? await stopSystemAudioListen() : null;
+  pipeline?.reset();
   resetAudioSessionState();
   return { micBlob, systemBlob };
 }
@@ -650,40 +632,52 @@ export async function transcribeAudioBlob(
   blob: Blob,
   who: string,
   apiBase = "http://127.0.0.1:3000",
-): Promise<{ who: string; text: string } | null> {
+  opts: { prompt?: string; signal?: AbortSignal } = {},
+): Promise<{ who: string; text: string; uncertain?: boolean } | null> {
   if (!blob || blob.size < MIN_WAV_BYTES) return null;
-
-  const buffer = await blob.arrayBuffer();
   const mime = blob.type || "audio/wav";
 
   if (typeof window !== "undefined" && window.cueai?.transcribe) {
-    console.log("transcription request sent:", true);
-    const data = await window.cueai.transcribe({ data: buffer, mime, label: who });
-    console.log("transcription response status:", data.error ? "error" : "ok");
-    if (data.error) throw new Error(data.error);
+    const buffer = await blob.arrayBuffer();
+    const signal = opts.signal;
+    const aborted = new Promise<never>((_, reject) => {
+      if (!signal) return;
+      const fail = () => reject(new DOMException("Transcription aborted", "AbortError"));
+      if (signal.aborted) fail();
+      else signal.addEventListener("abort", fail, { once: true });
+    });
+    const data = await Promise.race([
+      window.cueai.transcribe({ data: buffer, mime, label: who, prompt: opts.prompt }),
+      aborted,
+    ]);
+    if (data.error) throw new TranscribeError(data.error, data.status || 0, data.retryAfterMs || 0);
     if (!data.text?.trim()) return null;
-    return { who: data.who || who, text: data.text.trim() };
+    return { who: data.who || who, text: data.text.trim(), uncertain: data.uncertain };
   }
 
   const body = new FormData();
   const ext = mime.includes("wav") ? "wav" : mime.includes("ogg") ? "ogg" : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  if (opts.prompt) body.append("prompt", opts.prompt.slice(0, 400));
   const { deviceAuthHeaders } = await import("./device-auth-headers");
-  console.log("transcription request sent:", true);
   const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
     method: "POST",
     headers: await deviceAuthHeaders(),
     body,
+    signal: opts.signal,
   });
-  console.log("transcription response status:", res.status);
-  const data = (await res.json()) as {
+  const data = (await res.json().catch(() => ({}))) as {
     text?: string;
     who?: string;
     error?: string;
-    empty?: boolean;
+    uncertain?: boolean;
   };
-  if (!res.ok) throw new Error(data.error || "Unable to transcribe audio.");
+  if (!res.ok) {
+    const retryAfter = Number(res.headers.get("retry-after") || 0) * 1000;
+    throw new TranscribeError(data.error || "Unable to transcribe audio.", res.status, retryAfter);
+  }
   if (!data.text?.trim()) return null;
-  return { who: data.who || who, text: data.text.trim() };
+  return { who: data.who || who, text: data.text.trim(), uncertain: data.uncertain };
 }
+

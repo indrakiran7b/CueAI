@@ -10,6 +10,7 @@ import {
 } from "@/lib/server/credential-resolver";
 import { ensureAiCatalog, publicModels } from "@/lib/server/ai-config";
 import { readStore } from "@/lib/server/db";
+import { secretEncryptionStatus } from "@/lib/server/session";
 
 const ALL_CAPS: ApiCredentialCapability[] = ["rag", "live_session", "general_ai"];
 
@@ -38,8 +39,10 @@ export async function GET(req: NextRequest) {
     workspaceId: session.workspaceId,
   });
 
+  const encryption = secretEncryptionStatus();
   return NextResponse.json({
     items: items.map(publicCredential),
+    encryption: { ready: encryption.ready, source: encryption.source, message: encryption.message },
     providers: listByokProviders(),
     models: publicModels(store.ai).filter((m) => m.enabled && m.capability === "chat"),
   });

@@ -1,6 +1,10 @@
 /**
  * Renderer-side audio capture — delegates session state to AudioSessionManager.
- * Live mode: ~2s speech slices transcribed without toggling mic off.
+ *
+ * Mic + system audio → PCM ring buffer → VAD segments → 16 kHz mono WAV → /api/transcribe.
+ * Each lane numbers its segments; results carry that sequence number so the utterance
+ * assembler can re-order them. Long speech is split at natural pauses so text arrives
+ * while the speaker is still talking.
  */
 
 import {
@@ -21,6 +25,8 @@ import {
   tryBeginSystemStart,
   type AudioSessionSnapshot,
 } from "./audio-session-manager";
+import { mixToMono, prepareGroqWav, PcmRingBuffer, rmsLevel } from "./audio-pcm";
+import { debugText, pipelineLog } from "./pipeline-log";
 import {
   PREFIX_MS,
   POST_ROLL_MS,
@@ -38,17 +44,36 @@ import {
 
 export type ListenActiveState = AudioSessionSnapshot;
 
+export type LiveSegmentResult = {
+  text: string;
+  uncertain?: boolean;
+  transcribedAt: number;
+};
+
 export type LiveTranscribeConfig = {
   apiBase: string;
+  /** Every non-empty transcript, in arrival order (display / persistence). */
   onResult: (line: {
     who: string;
     text: string;
+    seq: number;
+    uncertain?: boolean;
     audioEndAt?: number;
     transcribedAt?: number;
     transcribeStartedAt?: number;
     partial?: boolean;
   }) => void;
   onError: (msg: string) => void;
+  /** VAD detected voice on a lane. */
+  onSpeechStart?: (who: string, at: number) => void;
+  /** VAD decided the speaker paused long enough to end the speech run. */
+  onSpeechEnd?: (who: string, at: number, lastVoiceAt: number) => void;
+  /** A segment was handed to transcription; `seq` is monotonic per lane. */
+  onSegmentQueued?: (who: string, seq: number) => void;
+  /** Transcription finished for `seq`; `null` when empty, dropped or failed. */
+  onSegmentResult?: (who: string, seq: number, result: LiveSegmentResult | null) => void;
+  /** Extra vocabulary for Whisper (job title, stack names). Never secrets. */
+  getVocabulary?: () => string;
 };
 
 type LevelTap = {
@@ -58,47 +83,58 @@ type LevelTap = {
   raf: number;
 };
 
-type RecorderBag = {
-  recorder: MediaRecorder;
-  who: string;
-  mimeType: string;
-};
+type HeldBurst = { startAbs: number; endAbs: number; startedPerf: number; timer: number };
 
-type PcmBag = {
+type PcmLane = {
+  who: "You" | "System";
   source: MediaStreamAudioSourceNode;
   processor: ScriptProcessorNode;
   mute: GainNode;
-  who: string;
+  ring: PcmRingBuffer;
+  speechActive: boolean;
+  /** Ring index where the current (not yet sent) segment starts. */
+  speechStartAbs: number;
+  lastVoiceAbs: number;
+  lastVoiceAt: number;
+  speechStartedPerf: number | null;
+  /** When the current not-yet-sent segment started (for soft splits). */
+  segmentStartedPerf: number | null;
+  /** A soft split already happened inside the current pause. */
+  splitInPause: boolean;
+  noiseFloor: number;
+  windowMin: number;
+  windowChunks: number;
+  held: HeldBurst | null;
+  inFlight: number;
 };
 
-function isMacClient() {
-  return window.cueai?.isMac === true;
-}
-
-function usesPcmCapture() {
-  return isMacClient();
-}
-
-const LIVE_SLICE_MS = 400;
 export { SPEECH_END_SILENCE_MS, PREFIX_MS, POST_ROLL_MS };
-const MIN_TRANSCRIBE_BYTES = 256;
-const SILENT_PEAK = 0.004;
-const MAX_IN_FLIGHT = 2;
+const MIN_WAV_BYTES = 1600;
+/** Bursts shorter than this are clicks / breaths. */
+const MIN_BURST_MS = 220;
+/** A short burst ("Why?") waits this long for more speech before being sent alone. */
+const SHORT_BURST_HOLD_MS = 650;
+/** Long speech is split at a pause this long so text arrives while the speaker continues. */
+const SOFT_SPLIT_PAUSE_MS = 240;
+const SOFT_SPLIT_MIN_MS = 4_000;
+/** Overlap kept when a hard split has to cut through continuous speech. */
+const HARD_SPLIT_OVERLAP_MS = 300;
+const MAX_CONCURRENT_TRANSCRIBE = 3;
+const MAX_QUEUED_TRANSCRIBE = 6;
+const MAX_TRANSCRIBE_ATTEMPTS = 2;
+const PROMPT_CONTEXT_CHARS = 200;
+const NOISE_WINDOW_CHUNKS = 40;
+const FETCH_TRANSCRIBE_TIMEOUT_MS = 15_000;
 
 let micStream: MediaStream | null = null;
 let systemStream: MediaStream | null = null;
 let micTap: LevelTap | null = null;
 let systemTap: LevelTap | null = null;
-let micRec: RecorderBag | null = null;
-let systemRec: RecorderBag | null = null;
-let micPcm: PcmBag | null = null;
-let systemPcm: PcmBag | null = null;
+let micPcm: PcmLane | null = null;
+let systemPcm: PcmLane | null = null;
 let liveConfig: LiveTranscribeConfig | null = null;
-let transcribeInFlight = 0;
 let micStartPromise: Promise<void> | null = null;
 let systemStartPromise: Promise<void> | null = null;
-let micPeak = 0;
-let systemPeak = 0;
 let lastMicLevelLog = 0;
 let lastSystemLevelLog = 0;
 let healthTimer: number | null = null;
@@ -114,8 +150,35 @@ let systemSourceFn: (() => Promise<string | null>) | null = null;
 let micRecoverAttempts = 0;
 let systemRecoverAttempts = 0;
 
+const laneSeq: Record<string, number> = { You: 0, System: 0 };
+const laneContext: Record<string, string> = { You: "", System: "" };
+
+export type TranscribeStats = {
+  requests: number;
+  retries: number;
+  failures: number;
+  dropped: number;
+  empty: number;
+};
+const stats: TranscribeStats = { requests: 0, retries: 0, failures: 0, dropped: 0, empty: 0 };
+
+export function getTranscribeStats(): TranscribeStats {
+  return { ...stats };
+}
+
 export function configureLiveTranscription(config: LiveTranscribeConfig | null) {
   liveConfig = config;
+  if (!config) {
+    queue.length = 0;
+    laneContext.You = "";
+    laneContext.System = "";
+  }
+}
+
+/** Forget per-speaker Whisper context (new meeting / session). */
+export function resetTranscriptionContext() {
+  laneContext.You = "";
+  laneContext.System = "";
 }
 
 function readLevel(analyser: AnalyserNode) {
@@ -138,160 +201,404 @@ function streamAlive(stream: MediaStream | null) {
 }
 
 function captureRunning(kind: "mic" | "system") {
-  if (usesPcmCapture()) {
-    return kind === "mic" ? Boolean(micPcm) : Boolean(systemPcm);
+  return kind === "mic" ? Boolean(micPcm) : Boolean(systemPcm);
+}
+
+/* ------------------------------------------------------------------ */
+/* Transcription queue                                                 */
+/* ------------------------------------------------------------------ */
+
+type TranscribeJob = {
+  who: "You" | "System";
+  seq: number;
+  wav: Blob;
+  audioEndAt: number;
+  final: boolean;
+};
+
+const queue: TranscribeJob[] = [];
+let inFlightTotal = 0;
+
+class TranscribeError extends Error {
+  constructor(
+    message: string,
+    readonly status = 0,
+    readonly retryAfterSec?: number,
+  ) {
+    super(message);
   }
-  const rec = kind === "mic" ? micRec : systemRec;
-  return rec?.recorder.state === "recording";
 }
 
-function writeWavString(view: DataView, offset: number, value: string) {
-  for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
+function isRetryable(err: unknown): err is TranscribeError {
+  if (!(err instanceof TranscribeError)) return false;
+  return err.status === 0 || err.status === 429 || err.status === 504 || err.status >= 500;
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  writeWavString(view, 0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeWavString(view, 8, "WAVE");
-  writeWavString(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeWavString(view, 36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]!));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    offset += 2;
+function laneFor(who: string): PcmLane | null {
+  return who === "You" ? micPcm : systemPcm;
+}
+
+function refreshLaneState(who: string) {
+  const lane = laneFor(who);
+  const next = lane && lane.inFlight > 0 ? "processing" : "listening";
+  if (who === "You") {
+    if (streamAlive(micStream) && captureRunning("mic")) setMicState(next);
+    else if (micWanted && !streamAlive(micStream)) setMicState("error");
+  } else if (streamAlive(systemStream) && captureRunning("system")) {
+    setSystemState(next);
+  } else if (systemWanted && !streamAlive(systemStream)) {
+    setSystemState("error");
   }
-  return new Blob([buffer], { type: "audio/wav" });
 }
 
-function startPcmSlicer(stream: MediaStream, who: string): PcmBag | null {
+function buildPrompt(who: string): string {
+  const vocab = liveConfig?.getVocabulary?.().trim() || "";
+  const recent = laneContext[who]?.slice(-PROMPT_CONTEXT_CHARS) || "";
+  return [vocab, recent].filter(Boolean).join(" ").slice(-400);
+}
+
+function enqueueSegment(lane: PcmLane, wav: Blob, audioEndAt: number, final: boolean) {
+  if (!liveConfig) return;
+  if (wav.size < MIN_WAV_BYTES) return;
+  const seq = ++laneSeq[lane.who];
+  liveConfig.onSegmentQueued?.(lane.who, seq);
+  queue.push({ who: lane.who, seq, wav, audioEndAt, final });
+  while (queue.length > MAX_QUEUED_TRANSCRIBE) {
+    const dropped = queue.shift()!;
+    stats.dropped++;
+    pipelineLog("transcription", "Queue full — dropped oldest segment", {
+      who: dropped.who,
+      seq: dropped.seq,
+    });
+    liveConfig.onSegmentResult?.(dropped.who, dropped.seq, null);
+  }
+  pumpQueue();
+}
+
+function pumpQueue() {
+  while (inFlightTotal < MAX_CONCURRENT_TRANSCRIBE && queue.length) {
+    const job = queue.shift()!;
+    inFlightTotal++;
+    const lane = laneFor(job.who);
+    if (lane) lane.inFlight++;
+    refreshLaneState(job.who);
+    void runTranscribeJob(job).finally(() => {
+      inFlightTotal--;
+      const l = laneFor(job.who);
+      if (l) l.inFlight = Math.max(0, l.inFlight - 1);
+      refreshLaneState(job.who);
+      pumpQueue();
+    });
+  }
+}
+
+async function runTranscribeJob(job: TranscribeJob) {
+  const config = liveConfig;
+  if (!config) return;
+  const started = performance.now();
+  const prompt = buildPrompt(job.who);
+  let line: { text: string; uncertain: boolean } | null = null;
+  let lastErr: unknown = null;
+
+  for (let attempt = 1; attempt <= MAX_TRANSCRIBE_ATTEMPTS; attempt++) {
+    stats.requests++;
+    try {
+      line = await transcribeAudioBlob(job.wav, job.who, config.apiBase, prompt);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= MAX_TRANSCRIBE_ATTEMPTS || !isRetryable(err)) break;
+      stats.retries++;
+      const waitMs = Math.min(2000, err.retryAfterSec ? err.retryAfterSec * 1000 : 350);
+      pipelineLog("transcription", "Retrying segment", {
+        who: job.who,
+        seq: job.seq,
+        status: err.status,
+        waitMs,
+      });
+      await new Promise((r) => window.setTimeout(r, waitMs));
+      if (liveConfig !== config) return;
+    }
+  }
+
+  const transcribedAt = performance.now();
+  if (liveConfig !== config) return;
+
+  if (lastErr) {
+    stats.failures++;
+    const msg = humanizeFetchError(lastErr);
+    pipelineLog("transcription", "Transcription failed", {
+      who: job.who,
+      seq: job.seq,
+      status: lastErr instanceof TranscribeError ? lastErr.status : undefined,
+      error: msg.slice(0, 120),
+    });
+    if (job.who === "You") setMicError(msg);
+    else setSystemError(msg);
+    config.onError(msg);
+    config.onSegmentResult?.(job.who, job.seq, null);
+    return;
+  }
+
+  clearAudioError();
+  const text = line?.text.trim() || "";
+  pipelineLog("transcription", text ? "Segment transcribed" : "Segment empty", {
+    who: job.who,
+    seq: job.seq,
+    final: job.final,
+    chars: text.length,
+    uncertain: Boolean(line?.uncertain),
+    latencyMs: Math.round(transcribedAt - started),
+    audioToTextMs: Math.round(transcribedAt - job.audioEndAt),
+    text: text ? debugText(text) : undefined,
+  });
+  if (!text) {
+    stats.empty++;
+    config.onSegmentResult?.(job.who, job.seq, null);
+    return;
+  }
+
+  logCaptureMetrics("transcription", {
+    who: job.who,
+    transcription_latency: Math.round(transcribedAt - started),
+    transcript_length: text.length,
+    question_capture_quality: captureQuality({
+      transcriptChars: text.length,
+      words: wordCount(text),
+      truncated: looksTruncatedTranscript(text),
+    }),
+  });
+  laneContext[job.who] = `${laneContext[job.who]} ${text}`.slice(-PROMPT_CONTEXT_CHARS * 2);
+  config.onResult({
+    who: job.who,
+    text,
+    seq: job.seq,
+    uncertain: Boolean(line?.uncertain),
+    audioEndAt: job.audioEndAt,
+    transcribedAt,
+    transcribeStartedAt: started,
+    partial: !job.final,
+  });
+  config.onSegmentResult?.(job.who, job.seq, {
+    text,
+    uncertain: Boolean(line?.uncertain),
+    transcribedAt,
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* VAD + segmentation                                                  */
+/* ------------------------------------------------------------------ */
+
+function msToSamples(lane: PcmLane, ms: number) {
+  return Math.floor((ms / 1000) * lane.ring.sampleRate);
+}
+
+function emitRange(lane: PcmLane, startAbs: number, endAbs: number, final: boolean, reason: string) {
+  const from = Math.max(lane.ring.startIndex, startAbs);
+  const samples = lane.ring.slice(from, Math.min(lane.ring.endIndex, endAbs));
+  if (samples.length < lane.ring.sampleRate * 0.2) {
+    pipelineLog("audio", "Segment too small — skipped", { who: lane.who, reason });
+    return;
+  }
+  const audioEndAt = performance.now();
+  const wav = prepareGroqWav(samples, lane.ring.sampleRate);
+  const durationMs = Math.round((samples.length / lane.ring.sampleRate) * 1000);
+  pipelineLog("audio", final ? "Speech segment ended" : "Speech segment split", {
+    who: lane.who,
+    reason,
+    durationMs,
+    wavBytes: wav.size,
+  });
+  logCaptureMetrics("audio", {
+    who: lane.who,
+    speech_end: Math.round(audioEndAt),
+    audio_duration: durationMs,
+    pre_roll: PREFIX_MS,
+    post_roll: POST_ROLL_MS,
+    question_capture_quality: captureQuality({ durationMs }),
+  });
+  enqueueSegment(lane, wav, audioEndAt, final);
+}
+
+function clearHeld(lane: PcmLane) {
+  if (lane.held) window.clearTimeout(lane.held.timer);
+  lane.held = null;
+}
+
+function flushHeld(lane: PcmLane, reason: string) {
+  const held = lane.held;
+  if (!held) return;
+  clearHeld(lane);
+  emitRange(lane, held.startAbs, held.endAbs, true, reason);
+}
+
+/** End of a speech run: send the remaining audio as the final segment of the run. */
+function finalizeSpeech(lane: PcmLane, reason: string) {
+  if (!lane.speechActive || lane.speechStartedPerf == null) {
+    lane.speechActive = false;
+    lane.speechStartedPerf = null;
+    return;
+  }
+  const now = performance.now();
+  const runMs = now - lane.speechStartedPerf;
+  const endAbs = Math.min(lane.ring.endIndex, lane.lastVoiceAbs + msToSamples(lane, POST_ROLL_MS));
+  const startAbs = lane.speechStartAbs;
+  const segmentMs = lane.segmentStartedPerf != null ? lane.lastVoiceAt - lane.segmentStartedPerf : runMs;
+
+  lane.speechActive = false;
+  lane.speechStartedPerf = null;
+  lane.segmentStartedPerf = null;
+  liveConfig?.onSpeechEnd?.(lane.who, now, lane.lastVoiceAt);
+
+  if (reason !== "stop" && runMs < MIN_SPEECH_MS && segmentMs < MIN_SPEECH_MS) {
+    if (runMs < MIN_BURST_MS) {
+      pipelineLog("audio", "Noise burst ignored", { who: lane.who, durationMs: Math.round(runMs) });
+      return;
+    }
+    // A short burst ("Why?", "And?") is kept and merged if the speaker continues.
+    clearHeld(lane);
+    lane.held = {
+      startAbs,
+      endAbs,
+      startedPerf: now - runMs,
+      timer: window.setTimeout(() => flushHeld(lane, "short_burst"), SHORT_BURST_HOLD_MS),
+    };
+    pipelineLog("audio", "Short speech held for continuation", {
+      who: lane.who,
+      durationMs: Math.round(runMs),
+    });
+    return;
+  }
+  emitRange(lane, startAbs, endAbs, true, reason);
+}
+
+function voiceThresholds(lane: PcmLane) {
+  const enter = Math.min(0.08, Math.max(VOICE_THRESHOLD, lane.noiseFloor * 2.5));
+  const stay = Math.min(enter, Math.max(VOICE_HANGOVER_THRESHOLD, lane.noiseFloor * 1.6));
+  return { enter, stay };
+}
+
+function trackNoiseFloor(lane: PcmLane, level: number) {
+  lane.windowMin = Math.min(lane.windowMin, level);
+  lane.windowChunks += 1;
+  if (lane.windowChunks >= NOISE_WINDOW_CHUNKS) {
+    lane.noiseFloor = lane.noiseFloor * 0.7 + lane.windowMin * 0.3;
+    lane.windowMin = Number.POSITIVE_INFINITY;
+    lane.windowChunks = 0;
+  }
+}
+
+function onPcmChunk(lane: PcmLane, mono: Float32Array) {
+  lane.ring.push(mono);
+  const level = rmsLevel(mono);
+  trackNoiseFloor(lane, level);
+
+  const now = performance.now();
+  const { enter, stay } = voiceThresholds(lane);
+  const voiced = level >= (lane.speechActive ? stay : enter);
+
+  if (voiced) {
+    lane.lastVoiceAt = now;
+    lane.lastVoiceAbs = lane.ring.endIndex;
+    lane.splitInPause = false;
+    if (!lane.speechActive) {
+      lane.speechActive = true;
+      const chunkStart = Math.max(0, lane.ring.endIndex - mono.length);
+      if (lane.held) {
+        lane.speechStartAbs = lane.held.startAbs;
+        lane.speechStartedPerf = lane.held.startedPerf;
+        clearHeld(lane);
+      } else {
+        lane.speechStartAbs = Math.max(lane.ring.startIndex, chunkStart - msToSamples(lane, PREFIX_MS));
+        lane.speechStartedPerf = now;
+      }
+      lane.segmentStartedPerf = lane.speechStartedPerf;
+      liveConfig?.onSpeechStart?.(lane.who, now);
+      pipelineLog("audio", "Speech started", { who: lane.who });
+    }
+    const segmentMs = now - (lane.segmentStartedPerf ?? now);
+    if (segmentMs >= MAX_SPEECH_MS) {
+      // Continuous speech with no pause: cut with overlap; the assembler de-duplicates words.
+      const cut = lane.ring.endIndex;
+      emitRange(lane, lane.speechStartAbs, cut, false, "max_duration");
+      lane.speechStartAbs = Math.max(lane.ring.startIndex, cut - msToSamples(lane, HARD_SPLIT_OVERLAP_MS));
+      lane.segmentStartedPerf = now;
+    }
+    return;
+  }
+
+  if (!lane.speechActive) return;
+  const silentFor = now - lane.lastVoiceAt;
+  const runMs = lane.speechStartedPerf != null ? now - lane.speechStartedPerf : 0;
+  if (silentFor >= adaptiveSilenceMs(runMs)) {
+    finalizeSpeech(lane, "silence");
+    return;
+  }
+  const segmentMs = lane.lastVoiceAt - (lane.segmentStartedPerf ?? lane.lastVoiceAt);
+  if (!lane.splitInPause && silentFor >= SOFT_SPLIT_PAUSE_MS && segmentMs >= SOFT_SPLIT_MIN_MS) {
+    // Mid-question pause: send what we have now; the speaker may continue.
+    lane.splitInPause = true;
+    const cut = Math.min(lane.ring.endIndex, lane.lastVoiceAbs + msToSamples(lane, 150));
+    emitRange(lane, lane.speechStartAbs, cut, false, "pause_split");
+    lane.speechStartAbs = cut;
+    lane.segmentStartedPerf = now;
+  }
+}
+
+function startPcmSlicer(stream: MediaStream, who: "You" | "System"): PcmLane | null {
   const ctx = getSharedAudioContext();
   const audioTracks = stream.getAudioTracks();
   if (!audioTracks.length) return null;
   const audioOnly = new MediaStream(audioTracks);
   const source = ctx.createMediaStreamSource(audioOnly);
-  const processor = ctx.createScriptProcessor(2048, 1, 1);
+  const processor = ctx.createScriptProcessor(2048, 2, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
-  const pending: Float32Array[] = [];
-  let count = 0;
-  let speechActive = false;
-  let lastVoiceAt = 0;
-  let speechStarted = 0;
-  let prefixKeep = Math.floor(ctx.sampleRate * (PREFIX_MS / 1000));
-  let flushTimer: number | null = null;
-  let maxTimer: number | null = null;
-
-  const flushUtterance = (reason: string) => {
-    if (flushTimer != null) {
-      window.clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-    if (maxTimer != null) {
-      window.clearTimeout(maxTimer);
-      maxTimer = null;
-    }
-    const durationMs = speechActive ? performance.now() - speechStarted : 0;
-    if (!speechActive || durationMs < MIN_SPEECH_MS) {
-      speechActive = false;
-      logCaptureMetrics("audio", {
-        who,
-        audio_duration: Math.round(durationMs),
-        question_capture_quality: captureQuality({ durationMs }),
-      });
-      return;
-    }
-    speechActive = false;
-    if (!count) return;
-    const merged = new Float32Array(count);
-    let offset = 0;
-    for (const chunk of pending) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
-    }
-    pending.length = 0;
-    count = 0;
-    console.log("[Audio] Speech segment ended", reason);
-    logCaptureMetrics("audio", {
-      who,
-      audio_duration: Math.round(durationMs),
-      pre_roll: PREFIX_MS,
-      post_roll: POST_ROLL_MS,
-      vad_finalize_time: Math.round(durationMs),
-      question_capture_quality: captureQuality({ durationMs }),
-    });
-    const wav = encodeWav(merged, ctx.sampleRate);
-    void maybeTranscribeSlice(wav, who);
+  const lane: PcmLane = {
+    who,
+    source,
+    processor,
+    mute,
+    ring: new PcmRingBuffer(ctx.sampleRate, 24),
+    speechActive: false,
+    speechStartAbs: 0,
+    lastVoiceAbs: 0,
+    lastVoiceAt: 0,
+    speechStartedPerf: null,
+    segmentStartedPerf: null,
+    splitInPause: false,
+    noiseFloor: 0,
+    windowMin: Number.POSITIVE_INFINITY,
+    windowChunks: 0,
+    held: null,
+    inFlight: 0,
   };
-
   processor.onaudioprocess = (event) => {
-    const input = event.inputBuffer.getChannelData(0);
-    const copy = new Float32Array(input);
-    pending.push(copy);
-    count += copy.length;
-    let sum = 0;
-    for (let i = 0; i < copy.length; i++) sum += copy[i]! * copy[i]!;
-    const level = Math.min(1, Math.sqrt(sum / copy.length) * 4);
-    const now = performance.now();
-    const stayThreshold = speechActive ? VOICE_HANGOVER_THRESHOLD : VOICE_THRESHOLD;
-    if (level >= stayThreshold) {
-      lastVoiceAt = now;
-      if (!speechActive) {
-        speechActive = true;
-        speechStarted = now;
-        console.log("[Audio] Speech segment started");
-        logCaptureMetrics("audio", { who, speech_start: Math.round(now), pre_roll: PREFIX_MS });
-        maxTimer = window.setTimeout(() => flushUtterance("max_duration"), MAX_SPEECH_MS);
-      }
-      if (flushTimer != null) {
-        window.clearTimeout(flushTimer);
-        flushTimer = null;
-      }
-    } else if (speechActive && now - lastVoiceAt >= adaptiveSilenceMs(now - speechStarted) && flushTimer == null) {
-      flushTimer = window.setTimeout(() => flushUtterance("silence"), POST_ROLL_MS);
-    }
-    // Drop old prefix-only audio while idle so the next utterance stays small.
-    if (!speechActive && count > prefixKeep) {
-      let excess = count - prefixKeep;
-      while (excess > 0 && pending.length) {
-        const first = pending[0]!;
-        if (first.length <= excess) {
-          pending.shift();
-          count -= first.length;
-          excess -= first.length;
-        } else {
-          pending[0] = first.subarray(excess);
-          count -= excess;
-          excess = 0;
-        }
-      }
-    }
+    const input = event.inputBuffer;
+    const channels: Float32Array[] = [];
+    for (let c = 0; c < input.numberOfChannels; c++) channels.push(input.getChannelData(c));
+    onPcmChunk(lane, mixToMono(channels));
   };
   source.connect(processor);
   processor.connect(mute);
   mute.connect(ctx.createMediaStreamDestination());
-  return { source, processor, mute, who };
+  return lane;
 }
 
-function releasePcm(bag: PcmBag | null) {
-  if (!bag) return;
+function releasePcm(lane: PcmLane | null) {
+  if (!lane) return;
+  clearHeld(lane);
+  lane.processor.onaudioprocess = null;
   try {
-    bag.source.disconnect();
-    bag.processor.disconnect();
-    bag.mute.disconnect();
+    lane.source.disconnect();
+    lane.processor.disconnect();
+    lane.mute.disconnect();
   } catch {
     /* ignore */
   }
+  lane.ring.clear();
 }
 
 function getSharedAudioContext() {
@@ -431,8 +738,6 @@ async function recoverSystemAudio(reason: string) {
 }
 
 async function releaseMicCapture() {
-  await stopRecorder(micRec);
-  micRec = null;
   releasePcm(micPcm);
   micPcm = null;
   releaseTap(micTap);
@@ -444,8 +749,6 @@ async function releaseMicCapture() {
 }
 
 async function releaseSystemCapture() {
-  await stopRecorder(systemRec);
-  systemRec = null;
   releasePcm(systemPcm);
   systemPcm = null;
   releaseTap(systemTap);
@@ -514,14 +817,12 @@ function attachTap(stream: MediaStream, kind: "mic" | "system"): LevelTap {
     const level = readLevel(analyser);
     if (kind === "mic") {
       setMicLevel(level);
-      micPeak = Math.max(micPeak, level);
       if (level > 0.02 && Date.now() - lastMicLevelLog > 1500) {
         lastMicLevelLog = Date.now();
         console.log("[Audio] Microphone capture active");
       }
     } else {
       setSystemLevel(level);
-      systemPeak = Math.max(systemPeak, level);
       if (level > 0.02 && Date.now() - lastSystemLevelLog > 1500) {
         lastSystemLevelLog = Date.now();
         console.log("[Audio] System audio capture active");
@@ -547,122 +848,6 @@ function releaseTap(tap: LevelTap | null) {
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
-}
-
-function pickMimeType() {
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-    "audio/mp4",
-  ];
-  for (const type of candidates) {
-    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) {
-      return type;
-    }
-  }
-  return "";
-}
-
-async function maybeTranscribeSlice(blob: Blob, who: string) {
-  if (!liveConfig) return;
-  const peak = who === "You" ? micPeak : systemPeak;
-  if (who === "You") micPeak = 0;
-  else systemPeak = 0;
-  if (blob.size < MIN_TRANSCRIBE_BYTES) return;
-  if (peak < SILENT_PEAK) {
-    console.log("[Transcription] Silent chunk skipped");
-    return;
-  }
-  if (transcribeInFlight >= MAX_IN_FLIGHT) return;
-
-  transcribeInFlight++;
-  console.log("[Transcription] Audio chunk received");
-  const transcribeStarted = performance.now();
-
-  try {
-    console.log("[Transcription] Request sent");
-    const line = await transcribeAudioBlob(blob, who, liveConfig.apiBase);
-    const transcribedAt = performance.now();
-    if (line?.text) {
-      const text = line.text.trim();
-      console.log("[Transcription] Response received");
-      logCaptureMetrics("transcription", {
-        who,
-        transcription_latency: Math.round(transcribedAt - transcribeStarted),
-        transcript_length: text.length,
-        question_capture_quality: captureQuality({
-          transcriptChars: text.length,
-          words: wordCount(text),
-          truncated: looksTruncatedTranscript(text),
-        }),
-      });
-      liveConfig.onResult({
-        who,
-        text,
-        audioEndAt: transcribedAt,
-        transcribedAt,
-        transcribeStartedAt: transcribeStarted,
-        partial: false,
-      });
-    }
-    clearAudioError();
-  } catch (err) {
-    const msg = humanizeFetchError(err);
-    if (who === "You") setMicError(msg);
-    else setSystemError(msg);
-    liveConfig.onError(msg);
-  } finally {
-    transcribeInFlight--;
-    if (who === "You" && streamAlive(micStream) && captureRunning("mic")) {
-      setMicState("listening");
-    } else if (who === "System" && streamAlive(systemStream) && captureRunning("system")) {
-      setSystemState("listening");
-    } else if (who === "You" && micWanted && !streamAlive(micStream)) {
-      setMicState("error");
-    } else if (who === "System" && systemWanted && !streamAlive(systemStream)) {
-      setSystemState("error");
-    }
-  }
-}
-
-function startRecorder(stream: MediaStream, who: string): RecorderBag | null {
-  if (typeof MediaRecorder === "undefined") return null;
-  const audioOnly = new MediaStream(stream.getAudioTracks());
-  if (!audioOnly.getAudioTracks().length) return null;
-  try {
-    const mimeType = pickMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(audioOnly, { mimeType })
-      : new MediaRecorder(audioOnly);
-    const bag: RecorderBag = {
-      recorder,
-      who,
-      mimeType: recorder.mimeType || mimeType || "audio/webm",
-    };
-    recorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size > 0) void maybeTranscribeSlice(ev.data, who);
-    };
-    recorder.start(LIVE_SLICE_MS);
-    return bag;
-  } catch {
-    return null;
-  }
-}
-
-async function stopRecorder(bag: RecorderBag | null): Promise<Blob | null> {
-  if (!bag) return null;
-  const { recorder } = bag;
-  if (recorder.state === "inactive") return null;
-  return new Promise((resolve) => {
-    recorder.onstop = () => resolve(null);
-    try {
-      recorder.requestData();
-    } catch {
-      /* ignore */
-    }
-    recorder.stop();
-  });
 }
 
 export function subscribeListenLevels(cb: (state: ListenActiveState) => void) {
@@ -723,15 +908,8 @@ async function startMicListenInternal(): Promise<void> {
         await micTap.ctx.resume().catch(() => undefined);
       }
       console.log("[Audio] AudioContext state:", micTap.ctx.state);
-      if (usesPcmCapture()) {
-        micPcm = startPcmSlicer(micStream, "You");
-        if (!micPcm) throw new Error("Microphone recorder unavailable");
-      } else {
-        micRec = startRecorder(micStream, "You");
-        if (!micRec || micRec.recorder.state !== "recording") {
-          throw new Error("Microphone recorder unavailable");
-        }
-      }
+      micPcm = startPcmSlicer(micStream, "You");
+      if (!micPcm) throw new Error("Microphone recorder unavailable");
       if (micTap.ctx.state !== "running") {
         await micTap.ctx.resume().catch(() => undefined);
       }
@@ -772,11 +950,9 @@ export async function stopMicListen(): Promise<Blob | null> {
     micRecoverTimer = null;
   }
   setMicState("stopping");
-  const blob = await stopRecorder(micRec);
-  micRec = null;
   await releaseMicCapture();
   setMicState("idle");
-  return blob;
+  return null;
 }
 
 async function startSystemAudioListenInternal(
@@ -869,15 +1045,8 @@ async function startSystemAudioListenInternal(
         await systemTap.ctx.resume().catch(() => undefined);
       }
       console.log("[Audio] AudioContext state:", systemTap.ctx.state);
-      if (usesPcmCapture()) {
-        systemPcm = startPcmSlicer(systemStream, "System");
-        if (!systemPcm) throw new Error("System audio recorder unavailable");
-      } else {
-        systemRec = startRecorder(systemStream, "System");
-        if (!systemRec || systemRec.recorder.state !== "recording") {
-          throw new Error("System audio recorder unavailable");
-        }
-      }
+      systemPcm = startPcmSlicer(systemStream, "System");
+      if (!systemPcm) throw new Error("System audio recorder unavailable");
       if (systemTap.ctx.state !== "running") {
         await systemTap.ctx.resume().catch(() => undefined);
       }
@@ -921,11 +1090,9 @@ export async function stopSystemAudioListen(): Promise<Blob | null> {
     systemRecoverTimer = null;
   }
   setSystemState("stopping");
-  const blob = await stopRecorder(systemRec);
-  systemRec = null;
   await releaseSystemCapture();
   setSystemState("idle");
-  return blob;
+  return null;
 }
 
 export async function syncListenSources(opts: {
@@ -991,18 +1158,19 @@ export async function stopAllListen(): Promise<{
 export async function transcribeAudioBlob(
   blob: Blob,
   who: string,
-  apiBase = "http://127.0.0.1:3002"
-): Promise<{ who: string; text: string } | null> {
-  if (blob.size < MIN_TRANSCRIBE_BYTES) return null;
+  apiBase = "http://127.0.0.1:3002",
+  prompt = "",
+): Promise<{ who: string; text: string; uncertain: boolean } | null> {
+  if (!blob || blob.size < MIN_WAV_BYTES) return null;
 
-  const buffer = await blob.arrayBuffer();
-  const mime = blob.type || "audio/webm";
+  const mime = blob.type || "audio/wav";
 
   if (typeof window !== "undefined" && window.cueai?.transcribe) {
-    const data = await window.cueai.transcribe({ data: buffer, mime, label: who });
-    if (data.error) throw new Error(data.error);
+    const buffer = await blob.arrayBuffer();
+    const data = await window.cueai.transcribe({ data: buffer, mime, label: who, prompt });
+    if (data.error) throw new TranscribeError(data.error, data.status ?? 0, data.retryAfter);
     if (!data.text?.trim()) return null;
-    return { who: data.who || who, text: data.text.trim() };
+    return { who: data.who || who, text: data.text.trim(), uncertain: Boolean(data.uncertain) };
   }
 
   const body = new FormData();
@@ -1015,19 +1183,36 @@ export async function transcribeAudioBlob(
         : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  if (prompt) body.append("prompt", prompt);
   const { deviceAuthHeaders } = await import("../../../shared/device-auth-headers");
-  const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
-    method: "POST",
-    headers: await deviceAuthHeaders(),
-    body,
-  });
-  const data = (await res.json()) as {
-    text?: string;
-    who?: string;
-    error?: string;
-    empty?: boolean;
-  };
-  if (!res.ok) throw new Error(data.error || "Unable to transcribe audio.");
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
+      method: "POST",
+      headers: await deviceAuthHeaders(),
+      body,
+      signal: AbortSignal.timeout(FETCH_TRANSCRIBE_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    throw new TranscribeError(
+      timedOut ? "Transcription timed out." : "Unable to reach the transcription service.",
+      timedOut ? 504 : 0,
+    );
+  }
+  let data: { text?: string; who?: string; error?: string; uncertain?: boolean } = {};
+  try {
+    data = (await res.json()) as typeof data;
+  } catch {
+    if (res.ok) throw new TranscribeError("Transcription returned an unreadable response.", 502);
+  }
+  if (!res.ok) {
+    throw new TranscribeError(
+      data.error || "Unable to transcribe audio.",
+      res.status,
+      Number(res.headers.get("retry-after")) || undefined,
+    );
+  }
   if (!data.text?.trim()) return null;
-  return { who: data.who || who, text: data.text.trim() };
+  return { who: data.who || who, text: data.text.trim(), uncertain: Boolean(data.uncertain) };
 }

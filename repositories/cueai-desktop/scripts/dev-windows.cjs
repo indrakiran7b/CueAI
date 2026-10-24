@@ -104,7 +104,7 @@ function looksLikeCueAi(body) {
 }
 
 async function probeCueAi(origin) {
-  const result = await httpGet(`${origin}/license?desktop=windows`);
+  const result = await httpGet(`${origin}/login?desktop=windows`);
   if (!result.listening) return { listening: false, cueai: false, error: result.error };
   return {
     listening: true,
@@ -217,7 +217,7 @@ async function resolveOrigin() {
 
 async function main() {
   const { origin, startWeb } = await resolveOrigin();
-  const entryUrl = `${origin}/license?desktop=windows`;
+  const entryUrl = `${origin}/login?desktop=windows`;
 
   let webChild = null;
   if (startWeb) {
@@ -253,12 +253,6 @@ async function main() {
   logElectron("Starting Windows desktop (Electron + companion)");
   logElectron("Renderer URL:", entryUrl);
   const desktopEnv = { CUEAI_WEB_URL: origin };
-  if (process.env.LICENSE_SIGNING_PUBLIC_KEY?.trim()) {
-    desktopEnv.LICENSE_SIGNING_PUBLIC_KEY = process.env.LICENSE_SIGNING_PUBLIC_KEY;
-  }
-  if (process.env.LICENSE_ENFORCEMENT?.trim()) {
-    desktopEnv.LICENSE_ENFORCEMENT = process.env.LICENSE_ENFORCEMENT;
-  }
   const desktop = spawnNpm(["run", "dev:desktop:electron"], desktopEnv);
   desktop.on("exit", (code, signal) => {
     if (shuttingDown) return;

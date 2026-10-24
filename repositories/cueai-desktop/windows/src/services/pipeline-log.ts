@@ -24,6 +24,25 @@ const PREFIX: Record<string, string> = {
   perf: "[PERF]",
 };
 
+/**
+ * Debug mode explains trigger decisions and may include transcript snippets.
+ * Off by default; enable with localStorage.cueaiDebug = "1" or VITE_CUEAI_DEBUG=1.
+ */
+export function isPipelineDebug(): boolean {
+  try {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("cueaiDebug") === "1") return true;
+  } catch {
+    /* storage unavailable */
+  }
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_CUEAI_DEBUG === "1";
+}
+
+/** Transcript content only appears in logs when debug mode is on. */
+export function debugText(text: string, max = 120): string | undefined {
+  return isPipelineDebug() ? text.slice(0, max) : undefined;
+}
+
 function ms(from?: number, to?: number) {
   if (from == null || to == null) return undefined;
   return Math.round(to - from);
@@ -78,7 +97,7 @@ export function createLatencyTracker(label: string) {
       total != null ? `${(total / 1000).toFixed(2)}s` : "n/a",
       {
         stage,
-        label: label.slice(0, 60),
+        label: debugText(label, 60),
         speech_end_to_transcript_ms: ms(marks.audioEnd, marks.transcriptionFinal),
         transcript_to_question_ms: ms(marks.transcriptionFinal, marks.questionDetected),
         question_to_ai_ms: ms(marks.questionDetected, marks.aiRequest),

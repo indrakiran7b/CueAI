@@ -56,6 +56,8 @@ export type KnowledgeQueryResult = {
   sources: KnowledgeSource[];
   /** Primary retrieval path used for this answer. */
   retrievalMethod: RetrievalMethod;
+  /** Set when no AI answer could be generated; `answer` then explains the failure. */
+  error?: { code: string; message: string; retryable: boolean };
   diagnostics?: {
     chunksRetrieved: number;
     retrievalMs: number;

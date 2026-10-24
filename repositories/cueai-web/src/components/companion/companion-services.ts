@@ -4,6 +4,7 @@
  */
 
 import type { LiveTranscriptLine } from "@/lib/live-answer";
+import { loadLiveSessionContext as loadSessionContext } from "@/lib/live-answer-client";
 
 export type CompanionAnswer = {
   answer: string;
@@ -11,34 +12,6 @@ export type CompanionAnswer = {
   notice?: string;
   model?: string;
 };
-
-async function loadSessionContext() {
-  try {
-    const res = await fetch("/api/live/briefing", { cache: "no-store" });
-    const data = (await res.json().catch(() => ({}))) as {
-      briefing?: {
-        company?: string;
-        jobDescription?: string;
-        resumeName?: string;
-        resumeText?: string;
-        description?: string;
-      } | null;
-    };
-    const b = data.briefing;
-    if (!b?.resumeText && !b?.jobDescription && !b?.company) return "";
-    return [
-      b.company ? `Interview at: ${b.company}` : "",
-      b.jobDescription ? `Job description:\n${b.jobDescription}` : "",
-      b.resumeName ? `Resume on file: ${b.resumeName}` : "",
-      b.resumeText ? `CANDIDATE RESUME:\n${b.resumeText}` : "",
-      b.description ? `Context:\n${b.description}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  } catch {
-    return "";
-  }
-}
 
 export const CompanionAI = {
   async ask(

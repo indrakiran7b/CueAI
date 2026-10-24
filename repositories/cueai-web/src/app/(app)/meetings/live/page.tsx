@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Bookmark,
   Mic,
   Pause,
-  Pin,
   Play,
-  RefreshCw,
   Square,
   Volume2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CompanionAI } from "@/components/companion/companion-services";
+import { LiveAnswerCard, useLiveAnswers } from "@/components/live/live-answers";
+import { TestCueAi } from "@/components/live/test-cueai";
+import { MockInterviewMode } from "@/components/mock-interview/mock-interview-mode";
 import { cn } from "@/lib/utils";
 import {
   hideCompanionOverlay,
@@ -33,6 +33,29 @@ import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import { formatShortcut } from "@/lib/shortcuts";
 import "./live-session.css";
 
+type InterviewMode = "regular" | "mock" | "test";
+
+const INTERVIEW_MODES: { id: InterviewMode; label: string }[] = [
+  { id: "regular", label: "Regular Interview" },
+  { id: "mock", label: "Mock Interview" },
+  { id: "test", label: "Test CueAI" },
+];
+
+const MODE_DESCRIPTIONS: Record<InterviewMode, string> = {
+  regular: "Start a live session to open Create Session. Cancel returns here without creating a meeting.",
+  mock: "Practice with an AI interviewer. Questions come from your resume and target role; results are saved to Meetings.",
+  test: "Ask CueAI an interview question by voice or text and see the answer it would give in a Regular Interview.",
+};
+
+function setLiveQuery(params: Record<string, string | null>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  window.history.replaceState(null, "", url.toString());
+}
+
 type TranscriptLine = {
   id: number;
   speaker: string;
@@ -40,14 +63,6 @@ type TranscriptLine = {
   text: string;
   time: string;
   confidence: number;
-};
-
-type Suggestion = {
-  id: string;
-  question: string;
-  answer: string;
-  pinned: boolean;
-  regenerating?: boolean;
 };
 
 export default function LiveMeetingPage() {
@@ -58,10 +73,41 @@ export default function LiveMeetingPage() {
   meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
   const setupAbortRef = useRef(false);
+  const [mode, setMode] = useState<InterviewMode>("regular");
+  /** Modes stay mounted once opened, so switching tabs never drops a running interview or test answers. */
+  const [opened, setOpened] = useState<InterviewMode[]>(["regular"]);
+  const [mockSessionId, setMockSessionId] = useState<string | null>(null);
+  const [practiceId, setPracticeId] = useState<string | null>(null);
 
   useEffect(() => {
     setHydrated(true);
     persistDesktopQuery();
+    const params = new URLSearchParams(window.location.search);
+    // `?mock=<id>` is the older link format for continuing a mock interview.
+    const session = params.get("session") || params.get("mock");
+    const practice = params.get("practice");
+    const requested = params.get("mode");
+    const initial: InterviewMode | null =
+      requested === "test" ? "test" : session || practice || requested === "mock" ? "mock" : null;
+    if (!initial) return;
+    queueMicrotask(() => {
+      setMode(initial);
+      setOpened((list) => (list.includes(initial) ? list : [...list, initial]));
+      setMockSessionId(session);
+      setPracticeId(practice);
+      if (params.get("mock")) setLiveQuery({ mock: null, session, mode: "mock" });
+      if (practice) setLiveQuery({ practice: null });
+    });
+  }, []);
+
+  function changeMode(next: InterviewMode) {
+    setMode(next);
+    setOpened((list) => (list.includes(next) ? list : [...list, next]));
+    setLiveQuery({ mode: next === "regular" ? null : next });
+  }
+
+  const onMockSessionChange = useCallback((id: string | null) => {
+    setLiveQuery({ session: id });
   }, []);
 
   useEffect(() => {
@@ -197,22 +243,61 @@ export default function LiveMeetingPage() {
 
   if (!session && !setupOpen) {
     return (
-      <div data-live className="mx-auto max-w-xl space-y-6 py-16 text-center animate-fade-up">
+      <div
+        data-live
+        className={cn(
+          "mx-auto space-y-6 text-center animate-fade-up",
+          mode === "regular" ? "max-w-xl py-16" : mode === "mock" ? "max-w-6xl py-6" : "max-w-3xl py-6",
+        )}
+      >
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Live Session</h1>
-          <p className="mt-2 text-sm text-muted">
-            Start a live session to open Create Session. Cancel returns here without creating a meeting.
-          </p>
+          <p className="mt-2 text-sm text-muted">{MODE_DESCRIPTIONS[mode]}</p>
         </div>
-        <Button
-          variant="gradient"
-          onClick={() => {
-            setupAbortRef.current = false;
-            setSetupOpen(true);
-          }}
-        >
-          Start Live Session
-        </Button>
+        <div className="flex justify-center">
+          <div className="ls-mode-group">
+            <span className="text-xs font-medium text-muted">Mode</span>
+            <div className="ls-mode-toggle" role="group" aria-label="Live Session mode">
+              {INTERVIEW_MODES.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={mode === id}
+                  onClick={() => changeMode(id)}
+                  className="ls-mode-btn"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {mode === "regular" && (
+          <Button
+            variant="gradient"
+            onClick={() => {
+              setupAbortRef.current = false;
+              setSetupOpen(true);
+            }}
+          >
+            Start Live Session
+          </Button>
+        )}
+        {opened.includes("mock") && (
+          <div hidden={mode !== "mock"}>
+            <MockInterviewMode
+              active={mode === "mock"}
+              sessionId={mockSessionId}
+              practiceId={practiceId}
+              onSessionChange={onMockSessionChange}
+            />
+          </div>
+        )}
+        {opened.includes("test") && (
+          <div hidden={mode !== "test"}>
+            <TestCueAi active={mode === "test"} />
+          </div>
+        )}
       </div>
     );
   }
@@ -225,7 +310,7 @@ export default function LiveMeetingPage() {
           onComplete={(config) => void beginSession(config)}
         />
         <p className="mt-4 text-center text-xs text-subtle">
-          Starting a session opens the CueAI companion overlay (same as{" "}
+          Starting a session opens the CueAI desktop overlay (same as{" "}
           {formatShortcut("mod", "shift", "Space")}). Keep
           CueAI Desktop running for the pop-out window.
         </p>
@@ -260,11 +345,12 @@ function ActiveLiveSession({
   const [desktopReady, setDesktopReady] = useState(false);
   const [bookmarkCount, setBookmarkCount] = useState(0);
   const [bookmarkedIds, setBookmarkedIds] = useState<number[]>([]);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const answers = useLiveAnswers();
   const [ask, setAsk] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [askReply, setAskReply] = useState<string | null>(null);
-  const [askNotice, setAskNotice] = useState<string | null>(null);
+  const asking = answers.busy;
+  const latestAnswer = answers.latest;
+  const askReply = latestAnswer?.status === "error" ? null : latestAnswer?.answer || null;
+  const askNotice = latestAnswer?.status === "error" ? latestAnswer.error ?? null : null;
   const [playheadPct, setPlayheadPct] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cueAiModeRef = useRef<CueAiMode>("private");
@@ -320,7 +406,7 @@ function ActiveLiveSession({
     return () => clearInterval(t);
   }, [paused]);
 
-  // Real transcript comes from Desktop Companion / live capture — no simulated lines.
+  // Real transcript comes from desktop live capture — no simulated lines.
   useEffect(() => {
     if (cueAiMode !== "live") {
       setLines([]);
@@ -329,7 +415,6 @@ function ActiveLiveSession({
   useEffect(() => {
     if (cueAiMode === "inactive") {
       setLines([]);
-      setAskReply(null);
     }
   }, [cueAiMode]);
 
@@ -360,57 +445,18 @@ function ActiveLiveSession({
     setBookmarkCount((n) => n + 1);
   }
 
-  function togglePin(id: string) {
-    setSuggestions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s))
-    );
-  }
-
-  async function regenerateSuggestion(id: string) {
-    setSuggestions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, regenerating: true } : s))
-    );
-    await new Promise((r) => setTimeout(r, 450));
-    setSuggestions((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              regenerating: false,
-              answer: `Refreshed: ${s.answer.replace(/^Refreshed:\s*/, "")}`,
-            }
-          : s
-      )
-    );
-  }
-
-  async function onAskSubmit(e: FormEvent) {
+  function onAskSubmit(e: FormEvent) {
     e.preventDefault();
     const prompt = ask.trim();
     if (!prompt || asking) return;
     if (cueAiMode === "inactive") return;
-    setAsking(true);
     setAsk("");
-    const result = await CompanionAI.ask(
-      prompt,
-      lines.map((line) => ({ who: line.speaker, text: line.text })),
-    );
-    const reply = result.answer;
-    setAskReply(reply);
-    setAskNotice(result.notice ?? null);
-    setSuggestions((prev) => [
-      {
-        id: `ask_${Date.now()}`,
-        question: prompt,
-        answer: reply,
-        pinned: false,
-      },
-      ...prev,
-    ]);
+    void answers.ask(prompt, {
+      transcript: lines.map((line) => ({ who: line.speaker, text: line.text })),
+    });
     if (cueAiMode === "private") {
       void openCompanionOverlay();
     }
-    setAsking(false);
   }
 
   const cueAiActive = cueAiMode !== "inactive";
@@ -573,7 +619,7 @@ function ActiveLiveSession({
                   <>
                     <p className="text-sm font-medium">Private mode active</p>
                     <p className="max-w-sm text-xs text-muted">
-                      The CueAI companion is available privately. Switch to Live for full
+                      The CueAI overlay is available privately. Switch to Live for full
                       transcription and AI suggestions in this workspace.
                     </p>
                     {askReply && <p className="ls-reply">{askReply}</p>}
@@ -586,7 +632,7 @@ function ActiveLiveSession({
               <div className="ls-empty">
                 <p className="text-sm font-medium">Waiting for a question…</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Live transcript appears here when Desktop Companion captures speech. CueAI does
+                  Live transcript appears here when CueAI&apos;s live audio assistance captures speech. CueAI does
                   not invent meeting dialogue.
                 </p>
               </div>
@@ -714,7 +760,7 @@ function ActiveLiveSession({
               <div className="flex min-h-[160px] flex-col items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] px-4 py-8 text-center">
                 <p className="text-sm text-muted">
                   {cueAiMode === "private"
-                    ? "Private mode uses the companion overlay. Ask below or switch to Live for in-workspace suggestions."
+                    ? "Private mode uses the desktop overlay. Ask below or switch to Live for in-workspace suggestions."
                     : "Enable CueAI Live to stream AI suggestions for this meeting."}
                 </p>
                 {askReply && cueAiMode === "private" && (
@@ -727,37 +773,19 @@ function ActiveLiveSession({
             )}
             {cueAiMode === "live" &&
               cueAiProcessing === "listening" &&
-              suggestions.length === 0 && (
+              answers.items.length === 0 && (
                 <p className="px-1 py-6 text-sm text-muted">No AI answers yet.</p>
               )}
             {cueAiMode === "live" &&
               cueAiProcessing === "listening" &&
-              suggestions.map((a) => (
-                <div key={a.id} className="ls-suggestion">
-                  <p className="ls-suggestion-q">{a.question}</p>
-                  <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-                    {a.regenerating ? "Regenerating…" : a.answer}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Button
-                      size="sm"
-                      variant={a.pinned ? "primary" : "outline"}
-                      onClick={() => togglePin(a.id)}
-                    >
-                      <Pin className="h-3 w-3" />
-                      {a.pinned ? "Pinned" : "Pin"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={a.regenerating}
-                      onClick={() => void regenerateSuggestion(a.id)}
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Regenerate
-                    </Button>
-                  </div>
-                </div>
+              answers.items.map((item) => (
+                <LiveAnswerCard
+                  key={item.id}
+                  item={item}
+                  onPin={() => answers.togglePin(item.id)}
+                  onRegenerate={() => answers.regenerate(item.id)}
+                  onStop={() => answers.stop(item.id)}
+                />
               ))}
             {cueAiMode === "live" && showInitializing && (
               <p className="text-xs text-muted">Preparing suggestions…</p>
@@ -765,7 +793,7 @@ function ActiveLiveSession({
           </div>
 
           <div className="ls-panel p-3">
-            <form className="flex gap-2" onSubmit={(e) => void onAskSubmit(e)}>
+            <form className="flex gap-2" onSubmit={onAskSubmit}>
               <input
                 value={ask}
                 onChange={(e) => setAsk(e.target.value)}

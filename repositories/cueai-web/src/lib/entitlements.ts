@@ -6,8 +6,6 @@ export type CuePlan = "free" | "premium";
 /** License tier from Keygate / billing (orthogonal to workspace role). */
 export type LicensePlan = "free" | "pro" | "business" | "enterprise";
 
-export const FREE_MEETING_QA_LIMIT = 5;
-
 export type MeetingEntitlements = {
   plan: LicensePlan | CuePlan;
   "meeting.full_summary": boolean;
@@ -45,7 +43,7 @@ export function entitlementsForPlan(plan?: string | null): MeetingEntitlements {
   return {
     plan: licensePlan,
     "meeting.full_summary": premium,
-    "meeting.max_questions": premium ? -1 : FREE_MEETING_QA_LIMIT,
+    "meeting.max_questions": -1,
     desktop_companion: true,
   };
 }
@@ -70,39 +68,6 @@ export function canViewFullTranscript(input: {
   entitlements?: Partial<MeetingEntitlements> | null;
 }): boolean {
   return canViewFullMeetingQa(input);
-}
-
-export function meetingQaLimit(input: {
-  role?: string | null;
-  plan?: string | null;
-  entitlements?: Partial<MeetingEntitlements> | null;
-}): number {
-  if (canViewFullMeetingQa(input)) return -1;
-  const max = input.entitlements?.["meeting.max_questions"];
-  if (typeof max === "number" && Number.isFinite(max)) return max;
-  return FREE_MEETING_QA_LIMIT;
-}
-
-export function clipMeetingAnswers<T>(
-  answers: T[],
-  input: {
-    role?: string | null;
-    plan?: string | null;
-    entitlements?: Partial<MeetingEntitlements> | null;
-  },
-): { answers: T[]; hasMore: boolean; fullSummaryAvailable: boolean } {
-  const fullSummaryAvailable = canViewFullMeetingQa(input);
-  const max = meetingQaLimit(input);
-  if (fullSummaryAvailable || max < 0) {
-    return { answers, hasMore: false, fullSummaryAvailable: true };
-  }
-  const limit = max > 0 ? max : FREE_MEETING_QA_LIMIT;
-  const clipped = answers.slice(0, limit);
-  return {
-    answers: clipped,
-    hasMore: answers.length > clipped.length,
-    fullSummaryAvailable: false,
-  };
 }
 
 /**

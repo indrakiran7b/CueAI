@@ -45,8 +45,8 @@ export async function requestScreenContext(input: {
   input.onProgress?.("sending");
 
   let res: Response;
+  const auth = await deviceAuthHeaders();
   try {
-    const auth = await deviceAuthHeaders();
     res = await fetch(`${apiBase}/api/live/screen`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...auth },

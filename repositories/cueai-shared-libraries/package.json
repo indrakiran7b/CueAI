@@ -9,8 +9,7 @@
     "./extract-document": "./src/extract-document.ts",
     "./roles": "./src/roles.ts",
     "./rag-types": "./src/rag-types.ts",
-    "./poll-job-desktop": "./src/poll-job-desktop.ts",
-    "./licensing/*": "./src/licensing/*"
+    "./poll-job-desktop": "./src/poll-job-desktop.ts"
   },
   "dependencies": {
     "mammoth": "^1.12.1",

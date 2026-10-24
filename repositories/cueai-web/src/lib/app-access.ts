@@ -18,7 +18,6 @@ export const CUEAI_NAV: CueAiNavItem[] = [
   { href: "/meetings/live", label: "Live Session" },
   { href: "/resume", label: "Resume Tailor" },
   { href: "/translation", label: "Translation", adminOnly: true },
-  { href: "/companion", label: "Desktop Companion" },
   { href: "/screen-context", label: "Screen Context", adminOnly: true },
   { href: "/knowledge", label: "Knowledge Base", adminOnly: true },
   { href: "/admin", label: "Admin Portal", adminOnly: true },

@@ -79,7 +79,7 @@ const spotlights = [
 ];
 
 const platform = [
-  { title: "Performance", body: "Sub-800ms suggestions. Core Web–ready companion.", stat: "<800ms" },
+  { title: "Performance", body: "Fast suggestions from a lightweight desktop overlay.", stat: "<800ms" },
   { title: "CMS of meetings", body: "Search every decision, owner, and citation.", stat: "Semantic" },
   { title: "SEO for recall", body: "Find what was said weeks later, instantly.", stat: "Indexed" },
   { title: "Collaboration", body: "Pin, share, and assign without leaving the room.", stat: "Realtime" },
@@ -207,7 +207,7 @@ export default function LandingPage() {
 
   const marqueeItems = [
     "Live transcription",
-    "Desktop companion",
+    "Desktop overlay",
     "Privacy mode",
     "Action items",
     "Knowledge search",
@@ -588,7 +588,7 @@ export default function LandingPage() {
           Your next meeting starts here
         </h2>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-sm text-[var(--lp-ink-dim)]">
-          {["Start live session", "Build knowledge base", "Launch companion", "Ship summaries"].map(
+          {["Start live session", "Build knowledge base", "Open the overlay", "Ship summaries"].map(
             (t) => (
               <span
                 key={t}

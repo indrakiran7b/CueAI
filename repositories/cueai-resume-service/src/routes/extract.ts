@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const MAX_BYTES = 5 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = /\.(pdf|docx|txt|md)$/i;
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -46,6 +47,14 @@ export async function POST(request: NextRequest) {
     if (file.size <= 0 || file.size > MAX_BYTES) {
       return NextResponse.json({ error: "File must be between 1 byte and 5 MB." }, { status: 400, headers: CORS_HEADERS });
     }
+    if (!ALLOWED_EXTENSIONS.test(file.name)) {
+      return NextResponse.json(
+        { error: "Upload a PDF, DOCX, TXT, or Markdown file." },
+        { status: 415, headers: CORS_HEADERS },
+      );
+    }
+    // Job descriptions reuse this extractor but must not replace the live-session resume.
+    const isJobDescription = form.get("purpose") === "job_description";
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const text = (await extractDocumentText(buffer, file.name, file.type || "")).trim();
@@ -57,11 +66,13 @@ export async function POST(request: NextRequest) {
     }
 
     const clipped = text.slice(0, 20000);
-    try {
-      const { saveLiveBriefing } = await import("@/lib/server/meetings");
-      await saveLiveBriefing({ resumeName: file.name, resumeText: clipped }, session);
-    } catch {
-      // Briefing persist must not fail the upload.
+    if (!isJobDescription) {
+      try {
+        const { saveLiveBriefing } = await import("@/lib/server/meetings");
+        await saveLiveBriefing({ resumeName: file.name, resumeText: clipped }, session);
+      } catch {
+        // Briefing persist must not fail the upload.
+      }
     }
 
     return NextResponse.json(

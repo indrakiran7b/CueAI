@@ -175,7 +175,7 @@ export function DesktopPreferencesPanel() {
       <Card className="space-y-3 p-6">
         <CardTitle>Desktop Preferences</CardTitle>
         <p className="text-sm text-muted">
-          Open CueAI Desktop to manage launch at login, tray behavior, and companion window
+          Open CueAI Desktop to manage launch at login, tray behavior, and desktop overlay
           preferences.
         </p>
       </Card>
@@ -183,7 +183,7 @@ export function DesktopPreferencesPanel() {
   }
 
   const rows: { key: keyof DesktopPrefs; label: string }[] = [
-    { key: "listenMic", label: "Microphone — listen through companion" },
+    { key: "listenMic", label: "Microphone — listen through the overlay" },
     {
       key: "listenSystemAudio",
       label: mac
@@ -191,16 +191,16 @@ export function DesktopPreferencesPanel() {
         : "System audio — capture meeting/app loopback",
     },
     { key: "launchAtStartup", label: "Launch at login" },
-    { key: "companionPinned", label: "Companion always on top" },
+    { key: "companionPinned", label: "Overlay always on top" },
     {
       key: "excludeFromCapture",
       label: mac
-        ? "Hide companion from common capture (NSWindowSharingNone; not guaranteed for every ScreenCaptureKit path)"
-        : "Exclude companion from screen capture (when OS allows)",
+        ? "Hide overlay from common capture (NSWindowSharingNone; not guaranteed for every ScreenCaptureKit path)"
+        : "Exclude overlay from screen capture (when OS allows)",
     },
     { key: "autoPresentOnMeeting", label: "Prefer presenter layout when CueAI Private/Live is on" },
-    { key: "autoCollapse", label: "Auto-collapse companion when idle" },
-    { key: "autoHide", label: "Auto-hide companion when idle" },
+    { key: "autoCollapse", label: "Auto-collapse overlay when idle" },
+    { key: "autoHide", label: "Auto-hide overlay when idle" },
     ...(!mac
       ? ([{ key: "minimizeToTray", label: "Minimize to tray on close" }] as const)
       : []),
@@ -217,7 +217,7 @@ export function DesktopPreferencesPanel() {
       <div className="rounded-xl border border-[var(--border)] bg-[var(--background)]/40 p-4">
         <p className="mb-2 text-sm font-medium">Listen & capture</p>
         <p className="mb-3 text-xs text-muted">
-          Mic audio and system audio feed the companion. Screenshot grabs your screen (companion
+          Mic audio and system audio feed the overlay. Screenshot grabs your screen (the overlay
           hides briefly so it is not in the image).
         </p>
         <div className="mb-3 flex flex-wrap gap-2 text-xs text-muted">

@@ -2,12 +2,16 @@ import {
   TranslateError,
   isTranslateLang,
   translateTexts,
+  type TranslateCaller,
 } from "@/lib/server/translate";
 
 export type TranslateHttpResult =
   | { status: number; body: Record<string, unknown> };
 
-export async function runTranslateRequest(body: unknown): Promise<TranslateHttpResult> {
+export async function runTranslateRequest(
+  body: unknown,
+  caller: TranslateCaller = {},
+): Promise<TranslateHttpResult> {
   const parsed = (body || {}) as {
     text?: unknown;
     texts?: unknown;
@@ -41,6 +45,7 @@ export async function runTranslateRequest(body: unknown): Promise<TranslateHttpR
       texts: texts.map((text) => text.slice(0, 4000)),
       targetLanguage: targetRaw,
       sourceLanguage,
+      caller,
     });
     return {
       status: 200,
@@ -56,10 +61,7 @@ export async function runTranslateRequest(body: unknown): Promise<TranslateHttpR
     if (err instanceof TranslateError) {
       return { status: err.status, body: { error: err.message } };
     }
-    console.error("translate_error", err);
-    return {
-      status: 502,
-      body: { error: err instanceof Error ? err.message : "Translation failed." },
-    };
+    console.error("translate_error", err instanceof Error ? err.name : "unknown");
+    return { status: 502, body: { error: "Translation failed." } };
   }
 }

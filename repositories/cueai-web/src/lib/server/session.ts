@@ -8,7 +8,12 @@ import {
 } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import { normalizeRole } from "@/lib/roles";
-import { isCueaiProduction, resolveAuthSecret } from "@/lib/runtime-env";
+import {
+  configuredAuthSecret,
+  isAuthSecretPlaceholder,
+  isCueaiProduction,
+  resolveAuthSecret,
+} from "@/lib/runtime-env";
 
 export const SESSION_COOKIE = "cueai_admin_session";
 
@@ -82,6 +87,36 @@ export function verifyPassword(password: string, stored: string) {
   const a = Buffer.from(hash, "hex");
   const b = Buffer.from(next, "hex");
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export type SecretEncryptionStatus = {
+  ready: boolean;
+  source: "dedicated" | "auth_secret" | "development_fallback" | "missing";
+  message: string | null;
+};
+
+/** Reports whether stored provider keys can be encrypted, without revealing any secret. */
+export function secretEncryptionStatus(): SecretEncryptionStatus {
+  if (process.env.CUEAI_SECRET_ENCRYPTION_KEY?.trim()) {
+    return { ready: true, source: "dedicated", message: null };
+  }
+  if (!isAuthSecretPlaceholder(configuredAuthSecret())) {
+    return { ready: true, source: "auth_secret", message: null };
+  }
+  if (isCueaiProduction()) {
+    return {
+      ready: false,
+      source: "missing",
+      message:
+        "Server encryption is not configured. Set CUEAI_SECRET_ENCRYPTION_KEY (or AUTH_SECRET) on the server before saving API keys.",
+    };
+  }
+  return {
+    ready: true,
+    source: "development_fallback",
+    message:
+      "Development encryption key in use. Set CUEAI_SECRET_ENCRYPTION_KEY before storing real API keys in shared or production environments.",
+  };
 }
 
 /** 32-byte AES key from CUEAI_SECRET_ENCRYPTION_KEY or AUTH_SECRET. */

@@ -15,16 +15,15 @@ def gemini_api_key() -> str:
 
 
 def default_gemini_model() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    return os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 
 def gemini_model_candidates() -> list[str]:
     primary = default_gemini_model()
     fallbacks = [
         primary,
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
         "gemini-flash-latest",
+        "gemini-2.5-flash",
     ]
     seen: set[str] = set()
     out: list[str] = []

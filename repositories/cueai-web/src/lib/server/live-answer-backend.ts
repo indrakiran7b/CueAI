@@ -1,4 +1,5 @@
 import { resolveGroqApiKey } from "@/lib/server/groq";
+import { resolveOpenAiApiKey } from "@/lib/server/openai";
 
 export function liveAnswerApiUrl(): string {
   return (process.env.CUEAI_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -8,12 +9,13 @@ export function forceLiveAnswerLocal(): boolean {
   return process.env.CUEAI_LIVE_ANSWER_LOCAL === "1";
 }
 
-export function localProvidersConfigured(): { groq: boolean; gemini: boolean } {
+export function localProvidersConfigured(): { openai: boolean; groq: boolean; gemini: boolean } {
+  const openai = Boolean(resolveOpenAiApiKey());
   const groq = Boolean(resolveGroqApiKey());
   const gemini = Boolean(
     process.env.GEMINI_API_KEY?.trim() || process.env.VERTEX_API_KEY?.trim(),
   );
-  return { groq, gemini };
+  return { openai, groq, gemini };
 }
 
 export type FastApiProbe = {

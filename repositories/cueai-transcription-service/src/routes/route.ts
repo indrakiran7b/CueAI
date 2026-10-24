@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       const buffer = Buffer.from(await file.arrayBuffer());
       text = await transcribeAudioWithGemini(buffer, file.type || "audio/webm");
       provider = "gemini";
-      model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+      model = process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
     }
     if (!text) {
       return json({

@@ -9,6 +9,7 @@
   "exports": {
     "./routes/analyze": "./src/routes/analyze.ts",
     "./routes/extract": "./src/routes/extract.ts",
+    "./routes/document": "./src/routes/document.ts",
     "./applyResumeRewrites": "./src/applyResumeRewrites.ts"
   }
 }

@@ -109,6 +109,88 @@ button {
   display: none;
 }
 
+.ov-root.is-narrow .ov-ask {
+  min-width: 56px;
+}
+
+.ov-src {
+  position: relative;
+}
+
+.ov-src-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: #52525b;
+}
+
+.ov-root.is-narrow .ov-src-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+}
+
+.ov-src.is-live .ov-src-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+}
+
+.ov-src.is-pending {
+  color: #fafafa;
+  cursor: progress;
+}
+
+.ov-src.is-pending .ov-src-dot {
+  background: #f59e0b;
+  animation: ov-src-pulse 1s ease-in-out infinite;
+}
+
+.ov-src.is-error:not(.is-live) {
+  color: #fca5a5;
+}
+
+.ov-src.is-error:not(.is-live) .ov-src-dot {
+  background: #ef4444;
+}
+
+@keyframes ov-src-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.ov-hint {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px 6px 10px;
+  border-radius: 8px;
+  background: rgba(20, 20, 22, 0.92);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.ov-hint p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: #fca5a5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-hint button {
+  display: inline-flex;
+  flex: none;
+  color: #a1a1aa;
+}
+
 .ov-btn:hover,
 .ov-btn.is-on,
 .ov-icon:hover,
@@ -282,6 +364,25 @@ button {
 
 .ov-answer p + p {
   margin-top: 10px;
+}
+
+.ov-answer pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  user-select: text;
+}
+
+.ov-answer pre code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #e4e4e7;
+  white-space: pre;
+  tab-size: 4;
 }
 
 .resize-edge {

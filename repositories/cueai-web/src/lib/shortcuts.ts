@@ -81,7 +81,7 @@ export function isModKey(
 
 /** Named CueAI shortcuts used in Settings / chrome. */
 export const CUEAI_SHORTCUTS = [
-  { action: "Toggle Companion", parts: ["mod", "shift", "Space"] as const },
+  { action: "Show/Hide Overlay", parts: ["mod", "shift", "Space"] as const },
   { action: "Settings", parts: ["mod", ","] as const },
   { action: "Command palette", parts: ["mod", "K"] as const },
   { action: "Close window", parts: ["mod", "W"] as const },

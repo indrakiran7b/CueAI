@@ -37,18 +37,6 @@ import { getWebOrigin } from "../services/web-server";
 import { windowsDeviceService } from "../platform/windows/windowsDevice";
 import { startWindowsGoogleSignIn } from "../services/google-oauth";
 
-function originFromSender(event: Electron.IpcMainInvokeEvent): string {
-  try {
-    const loaded = event.sender.getURL();
-    if (loaded.startsWith("http://") || loaded.startsWith("https://")) {
-      return new URL(loaded).origin;
-    }
-  } catch {
-    // Fall back to the configured web origin.
-  }
-  return getWebOrigin();
-}
-
 function getMainWindow() {
   return BrowserWindow.getAllWindows().find((w) => {
     const url = w.webContents.getURL();
@@ -178,7 +166,7 @@ export function registerIpcHandlers() {
     endOverlayResize();
     return true;
   });
-  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string }) => {
+  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => {
     const origin = getWebOrigin().replace(/\/$/, "");
     const body = new FormData();
     const mime = payload.mime || "audio/wav";
@@ -192,29 +180,40 @@ export function registerIpcHandlers() {
     const blob = new Blob([Buffer.from(payload.data)], { type: mime });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
+    if (typeof payload.prompt === "string" && payload.prompt.trim()) {
+      body.append("prompt", payload.prompt.trim().slice(0, 400));
+    }
     const auth = await ensureDeviceAuthHeaders();
-    console.log("[TRANSCRIBE] request sent", {
-      path: "/api/transcribe",
-      bytes: payload.data.byteLength,
-      deviceId: Boolean(auth["X-CueAI-Device-Id"]),
-      credential: Boolean(auth["X-CueAI-Device-Credential"]),
-    });
+    const started = Date.now();
     const ses = getDashboardSession();
-    const res = ses
-      ? await ses.fetch(`${origin}/api/transcribe`, {
-          method: "POST",
-          headers: auth,
-          body,
-        })
-      : await fetch(`${origin}/api/transcribe`, {
-          method: "POST",
-          headers: auth,
-          body,
-        });
-    console.log("[TRANSCRIBE] response status", res.status);
-    const data = (await res.json()) as { text?: string; who?: string; error?: string };
-    if (!res.ok) return { error: data.error || "Transcription failed" };
-    return data;
+    const init = { method: "POST", headers: auth, body, signal: AbortSignal.timeout(15_000) };
+    try {
+      const res = ses
+        ? await ses.fetch(`${origin}/api/transcribe`, init)
+        : await fetch(`${origin}/api/transcribe`, init);
+      const data = (await res.json().catch(() => ({}))) as {
+        text?: string;
+        who?: string;
+        error?: string;
+        uncertain?: boolean;
+      };
+      console.log("[TRANSCRIBE]", { status: res.status, bytes: payload.data.byteLength, ms: Date.now() - started });
+      if (!res.ok) {
+        return {
+          error: data.error || "Transcription failed",
+          status: res.status,
+          retryAfterMs: Number(res.headers.get("retry-after") || 0) * 1000,
+        };
+      }
+      return data;
+    } catch (err) {
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      console.log("[TRANSCRIBE]", { status: timedOut ? "timeout" : "network_error", ms: Date.now() - started });
+      return {
+        error: timedOut ? "Transcription timed out." : "Cannot reach CueAI web API for transcription.",
+        status: timedOut ? 408 : 0,
+      };
+    }
   });
   ipcMain.handle(IpcChannels.COMPANION_OPEN_DASHBOARD, async () => {
     const main = getMainWindow();
@@ -444,31 +443,6 @@ export function registerIpcHandlers() {
 
   ipcMain.handle(IpcChannels.STORE_GET_ALL, () => getAllStore());
 
-  ipcMain.handle(IpcChannels.DEVICE_GET_PUBLIC, () => {
-    try {
-      return windowsDeviceService.getPublicDevice();
-    } catch (err) {
-      console.error("[DEVICE] Failed to read Windows account-device identity", err);
-      throw err;
-    }
-  });
-  ipcMain.handle(IpcChannels.DEVICE_VERIFY, async (event) => {
-    const origin = originFromSender(event);
-    return windowsDeviceService.verifyDevice(
-      (input, init) => event.sender.session.fetch(input, init),
-      origin,
-    );
-  });
-  ipcMain.handle(IpcChannels.DEVICE_REGISTER, async (event) => {
-    const origin = originFromSender(event);
-    return windowsDeviceService.registerDevice(
-      (input, init) => event.sender.session.fetch(input, init),
-      origin,
-    );
-  });
-  ipcMain.handle(IpcChannels.DEVICE_CLEAR_SESSION, () => {
-    return windowsDeviceService.clearDeviceSession();
-  });
   ipcMain.handle(IpcChannels.AUTH_GOOGLE_START, () =>
     startWindowsGoogleSignIn(() => getMainWindow() ?? null),
   );

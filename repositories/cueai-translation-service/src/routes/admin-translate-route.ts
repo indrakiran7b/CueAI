@@ -7,9 +7,12 @@ export const maxDuration = 120;
 
 /** Admin transcript translation page. Same translator as /api/translate. */
 export async function POST(request: NextRequest) {
-  const { error } = await requirePermission("admin.access", request);
-  if (error) return error;
+  const { error, session } = await requirePermission("admin.access", request);
+  if (error || !session) return error;
   const body = await request.json().catch(() => null);
-  const result = await runTranslateRequest(body);
+  const result = await runTranslateRequest(body, {
+    userId: session.userId,
+    workspaceId: session.workspaceId,
+  });
   return NextResponse.json(result.body, { status: result.status });
 }

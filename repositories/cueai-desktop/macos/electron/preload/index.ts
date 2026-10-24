@@ -100,50 +100,10 @@ const cueDesktop = {
     ipcRenderer.invoke(IpcChannels.PERMISSIONS_REQUEST, kind),
   openPrivacySettings: (pane?: "microphone" | "screen" | "systemAudio" | "privacy") =>
     ipcRenderer.invoke(IpcChannels.PERMISSIONS_OPEN_SETTINGS, pane),
-  getMacDevice: () =>
-    ipcRenderer.invoke(IpcChannels.DEVICE_GET_PUBLIC) as Promise<{
-      deviceId: string;
-      maskedId: string;
-      deviceName: string;
-      platform: "macos";
-      appVersion: string;
-      keychainAvailable: boolean;
-      hasCredential: boolean;
-    }>,
-  registerMacDevice: () =>
-    ipcRenderer.invoke(IpcChannels.DEVICE_REGISTER) as Promise<{
-      ok: boolean;
-      status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-      authorized: boolean;
-      httpStatus?: number;
-      message?: string;
-    }>,
-  verifyMacDevice: () =>
-    ipcRenderer.invoke(IpcChannels.DEVICE_VERIFY) as Promise<{
-      ok: boolean;
-      status: "NEW" | "PENDING" | "ACTIVE" | "BLOCKED" | "REVOKED" | "NETWORK_ERROR" | "SERVER_ERROR" | "AUTH_REQUIRED";
-      authorized: boolean;
-      httpStatus?: number;
-      message?: string;
-    }>,
-  clearMacDeviceSession: () =>
-    ipcRenderer.invoke(IpcChannels.DEVICE_CLEAR_SESSION) as Promise<{
-      cleared: boolean;
-      identityPreserved: boolean;
-    }>,
-  getAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_GET_PUBLIC),
-  registerAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_REGISTER),
-  verifyAccountDevice: () => ipcRenderer.invoke(IpcChannels.DEVICE_VERIFY),
-  clearAccountDeviceSession: () => ipcRenderer.invoke(IpcChannels.DEVICE_CLEAR_SESSION),
   getDeviceAuthHeaders: () =>
     ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,
   startGoogleSignIn: () =>
     ipcRenderer.invoke(IpcChannels.AUTH_GOOGLE_START) as Promise<{ ok: boolean; error?: string }>,
-  getLicenseDevice: () => ipcRenderer.invoke(IpcChannels.LICENSE_GET_DEVICE),
-  getLicenseStatus: () => ipcRenderer.invoke(IpcChannels.LICENSE_GET_STATUS),
-  activateLicense: (licenseKey: string) => ipcRenderer.invoke(IpcChannels.LICENSE_ACTIVATE, licenseKey),
-  validateLicense: () => ipcRenderer.invoke(IpcChannels.LICENSE_VALIDATE),
-  deactivateLicense: () => ipcRenderer.invoke(IpcChannels.LICENSE_DEACTIVATE),
 };
 
 /** Companion overlay API. */
@@ -198,11 +158,14 @@ const cueai = {
       expanded: boolean;
       mode: CompanionMode;
     } | null>,
-  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string }) =>
+  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_TRANSCRIBE, payload) as Promise<{
       text?: string;
       who?: string;
       error?: string;
+      uncertain?: boolean;
+      status?: number;
+      retryAfter?: number;
     }>,
   getDeviceAuthHeaders: () =>
     ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,

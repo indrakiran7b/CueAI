@@ -29,9 +29,9 @@ def test_interview_system_prompt_forbids_preamble() -> None:
     from app.modules.live.prompts import INTERVIEW_SYSTEM_PROMPT, build_system_instruction
 
     text = build_system_instruction("", False)
-    assert text.startswith("You are CueAI, a real-time interview answer assistant.")
-    assert "Sure, here's the answer." in INTERVIEW_SYSTEM_PROMPT
-    assert "Never invent the candidate's work experience" in text
+    assert text.startswith("You are CueAI, a precise real-time conversational assistant")
+    assert "Never open with filler" in INTERVIEW_SYSTEM_PROMPT
+    assert "never evidence that the candidate has those skills" in text
     assert "Do not invent a bio" in text
 
 

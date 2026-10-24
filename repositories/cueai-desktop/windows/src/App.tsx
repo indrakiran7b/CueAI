@@ -16,26 +16,46 @@ import {
 import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
-import { configureAnswerApi } from "./services/live-answer";
+import { configureAnswerApi, prefetchSessionContext } from "./services/live-answer";
 import {
   configureLiveTranscription,
   getListenActive,
+  getTranscribeStats,
+  resetTranscriptionContext,
+  startMicListen,
+  startSystemAudioListen,
   stopAllListen,
+  stopMicListen,
+  stopSystemAudioListen,
+  subscribeListenLevels,
   syncListenSources,
 } from "./services/audio-listen";
+import type { AudioSessionState } from "./services/audio-session-manager";
 import {
   clearQuestionMemory,
-  assembleUtterance,
-  beginQuestionProcessing,
-  endQuestionProcessing,
-  evaluateQuestion,
   getRollingContext,
   pushRollingTranscript,
   cleanQuestionText,
 } from "./services/question-detection";
-import { isFirstMeaningfulAnswer, looksTruncatedTranscript } from "./services/speech-capture";
-import { createLatencyTracker, pipelineLog, prewarmAnswerApi } from "./services/pipeline-log";
+import { isFirstMeaningfulAnswer } from "./services/speech-capture";
+import {
+  createLatencyTracker,
+  debugText,
+  isPipelineDebug,
+  pipelineLog,
+  prewarmAnswerApi,
+} from "./services/pipeline-log";
 import { requestLiveAnswerStream } from "./services/live-answer";
+import {
+  AnswerSequencer,
+  PipelineMetrics,
+  QuestionGate,
+  UtteranceAssembler,
+  selectHistory,
+  type Exchange,
+  type FinalUtterance,
+} from "../../shared/live-pipeline";
+import { answerBlocks } from "../../shared/answer-blocks";
 import {
   configureMeetingPersist,
   persistFailedQuestion,
@@ -55,17 +75,51 @@ function formatElapsed(ms: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function answerLines(text: string) {
-  const bullets = text
-    .split(/\n+/)
-    .map((line) => line.replace(/^[-*•]\s*/, "").trim())
-    .filter(Boolean);
-  if (bullets.length > 1) return bullets;
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  return sentences.length > 1 ? sentences.slice(0, 6) : [text.trim()];
+type ListenKind = "mic" | "systemAudio";
+
+type AnswerOptions = {
+  utteranceId?: string;
+  questionWho?: string;
+  source?: "auto" | "manual" | "screen";
+  latency?: ReturnType<typeof createLatencyTracker>;
+  uncertain?: boolean;
+};
+
+const isCapturing = (s: AudioSessionState) => s === "listening" || s === "processing";
+const isStarting = (s: AudioSessionState) => s === "requesting_permission" || s === "connecting";
+
+const getDesktopSourceId = async () => (await window.cueai?.getDesktopAudioSourceId()) ?? null;
+
+type LivePipeline = {
+  assembler: UtteranceAssembler;
+  gate: QuestionGate;
+  sequencer: AnswerSequencer;
+  metrics: PipelineMetrics;
+};
+
+function createLivePipeline(onFinal: (u: FinalUtterance) => void): LivePipeline {
+  const metrics = new PipelineMetrics();
+  const pipeline: LivePipeline = {
+    assembler: new UtteranceAssembler({
+      onFinal,
+      onDebug: (e) => {
+        if (isPipelineDebug()) {
+          pipelineLog("question", `Assembler ${e.type}`, { who: e.who, seq: e.seq, detail: e.detail });
+        }
+      },
+    }),
+    gate: new QuestionGate(),
+    sequencer: new AnswerSequencer(),
+    metrics,
+  };
+  // Counters and per-stage latency only (no transcript text) for live diagnosis in DevTools.
+  (window as unknown as { __cueaiPipeline?: unknown }).__cueaiPipeline = {
+    counters: metrics.counters,
+    rates: () => metrics.rates(),
+    summarize: (utteranceId: string) => metrics.summarize(utteranceId),
+    transcription: getTranscribeStats,
+  };
+  return pipeline;
 }
 
 export default function App() {
@@ -97,6 +151,14 @@ export default function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [shotBusy, setShotBusy] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [audio, setAudio] = useState<{ mic: AudioSessionState; system: AudioSessionState }>({
+    mic: "idle",
+    system: "idle",
+  });
+  const [audioErrors, setAudioErrors] = useState<Record<ListenKind, string | null>>({
+    mic: null,
+    systemAudio: null,
+  });
   const startedAtRef = useRef(Date.now());
   const aiBusyRef = useRef(false);
   const streamingRef = useRef(false);
@@ -106,27 +168,39 @@ export default function App() {
   transcriptRef.current = transcript;
   const meetingIdRef = useRef(session?.meetingId);
   meetingIdRef.current = session?.meetingId;
+  /** Ad-hoc listening outside a live session has no meeting to save into. */
+  const persistRef = useRef(Boolean(session?.active));
+  persistRef.current = Boolean(session?.active);
   const answerAbortRef = useRef<AbortController | null>(null);
   const askRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const meetingKeyRef = useRef<string | null>(null);
   const lastCompleteRef = useRef("");
-  const answerHeardRef = useRef<
-    (
-      questionText: string,
-      opts?: {
-        questionId?: string;
-        questionWho?: string;
-        source?: "auto" | "manual" | "screen";
-        latency?: ReturnType<typeof createLatencyTracker>;
-      },
-    ) => Promise<void>
-  >(async () => undefined);
+  const answerHeardRef = useRef<(questionText: string, opts?: AnswerOptions) => Promise<void>>(
+    async () => undefined,
+  );
+  const onUtteranceRef = useRef<(u: FinalUtterance) => void>(() => undefined);
+  const pipelineRef = useRef<LivePipeline | null>(null);
+  if (!pipelineRef.current) pipelineRef.current = createLivePipeline((u) => onUtteranceRef.current(u));
+  const pipeline = pipelineRef.current;
+  /** Question/answer pairs from the current meeting, oldest first. */
+  const exchangesRef = useRef<Exchange[]>([]);
+  const systemOnRef = useRef(false);
 
   const privacyOn = capture?.requested !== false;
   const lastHeard = [...transcript].reverse().find((t) => t.who !== "CueAI");
   const hasAnswer = Boolean(answer.trim());
   const boardOpen = streaming || hasAnswer || Boolean(question.trim());
+  const micOn = isCapturing(audio.mic);
+  const systemOn = isCapturing(audio.system);
+  const micStarting = isStarting(audio.mic);
+  const systemStarting = isStarting(audio.system);
+  const audioProblem = [audioErrors.mic, audioErrors.systemAudio].filter(Boolean).join(" · ");
+  const cueAiOn = Boolean(session.active && session.cueAiMode !== "inactive");
+  const cueAiOnRef = useRef(cueAiOn);
+  const liveListening = Boolean(session.active && session.cueAiMode === "live");
+  const liveListeningRef = useRef(false);
+  systemOnRef.current = systemOn;
 
   useEffect(() => {
     void window.cueai?.pin(pinned);
@@ -181,20 +255,12 @@ export default function App() {
     configureLiveTranscription({
       apiBase: webApiBase,
       onResult: (line) => {
-        appendTranscript(line);
+        appendTranscript({ who: line.who, text: line.text });
         pushRollingTranscript(line.who, line.text);
         setStatusMsg(null);
-        if (line.partial && line.who === "System") {
-          console.log("[SYSTEM-AUDIO] Partial transcript:", line.text);
-        }
-        pipelineLog(
-          "transcription",
-          line.partial ? "Partial transcript" : "Final transcript fragment",
-          { who: line.who, chars: line.text.length },
-        );
 
-        // Persist finalized speech only (not partials).
-        if (!line.partial && line.text.trim()) {
+        // Every segment is final text for its stretch of audio (splits are not re-transcribed).
+        if (line.text.trim() && persistRef.current) {
           persistTranscriptLine({
             who: line.who,
             text: line.text,
@@ -207,99 +273,70 @@ export default function App() {
             meetingId: meetingIdRef.current,
           });
         }
-
-        assembleUtterance(
-          line.who,
-          line.text,
-          (utterance) => {
-            const assembled = cleanQuestionText(utterance.text);
-            if (!looksTruncatedTranscript(assembled)) {
-              lastCompleteRef.current = assembled;
-              rememberQuestion(assembled);
-            }
-
-            // System Audio alone drives auto-answer — Mic is not required.
-            // Never auto-answer the candidate's own mic ("You").
-            if (utterance.who === "You") return;
-
-            console.log(
-              "[SYSTEM-AUDIO] FINAL TRANSCRIPT:\n" + JSON.stringify(utterance.text),
-            );
-            console.log("[AUTO-ANSWER] Final system question received");
-            console.log(
-              "[AUTO-ANSWER] Auto-answer enabled:",
-              autoAnswerRef.current,
-            );
-            console.log("[AUTO-ANSWER] Current setting:", autoAnswerRef.current);
-
-            if (!autoAnswerRef.current) {
-              pipelineLog("question", "Auto-answer off — transcript only");
-              return;
-            }
-
-            const decision = evaluateQuestion(utterance.text, {
-              who: utterance.who,
-              allowSelfQuestions: true,
-              finalized: true,
-              forceSystem: utterance.who === "System",
-            });
-
-            if (!decision.accept) {
-              pipelineLog("question", "Skipped segment", { reason: decision.reason });
-              console.log("[AUTO-ANSWER] Skipped", decision.reason);
-              return;
-            }
-
-            const questionText = decision.question;
-            const qid = decision.questionId || questionText;
-            if (!beginQuestionProcessing(qid)) {
-              pipelineLog("question", "Duplicate in-flight — skipped", { id: qid });
-              console.log("[AUTO-ANSWER] Duplicate skipped", qid);
-              return;
-            }
-
-            console.log("[AUTO-ANSWER] Question ID:", qid);
-            console.log("[AUTO-ANSWER] Triggering existing answer function");
-            pipelineLog("question", "Complete question detected", {
-              who: utterance.who,
-              chars: questionText.length,
-            });
-
-            const latency = createLatencyTracker(questionText);
-            if (utterance.audioEndAt != null) latency.mark("audioEnd", utterance.audioEndAt);
-            else if (line.audioEndAt != null) latency.mark("audioEnd", line.audioEndAt);
-            if (utterance.transcribedAt != null) {
-              latency.mark("transcriptionFinal", utterance.transcribedAt);
-            } else if (line.transcribedAt != null) {
-              latency.mark("transcriptionFinal", line.transcribedAt);
-            }
-            latency.mark("questionDetected");
-
-            // Pass the FINAL QUESTION TEXT directly — never rely on React state.
-            void answerHeardRef
-              .current(questionText, {
-                questionId: qid,
-                questionWho:
-                  utterance.who === "System" ? "Interviewer" : utterance.who,
-                source: "auto",
-                latency,
-              })
-              .finally(() => endQuestionProcessing(qid));
-          },
-          {
-            audioEndAt: line.audioEndAt,
-            transcribedAt: line.transcribedAt,
-            partial: line.partial,
-          },
-        );
       },
-      onError: (msg) => setStatusMsg(msg),
+      onError: (msg) => {
+        pipeline.metrics.count("transcriptionErrors");
+        setStatusMsg(msg);
+      },
+      onSpeechStart: (who, at) => pipeline.assembler.speechStart(who, at),
+      onSpeechEnd: (who, at, lastVoiceAt) => pipeline.assembler.speechEnd(who, at, lastVoiceAt),
+      onSegmentQueued: (who, seq) => pipeline.assembler.segmentQueued(who, seq),
+      onSegmentResult: (who, seq, result) => pipeline.assembler.segmentResult(who, seq, result),
     });
     return () => {
       configureLiveTranscription(null);
+      pipeline.assembler.reset();
+      pipeline.sequencer.cancel();
       answerAbortRef.current?.abort();
     };
-  }, [appendTranscript, webApiBase]);
+  }, [appendTranscript, webApiBase, pipeline]);
+
+  onUtteranceRef.current = (u: FinalUtterance) => {
+    const { metrics, gate } = pipeline;
+    metrics.count("utterances");
+    if (u.speechStartAt != null) metrics.mark(u.id, "speechStart", u.speechStartAt);
+    if (u.lastVoiceAt != null) metrics.mark(u.id, "lastVoice", u.lastVoiceAt);
+    if (u.speechEndAt != null) metrics.mark(u.id, "speechEnd", u.speechEndAt);
+    if (u.transcribedAt != null) metrics.mark(u.id, "transcriptResponse", u.transcribedAt);
+    metrics.mark(u.id, "finalized", u.finalizedAt);
+    if (!u.complete) metrics.count("incomplete");
+
+    // With system audio live the interviewer is on that lane; the mic is the candidate (context only).
+    // With only the mic, the interviewer is heard through the mic, so it may trigger answers.
+    const answerable = u.who === "System" || !systemOnRef.current;
+    const decision = gate.evaluate(u, { answerable: answerable && autoAnswerRef.current });
+    if (u.complete && answerable) {
+      lastCompleteRef.current = decision.question;
+      rememberQuestion(decision.question);
+    }
+    pipelineLog("question", decision.accept ? "Question accepted" : "Utterance not answered", {
+      utterance: u.id,
+      who: u.who,
+      reason: !autoAnswerRef.current && answerable ? "auto_answer_off" : decision.reason,
+      complete: u.complete,
+      uncertain: u.uncertain,
+      segments: u.segments,
+      followUp: decision.followUp,
+      text: debugText(u.text),
+    });
+    if (!decision.accept) {
+      metrics.count(decision.reason === "duplicate" ? "duplicate" : "skipped");
+      return;
+    }
+
+    const latency = createLatencyTracker(decision.question);
+    if (u.lastVoiceAt != null) latency.mark("audioEnd", u.lastVoiceAt);
+    if (u.transcribedAt != null) latency.mark("transcriptionFinal", u.transcribedAt);
+    latency.mark("questionDetected", u.finalizedAt);
+
+    void answerHeardRef.current(decision.question, {
+      utteranceId: u.id,
+      questionWho: u.who === "System" ? "Interviewer" : u.who,
+      source: "auto",
+      latency,
+      uncertain: u.uncertain,
+    });
+  };
 
   function rollingLinesFallback(utterance: { who: string; text: string }) {
     return [
@@ -312,23 +349,23 @@ export default function App() {
    * Shared answer path used by Auto-answer AND the manual Answer button.
    * Streams via Groq (Gemini fallback on server) and renders in the companion.
    */
-  async function answerHeardQuestion(
-    questionText: string,
-    opts?: {
-      questionId?: string;
-      questionWho?: string;
-      source?: "auto" | "manual" | "screen";
-      latency?: ReturnType<typeof createLatencyTracker>;
-    },
-  ) {
+  async function answerHeardQuestion(questionText: string, opts?: AnswerOptions) {
     const q = cleanQuestionText(questionText);
     if (!q) return;
+    const { sequencer, metrics } = pipeline;
 
-    // Abort any in-flight stream so follow-ups / auto-answer are never
-    // silently dropped by a stale `streaming` React state guard.
+    // Newest question wins: the sequencer aborts any running answer; an utterance is answered once.
+    const wasBusy = streamingRef.current;
+    const ticket = sequencer.begin(opts?.utteranceId);
+    if (!ticket) {
+      pipelineLog("question", "Utterance already answered", { utterance: opts?.utteranceId });
+      return;
+    }
+    if (wasBusy) metrics.count("answerSuperseded");
     answerAbortRef.current?.abort();
-    const abort = new AbortController();
-    answerAbortRef.current = abort;
+    answerAbortRef.current = null;
+    const isStale = () => !sequencer.isCurrent(ticket.id);
+    const metricId = opts?.utteranceId || `manual-${ticket.id}`;
 
     bumpActivity();
     rememberQuestion(q);
@@ -340,73 +377,82 @@ export default function App() {
 
     const latency = opts?.latency || createLatencyTracker(q);
     latency.mark("aiRequest");
-    console.log("[GROQ] Request started");
+    metrics.mark(metricId, "llmRequest");
+    const history = selectHistory(q, exchangesRef.current);
     pipelineLog("ai", "Request started", {
       source: opts?.source || "unknown",
+      utterance: opts?.utteranceId,
       chars: q.length,
-      questionId: opts?.questionId,
+      history: history.length,
+      uncertain: Boolean(opts?.uncertain),
     });
 
+    let streamed = "";
     try {
-      const rolling = getRollingContext(3);
-      const result = await requestLiveAnswerStream(q, rolling, {
-        signal: abort.signal,
-        onToken: (_token, full) => {
-          if (!latency.marks.firstToken) {
-            latency.mark("firstToken");
-            console.log("[GROQ] First token received");
-            pipelineLog("response", "First token received");
-          }
-          if (!latency.marks.answerVisible) {
-            if (!isFirstMeaningfulAnswer(full)) return;
-            setAnswer(full);
-            latency.mark("answerVisible");
-            return;
-          }
-          setAnswer(full);
-        },
-      });
-      if (abort.signal.aborted) return;
-      setAnswer(result.answer);
-      latency.mark("answerVisible");
-      latency.report(opts?.source === "manual" ? "manual_answer" : "auto_answer");
-      appendTranscript({ who: "CueAI", text: result.answer });
-      console.log("[ANSWER] Answer rendered");
-      pipelineLog("overlay", "Answer rendered");
-      console.log("[MEETING] Question saved");
-      console.log("[MEETING] Answer saved");
-    } catch (err) {
-      if (abort.signal.aborted) return;
+      let answerText = "";
       try {
-        const result = await AIService.ask(q, {
-          transcript: rollingLinesFallback({
-            who: opts?.questionWho || "Interviewer",
-            text: q,
-          }),
-        }, { fallback: false });
-        if (abort.signal.aborted) return;
-        setAnswer(result.answer);
-        appendTranscript({ who: "CueAI", text: result.answer });
-        console.log("[ANSWER] Answer rendered");
-        pipelineLog("fallback", "Used non-stream AIService path");
-        console.log("[MEETING] Question saved");
-        console.log("[MEETING] Answer saved");
-      } catch (inner) {
+        const result = await requestLiveAnswerStream(q, getRollingContext(6), {
+          signal: ticket.signal,
+          history,
+          uncertain: opts?.uncertain,
+          onToken: (_token, full) => {
+            if (isStale()) return;
+            streamed = full;
+            if (!latency.marks.firstToken) {
+              latency.mark("firstToken");
+              metrics.mark(metricId, "firstToken");
+            }
+            if (!latency.marks.answerVisible) {
+              if (!isFirstMeaningfulAnswer(full)) return;
+              latency.mark("answerVisible");
+            }
+            setAnswer(full);
+          },
+        });
+        answerText = result.answer;
+      } catch (err) {
+        if (isStale()) throw err;
+        // A partially streamed answer is shown as-is; retrying would duplicate or contradict it.
+        if (streamed.trim()) {
+          setAnswer(streamed);
+          setStatusMsg("Answer was interrupted. Ask again to regenerate.");
+          metrics.count("answerFailed");
+          return;
+        }
+        pipelineLog("fallback", "Stream failed before any text — trying non-stream path", {
+          error: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+        });
+        const result = await AIService.ask(
+          q,
+          { transcript: rollingLinesFallback({ who: opts?.questionWho || "Interviewer", text: q }) },
+          { fallback: false },
+        );
+        answerText = result.answer;
+      }
+      if (isStale()) return;
+      setAnswer(answerText);
+      latency.mark("answerVisible");
+      metrics.mark(metricId, "answerComplete");
+      metrics.count("answered");
+      latency.report(opts?.source === "manual" ? "manual_answer" : "auto_answer");
+      pipelineLog("perf", "Utterance latency", { utterance: metricId, ...metrics.summarize(metricId) });
+      appendTranscript({ who: "CueAI", text: answerText });
+      exchangesRef.current.push({ question: q, answer: answerText });
+      if (exchangesRef.current.length > 40) exchangesRef.current.shift();
+    } catch (err) {
+      if (isStale()) return;
+      metrics.count("answerFailed");
+      if (persistRef.current) {
         persistFailedQuestion({
           prompt: q,
           questionWho: opts?.questionWho || "Interviewer",
           meetingId: meetingIdRef.current,
         });
-        setStatusMsg(
-          inner instanceof Error
-            ? inner.message
-            : err instanceof Error
-              ? err.message
-              : "Unable to generate an answer.",
-        );
       }
+      setStatusMsg(err instanceof Error ? err.message : "Unable to generate an answer.");
     } finally {
-      if (!abort.signal.aborted) {
+      if (!isStale()) {
+        sequencer.finish(ticket.id);
         streamingRef.current = false;
         setStreaming(false);
         aiBusyRef.current = false;
@@ -446,8 +492,7 @@ export default function App() {
         const active = await syncListenSources({
           mic: listen.mic,
           systemAudio: listen.systemAudio,
-          getDesktopSourceId: async () =>
-            (await window.cueai?.getDesktopAudioSourceId()) ?? null,
+          getDesktopSourceId,
         });
         if (cancelled) return;
         // UI must reflect real capture — never leave Mic/System "on" after failure.
@@ -455,18 +500,76 @@ export default function App() {
           setListen(active);
           await window.cueai?.setListenSources(active);
         }
-      } catch (err) {
+      } catch {
+        // Per-source failures surface through the audio session subscription.
         if (cancelled) return;
         const active = getListenActive();
         setListen(active);
         await window.cueai?.setListenSources(active);
-        setStatusMsg(err instanceof Error ? err.message : "Listen failed");
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [listen.mic, listen.systemAudio, setListen]);
+
+  useEffect(() => {
+    let prev: { mic: AudioSessionState; system: AudioSessionState } = {
+      mic: "idle",
+      system: "idle",
+    };
+    return subscribeListenLevels((s) => {
+      if (s.mic === prev.mic && s.system === prev.system) return;
+      if (s.mic === "error" && prev.mic !== "error") {
+        setAudioErrors((e) => ({ ...e, mic: s.error || "Microphone capture failed." }));
+      }
+      if (s.system === "error" && prev.system !== "error") {
+        setAudioErrors((e) => ({ ...e, systemAudio: s.error || "System audio capture failed." }));
+      }
+      if (isCapturing(s.mic)) setAudioErrors((e) => (e.mic ? { ...e, mic: null } : e));
+      if (isCapturing(s.system)) {
+        setAudioErrors((e) => (e.systemAudio ? { ...e, systemAudio: null } : e));
+      }
+      prev = { mic: s.mic, system: s.system };
+      setAudio(prev);
+    });
+  }, []);
+
+  // A source that dies mid-session (device unplugged, share ended) must not stay flagged on.
+  useEffect(() => {
+    const current = useCompanionStore.getState().listen;
+    const next = {
+      mic: current.mic && audio.mic !== "error",
+      systemAudio: current.systemAudio && audio.system !== "error",
+    };
+    if (next.mic === current.mic && next.systemAudio === current.systemAudio) return;
+    setListen(next);
+    void window.cueai?.setListenSources(next);
+  }, [audio.mic, audio.system, setListen]);
+
+  useEffect(() => {
+    const wasOn = cueAiOnRef.current;
+    cueAiOnRef.current = cueAiOn;
+    if (wasOn && !cueAiOn) void releaseAudio();
+  }, [cueAiOn]);
+
+  // Live mode means "listen now": open both lanes immediately instead of waiting for toolbar clicks.
+  useEffect(() => {
+    const was = liveListeningRef.current;
+    liveListeningRef.current = liveListening;
+    if (liveListening && !was) {
+      prefetchSessionContext();
+      const current = useCompanionStore.getState().listen;
+      if (current.mic && current.systemAudio) return;
+      const next = { mic: true, systemAudio: true };
+      pipelineLog("audio", "Live session started — starting microphone and system audio");
+      setListen(next);
+      void window.cueai?.setListenSources(next);
+    } else if (!liveListening && was && cueAiOnRef.current) {
+      pipelineLog("audio", "Left live mode — releasing capture");
+      void releaseAudio();
+    }
+  }, [liveListening, setListen]);
 
   useEffect(() => {
     return () => {
@@ -489,14 +592,14 @@ export default function App() {
 
   useEffect(() => {
     if (boardOpen || expanded) return;
-    void window.cueai?.fitHeight?.(menuOpen ? 260 : 76);
-  }, [menuOpen, boardOpen, expanded]);
+    void window.cueai?.fitHeight?.(menuOpen ? 260 : audioProblem ? 110 : 76);
+  }, [menuOpen, boardOpen, expanded, audioProblem]);
 
   useEffect(() => {
     const el = rootRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(([entry]) => {
-      setNarrow(entry.contentRect.width < 580);
+      setNarrow(entry.contentRect.width < 650);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -518,6 +621,13 @@ export default function App() {
     setCopied(false);
     clearTranscript();
     clearQuestionMemory();
+    resetTranscriptionContext();
+    pipeline.assembler.reset();
+    pipeline.gate.reset();
+    pipeline.sequencer.reset();
+    pipeline.metrics.reset();
+    exchangesRef.current = [];
+    prefetchSessionContext(true);
     lastCompleteRef.current = "";
     answerAbortRef.current?.abort();
     startedAtRef.current = Date.now();
@@ -552,6 +662,8 @@ export default function App() {
     setStreaming(true);
     setAnswer("");
     pipelineLog("overlay", "[SCREEN] Capture requested");
+    pipeline.sequencer.cancel();
+    streamingRef.current = false;
     answerAbortRef.current?.abort();
     const abort = new AbortController();
     answerAbortRef.current = abort;
@@ -628,12 +740,20 @@ export default function App() {
     setEnding(true);
     bumpActivity();
     try {
-      await stopAllListen();
+      await releaseAudio();
       await window.cueai?.endSession();
       clearBoard();
     } finally {
       setEnding(false);
     }
+  }
+
+  async function releaseAudio() {
+    await stopAllListen();
+    setAudioErrors({ mic: null, systemAudio: null });
+    const off = { mic: false, systemAudio: false };
+    setListen(off);
+    await window.cueai?.setListenSources(off);
   }
 
   async function togglePrivacy() {
@@ -642,16 +762,30 @@ export default function App() {
     if (status) setCapture(status);
   }
 
-  async function toggleListen(kind: "mic" | "systemAudio") {
+  async function toggleListen(kind: ListenKind) {
     bumpActivity();
-    const next = {
-      mic: kind === "mic" ? !listen.mic : listen.mic,
-      systemAudio: kind === "systemAudio" ? !listen.systemAudio : listen.systemAudio,
+    const state = kind === "mic" ? audio.mic : audio.system;
+    if (isStarting(state)) return;
+    setAudioErrors((e) => ({ ...e, [kind]: null }));
+    const save = async (on: boolean) => {
+      const next = { ...useCompanionStore.getState().listen, [kind]: on };
+      setListen(next);
+      await window.cueai?.setListenSources(next);
     };
-    setListen(next);
-    const saved = await window.cueai?.setListenSources(next);
-    if (saved) setListen(saved);
-    setMenuOpen(false);
+    if (isCapturing(state)) {
+      await (kind === "mic" ? stopMicListen() : stopSystemAudioListen());
+      await save(false);
+      return;
+    }
+    // Flag first so the listen-sync effect joins this start instead of cancelling it.
+    await save(true);
+    try {
+      await (kind === "mic" ? startMicListen() : startSystemAudioListen(getDesktopSourceId));
+    } catch (err) {
+      const fallback = kind === "mic" ? "Microphone capture failed." : "System audio capture failed.";
+      setAudioErrors((e) => ({ ...e, [kind]: err instanceof Error ? err.message : fallback }));
+    }
+    if (!getListenActive()[kind]) await save(false);
   }
 
   return (
@@ -691,6 +825,56 @@ export default function App() {
           <Camera className="h-3.5 w-3.5" />
           <span className="ov-btn-label">{shotBusy ? "Capture" : "Screen"}</span>
         </button>
+        <button
+          type="button"
+          className={cn(
+            "ov-btn ov-src no-drag",
+            micOn && "is-on is-live",
+            micStarting && "is-pending",
+            audioErrors.mic && "is-error",
+          )}
+          onClick={() => void toggleListen("mic")}
+          aria-label={micOn ? "Mic on" : "Mic off"}
+          aria-pressed={micOn}
+          aria-busy={micStarting}
+          title={
+            audioErrors.mic ||
+            (micStarting ? "Starting microphone…" : micOn ? "Mic on — click to stop" : "Mic off — click to start")
+          }
+        >
+          {micOn || micStarting ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+          <span className="ov-btn-label">Mic</span>
+          <span className="ov-src-dot" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "ov-btn ov-src no-drag",
+            systemOn && "is-on is-live",
+            systemStarting && "is-pending",
+            audioErrors.systemAudio && "is-error",
+          )}
+          onClick={() => void toggleListen("systemAudio")}
+          aria-label={systemOn ? "System Audio on" : "System Audio off"}
+          aria-pressed={systemOn}
+          aria-busy={systemStarting}
+          title={
+            audioErrors.systemAudio ||
+            (systemStarting
+              ? "Starting system audio…"
+              : systemOn
+                ? "System Audio on — click to stop"
+                : "System Audio off — click to start")
+          }
+        >
+          {systemOn || systemStarting ? (
+            <Volume2 className="h-3.5 w-3.5" />
+          ) : (
+            <VolumeX className="h-3.5 w-3.5" />
+          )}
+          <span className="ov-btn-label">System Audio</span>
+          <span className="ov-src-dot" aria-hidden />
+        </button>
         <span className="ov-timer">{formatElapsed(elapsedMs)}</span>
         <button
           type="button"
@@ -715,14 +899,6 @@ export default function App() {
           </button>
           {menuOpen && (
             <div className="ov-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => void toggleListen("mic")}>
-                {listen.mic ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
-                Mic {listen.mic ? "on" : "off"}
-              </button>
-              <button type="button" role="menuitem" onClick={() => void toggleListen("systemAudio")}>
-                {listen.systemAudio ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-                System {listen.systemAudio ? "on" : "off"}
-              </button>
               <button type="button" role="menuitem" onClick={() => { setPinned(!pinned); setMenuOpen(false); }}>
                 Pin {pinned ? "on" : "off"}
               </button>
@@ -742,6 +918,19 @@ export default function App() {
         </button>
       </div>
 
+      {!boardOpen && audioProblem && (
+        <div className="ov-hint no-drag" role="alert">
+          <p title={audioProblem}>{audioProblem}</p>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setAudioErrors({ mic: null, systemAudio: null })}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {boardOpen && (
         <section className="ov-card no-drag">
           <header>
@@ -757,13 +946,20 @@ export default function App() {
             </div>
           </header>
           {statusMsg && <p className="ov-error">{statusMsg}</p>}
+          {audioProblem && <p className="ov-error">{audioProblem}</p>}
           {streaming ? (
             <p className="ov-muted">Thinking…</p>
           ) : (
             <div className="ov-answer">
-              {answerLines(answer || "Waiting for a question.").map((line) => (
-                <p key={line}>{line}</p>
-              ))}
+              {answerBlocks(answer || "Waiting for a question.").map((block, i) =>
+                block.kind === "code" ? (
+                  <pre key={i} aria-label={block.lang ? `${block.lang} code` : "code"}>
+                    <code>{block.text}</code>
+                  </pre>
+                ) : (
+                  <p key={i}>{block.text}</p>
+                ),
+              )}
             </div>
           )}
         </section>

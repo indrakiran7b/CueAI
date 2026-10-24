@@ -53,18 +53,8 @@ export const IpcChannels = {
   PERMISSIONS_GET: "permissions:get",
   PERMISSIONS_REQUEST: "permissions:request",
   PERMISSIONS_OPEN_SETTINGS: "permissions:open-settings",
-  DEVICE_GET_PUBLIC: "device:get-public",
-  DEVICE_REGISTER: "device:register",
-  DEVICE_VERIFY: "device:verify",
-  DEVICE_CLEAR_SESSION: "device:clear-session",
   DEVICE_GET_AUTH_HEADERS: "device:get-auth-headers",
   AUTH_GOOGLE_START: "auth:google:start",
-
-  LICENSE_GET_DEVICE: "license:get-device",
-  LICENSE_GET_STATUS: "license:get-status",
-  LICENSE_ACTIVATE: "license:activate",
-  LICENSE_VALIDATE: "license:validate",
-  LICENSE_DEACTIVATE: "license:deactivate",
 
   // Settings / store
   STORE_GET: "store:get",

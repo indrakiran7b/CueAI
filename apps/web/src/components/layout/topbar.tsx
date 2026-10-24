@@ -13,7 +13,6 @@ import {
   FileText,
   Settings,
   Check,
-  AppWindow,
   Shield,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/misc";
@@ -29,7 +28,6 @@ import { useRouter } from "next/navigation";
 const USER_COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
-  { label: "Desktop Companion", href: "/companion", icon: AppWindow },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
