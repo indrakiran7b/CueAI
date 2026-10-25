@@ -1,0 +1,66 @@
+{
+ "run_name": "free-batch-1",
+ "dataset_version": "2026-10-25.1",
+ "catalog_retrieved_at": "2026-10-25T14:46:47+00:00",
+ "suite": "core",
+ "items": [
+  "A1-intro",
+  "A5-missing",
+  "B3-js-event-loop",
+  "C4-cancelled-error",
+  "D1-is-prime",
+  "D11-second-largest",
+  "D16-sql-second-salary",
+  "E4-onscreen-question"
+ ],
+ "trials": 1,
+ "targets": [
+  {
+   "target": "cohere/north-mini-code:free",
+   "model": "cohere/north-mini-code:free",
+   "is_free": true,
+   "planned_requests": 7,
+   "skipped": 1,
+   "skip_reasons": {
+    "skipped_no_image_input": 1
+   },
+   "estimated_cost_usd": 0.0
+  },
+  {
+   "target": "google/gemma-4-31b-it:free",
+   "model": "google/gemma-4-31b-it:free",
+   "is_free": true,
+   "planned_requests": 8,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.0
+  },
+  {
+   "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "is_free": true,
+   "planned_requests": 7,
+   "skipped": 1,
+   "skip_reasons": {
+    "skipped_no_image_input": 1
+   },
+   "estimated_cost_usd": 0.0
+  },
+  {
+   "target": "thinkingmachines/inkling:free",
+   "model": "thinkingmachines/inkling:free",
+   "is_free": true,
+   "planned_requests": 8,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.0
+  }
+ ],
+ "estimated_total_cost_usd": 0.0,
+ "unknown_cost_targets": [],
+ "free_requests_planned": 30,
+ "judge_requests_planned": 8,
+ "daily_free_request_cap": 48,
+ "within_budget": true,
+ "needs_authorization": []
+}

@@ -6,6 +6,14 @@
 import type { ResolvedCredential } from "@/lib/server/credential-resolver";
 import { markCredentialUsed } from "@/lib/server/credential-resolver";
 import { DEFAULT_ENDPOINTS } from "@/lib/server/ai-config";
+import { isOpenAiReasoningModel, openAiSamplingParams } from "@/lib/server/openai";
+
+/** OpenAI reasoning models reject `temperature` / `max_tokens`; other compatible providers keep the classic fields. */
+function compatibleSamplingParams(cred: ResolvedCredential, temperature: number, maxOutputTokens: number) {
+  return cred.provider === "openai" && isOpenAiReasoningModel(cred.model)
+    ? openAiSamplingParams(cred.model, temperature, maxOutputTokens)
+    : { temperature, max_tokens: maxOutputTokens };
+}
 
 export const BYOK_AUTH_FAILED_MESSAGE =
   "API key authentication failed.\n\nPlease check your API key in:\nSettings → API Keys";
@@ -69,7 +77,8 @@ function requestSignal(req: LlmGenerateRequest, fallbackMs: number): AbortSignal
 export function supportsVision(provider: string, model: string): boolean {
   const m = model.toLowerCase();
   if (provider === "gemini") return true;
-  if (provider === "openai") return /^(gpt-4o|gpt-4\.1|gpt-4-turbo|gpt-5|o1|o3|o4)/.test(m);
+  if (provider === "openai") return /^(gpt-4o|gpt-4\.1|gpt-4-turbo|gpt-([5-9]|\d{2})|gpt-luna|o1|o3|o4)/.test(m);
+  if (provider === "groq") return /llama-4|vision|llava|qwen3\.[5-9]/.test(m);
   if (provider === "anthropic") return /claude-(3|sonnet-4|opus-4|haiku-4)/.test(m);
   if (provider === "openrouter") {
     return /(gpt-4o|gpt-4\.1|claude-3|claude-sonnet-4|gemini)/.test(m);
@@ -87,7 +96,7 @@ export async function generateWithCredential(
     throw new LlmProviderError(`Model ${cred.model} does not accept images.`, 422);
   }
 
-  if (cred.provider === "groq") {
+  if (cred.provider === "groq" && !req.image) {
     const { generateGroqText, GroqError } = await import("@/lib/server/groq");
     try {
       const result = await generateGroqText({
@@ -161,7 +170,7 @@ export async function generateWithCredential(
     return { ...result, provider: "anthropic", source: cred.source };
   }
 
-  // OpenAI-compatible: openai, openrouter, deepseek, perplexity
+  // OpenAI-compatible: openai, openrouter, deepseek, perplexity, and Groq vision requests
   const result = await generateOpenAiCompatible(cred, req, temperature, maxOutputTokens);
   await markCredentialUsed(cred.credentialId);
   return { ...result, provider: cred.provider, source: cred.source };
@@ -224,8 +233,7 @@ export async function streamWithCredential(
     },
     body: JSON.stringify({
       model: cred.model,
-      temperature,
-      max_tokens: maxOutputTokens,
+      ...compatibleSamplingParams(cred, temperature, maxOutputTokens),
       stream: true,
       messages: [
         ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
@@ -314,8 +322,7 @@ async function generateOpenAiCompatible(
     },
     body: JSON.stringify({
       model: cred.model,
-      temperature,
-      max_tokens: maxOutputTokens,
+      ...compatibleSamplingParams(cred, temperature, maxOutputTokens),
       ...(req.jsonObject ? { response_format: { type: "json_object" } } : {}),
       messages: [
         ...(req.system ? [{ role: "system" as const, content: req.system }] : []),

@@ -380,7 +380,8 @@ export async function resolveCredentialChain(input: {
   const models = store.ai.models || [];
   for (const prov of (store.ai.providers || []).filter((p) => p.enabled && isByokProvider(p.type))) {
     const workspaceKey = prov.apiKeyEnc ? decryptSecret(prov.apiKeyEnc) : "";
-    const apiKey = workspaceKey || envKeyFor(prov.type);
+    const envKey = envKeyFor(prov.type);
+    const apiKey = workspaceKey || envKey;
     if (!apiKey || seen.has(prov.type)) continue;
     seen.add(prov.type);
     candidates.push({
@@ -394,6 +395,16 @@ export async function resolveCredentialChain(input: {
       endpoint: prov.endpoint || DEFAULT_ENDPOINTS[prov.type] || "",
       source: workspaceKey ? "workspace" : "env",
     });
+    // A stale or revoked workspace key must not hide a working app-managed key for the same provider.
+    if (workspaceKey && envKey && envKey !== workspaceKey) {
+      candidates.push({
+        provider: prov.type,
+        model: DEFAULT_CHAT_MODELS[prov.type]?.[0] || "",
+        apiKey: envKey,
+        endpoint: DEFAULT_ENDPOINTS[prov.type] || "",
+        source: "env",
+      });
+    }
   }
   for (const type of BYOK_PROVIDERS) {
     const apiKey = envKeyFor(type);
@@ -407,8 +418,19 @@ export async function resolveCredentialChain(input: {
       source: "env",
     });
   }
+  const rank = (p: AiProviderType) => {
+    const i = APP_PROVIDER_ORDER.indexOf(p);
+    return i < 0 ? APP_PROVIDER_ORDER.length : i;
+  };
+  // Array.prototype.sort is stable, so workspace keys stay ahead of env keys for the same provider.
+  candidates.sort((a, b) => rank(a.provider) - rank(b.provider));
   return { candidates, userOwned: false };
 }
+
+/** App-managed fallback order: OpenAI primary, Groq next, then the rest. Override with AI_PROVIDER_ORDER. */
+const APP_PROVIDER_ORDER: AiProviderType[] = (
+  process.env.AI_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(isByokProvider) ?? []
+).concat(["openai", "groq", "gemini", "openrouter", "deepseek", "anthropic", "perplexity"]);
 
 export async function markCredentialUsed(credentialId?: string): Promise<void> {
   if (!credentialId) return;

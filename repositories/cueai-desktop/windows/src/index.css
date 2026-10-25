@@ -55,10 +55,9 @@ button {
 .ov-ask,
 .ov-menu,
 .ov-card {
-  background: rgba(20, 20, 22, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Solid: Windows can't blur what is behind a transparent window, so any alpha lets page text bleed through. */
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .ov-bar {
@@ -170,7 +169,7 @@ button {
   min-width: 0;
   padding: 6px 8px 6px 10px;
   border-radius: 8px;
-  background: rgba(20, 20, 22, 0.92);
+  background: #141416;
   border: 1px solid rgba(239, 68, 68, 0.35);
 }
 
@@ -287,7 +286,7 @@ button {
 }
 
 .ov-ask input::placeholder {
-  color: #71717a;
+  color: #9a9aa3;
 }
 
 .ov-card {
@@ -344,7 +343,7 @@ button {
 .ov-muted {
   margin: 0;
   font-size: 13px;
-  color: #71717a;
+  color: #9a9aa3;
 }
 
 .ov-answer {

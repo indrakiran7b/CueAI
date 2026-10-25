@@ -18,6 +18,8 @@
     "test:mock-interview": "npx tsx --tsconfig tsconfig.json --test scripts/test-mock-interview.mts",
     "test:live-modes": "npx tsx --tsconfig tsconfig.json --test scripts/test-live-modes.mts",
     "test:profile": "npx tsx --tsconfig tsconfig.json --test scripts/test-profile.mts",
+    "test:themes": "npx tsx --tsconfig tsconfig.json --test scripts/test-themes.mts",
+    "test:ai-fallback": "npx tsx --tsconfig tsconfig.json --test scripts/test-ai-fallback.mts",
     "test:user-tokens": "npx tsx --tsconfig tsconfig.json --test scripts/test-user-token-usage.mts",
     "test:billing": "npx tsx --tsconfig tsconfig.json --test scripts/test-billing.mts",
     "test:oauth": "npx tsx --tsconfig tsconfig.json --test scripts/test-oauth-complete.mts scripts/test-desktop-google-handoff.mts scripts/test-oauth-request-origin.mts"

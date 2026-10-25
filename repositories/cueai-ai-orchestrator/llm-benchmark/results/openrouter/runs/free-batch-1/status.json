@@ -1,0 +1,100 @@
+{
+ "run_name": "free-batch-1",
+ "run_id": "fe0b88dd15",
+ "finished_at": "2026-10-25T14:53:12+00:00",
+ "stop_reason": "blocked_daily_free_quota",
+ "spent_usd_reported": 0.0,
+ "key_info_before": {
+  "limit": 50,
+  "limit_remaining": 50,
+  "usage": 0,
+  "usage_daily": 0,
+  "is_free_tier": true
+ },
+ "free_used_today": 49,
+ "skipped": [
+  {
+   "key": "cohere/north-mini-code:free|E4-onscreen-question|0",
+   "target": "cohere/north-mini-code:free",
+   "skipped": "skipped_no_image_input"
+  },
+  {
+   "key": "nvidia/nemotron-3-ultra-550b-a55b:free|E4-onscreen-question|0",
+   "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "skipped": "skipped_no_image_input"
+  }
+ ],
+ "config": {
+  "run_name": "free-batch-1",
+  "max_spend_usd": 0.0,
+  "max_spend_per_model_usd": 0.25,
+  "max_requests_per_model": 60,
+  "allow_paid": false,
+  "daily_free_request_cap": 48,
+  "max_concurrency": 2,
+  "requests_per_minute": 18,
+  "request_timeout_s": 90.0,
+  "max_retries": 2,
+  "trials": 1,
+  "max_output_tokens": 900,
+  "temperature": 0.3,
+  "reasoning_effort": "low",
+  "resume": true,
+  "retry_failed": false,
+  "fetch_generation_stats": true,
+  "suite": "core",
+  "categories": [],
+  "items": [
+   "A1",
+   "A5",
+   "B3",
+   "C4",
+   "D1",
+   "D11",
+   "D16",
+   "E4"
+  ],
+  "models": [
+   "thinkingmachines/inkling:free",
+   "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "google/gemma-4-31b-it:free",
+   "cohere/north-mini-code:free"
+  ],
+  "select": "free",
+  "order": "intelligence",
+  "limit": 8,
+  "allow_images": true,
+  "allow_search": false,
+  "provider_compare": false,
+  "judge": true,
+  "evaluator_model": "",
+  "judge_max_tokens": 2500,
+  "sandbox": "docker",
+  "sandbox_image": "python:3.12-alpine",
+  "quality_weights": {
+   "technical_correctness": 0.25,
+   "relevance": 0.15,
+   "clarity": 0.15,
+   "interview_readiness": 0.1,
+   "resume_grounding": 0.15,
+   "completeness": 0.1,
+   "conciseness": 0.05,
+   "uncertainty": 0.05
+  },
+  "overall_weights": {
+   "quality": 0.4,
+   "coding": 0.2,
+   "latency": 0.2,
+   "reliability": 0.15,
+   "cost": 0.05
+  },
+  "min_samples_for_ranking": 5,
+  "min_samples_for_p90": 10,
+  "min_samples_for_p95": 20,
+  "answers_per_day": [
+   1000,
+   5000,
+   10000
+  ]
+ }
+}

@@ -38,6 +38,7 @@
 
   --glass: rgba(20, 20, 20, 0.72);
   --glass-border: #262626;
+  --glass-strong: rgba(20, 20, 20, 0.88);
   --overlay: rgba(0, 0, 0, 0.65);
 
   --ring: #0099ff;
@@ -46,6 +47,26 @@
   --primary-muted: rgba(255, 255, 255, 0.08);
   --accent: #0099ff;
   --accent-muted: rgba(0, 153, 255, 0.14);
+  --accent-border: rgba(0, 153, 255, 0.25);
+
+  /* Primary actions, selection, status text and charts (palettes in src/lib/themes.ts override these) */
+  --cta: var(--primary);
+  --cta-foreground: var(--primary-foreground);
+  --selection: rgba(0, 153, 255, 0.35);
+  --selection-foreground: #ffffff;
+  --success-fg: #34d399;
+  --warning-fg: #fbbf24;
+  --danger-fg: #f87171;
+  --chart-1: #0099ff;
+  --chart-2: #22c55e;
+  --chart-3: #f59e0b;
+  --chart-4: #a78bfa;
+  --chart-5: #f472b6;
+  --chart-line: #ffffff;
+  --chart-area: #0099ff;
+  --chart-tick: #666666;
+  --gauge-from: #14b8a6;
+  --gauge-to: #8b5cf6;
 
   --accent-gradient: linear-gradient(135deg, #ffffff 0%, #e8e8e8 100%);
   --aurora-1: rgba(255, 255, 255, 0.06);
@@ -89,7 +110,10 @@
 
   --glass: rgba(255, 255, 255, 0.78);
   --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-strong: rgba(255, 255, 255, 0.88);
   --overlay: rgba(0, 0, 0, 0.32);
+  --chart-line: #090909;
+  --chart-tick: #999999;
 
   --primary: #1d1d1f;
   --primary-foreground: #ffffff;
@@ -138,6 +162,9 @@
   body {
     background: var(--background);
     color: var(--foreground);
+    transition:
+      background-color 200ms ease,
+      color 200ms ease;
     font-family: var(--font-sans), system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -152,8 +179,8 @@
   }
 
   ::selection {
-    background: rgba(0, 153, 255, 0.35);
-    color: #fff;
+    background: var(--selection);
+    color: var(--selection-foreground);
   }
 
   :focus-visible {
@@ -181,14 +208,10 @@
 }
 
 .glass-strong {
-  background: rgba(20, 20, 20, 0.88);
+  background: var(--glass-strong);
   backdrop-filter: blur(32px) saturate(160%);
   -webkit-backdrop-filter: blur(32px) saturate(160%);
   border: 1px solid var(--glass-border);
-}
-
-[data-theme="light"] .glass-strong {
-  background: rgba(255, 255, 255, 0.88);
 }
 
 /* Accent utility (blue — links / sparse highlights) */
@@ -198,7 +221,7 @@
 
 .ai-surface {
   background: var(--accent-muted);
-  border: 1px solid rgba(0, 153, 255, 0.25);
+  border: 1px solid var(--accent-border);
 }
 
 /* Accent text — blue for emphasis / links */
@@ -298,7 +321,7 @@
     135deg,
     rgba(255, 255, 255, 0.28),
     rgba(255, 255, 255, 0.06),
-    rgba(0, 153, 255, 0.2)
+    var(--accent-border)
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,

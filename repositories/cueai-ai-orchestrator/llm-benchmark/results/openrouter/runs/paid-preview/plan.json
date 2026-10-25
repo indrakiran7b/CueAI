@@ -1,0 +1,133 @@
+{
+ "run_name": "paid-preview",
+ "dataset_version": "2026-10-25.1",
+ "catalog_retrieved_at": "2026-10-25T14:57:45+00:00",
+ "suite": "core",
+ "items": [
+  "A1-intro",
+  "A4-internship",
+  "A5-missing",
+  "B3-js-event-loop",
+  "B11-design-basic",
+  "C1-starvation",
+  "C4-cancelled-error",
+  "C5-taskgroup",
+  "D1-is-prime",
+  "D4-palindrome",
+  "D6-first-unique",
+  "D8-merge",
+  "D11-second-largest",
+  "D12-binary-search",
+  "D16-sql-second-salary",
+  "E1-code-screenshot",
+  "E4-onscreen-question"
+ ],
+ "trials": 1,
+ "targets": [
+  {
+   "target": "anthropic/claude-opus-5.5",
+   "model": "anthropic/claude-opus-5.5",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.447648
+  },
+  {
+   "target": "anthropic/claude-sonnet-5.5",
+   "model": "anthropic/claude-sonnet-5.5",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.223824
+  },
+  {
+   "target": "moonshotai/kimi-k3.1-pro",
+   "model": "moonshotai/kimi-k3.1-pro",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.223824
+  },
+  {
+   "target": "anthropic/claude-fable-5.1",
+   "model": "anthropic/claude-fable-5.1",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 1.11912
+  },
+  {
+   "target": "openai/gpt-6-astra",
+   "model": "openai/gpt-6-astra",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 1.11912
+  },
+  {
+   "target": "google/gemini-4-argon",
+   "model": "google/gemini-4-argon",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.223828
+  },
+  {
+   "target": "openai/gpt-6.1-sol",
+   "model": "openai/gpt-6.1-sol",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.223824
+  },
+  {
+   "target": "anthropic/claude-opus-5",
+   "model": "anthropic/claude-opus-5",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.55956
+  },
+  {
+   "target": "anthropic/claude-fable-5",
+   "model": "anthropic/claude-fable-5",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 1.11912
+  },
+  {
+   "target": "meta/muse-spark-1.3",
+   "model": "meta/muse-spark-1.3",
+   "is_free": false,
+   "planned_requests": 17,
+   "skipped": 0,
+   "skip_reasons": {},
+   "estimated_cost_usd": 0.10779
+  }
+ ],
+ "estimated_total_cost_usd": 6.4494,
+ "unknown_cost_targets": [],
+ "free_requests_planned": 0,
+ "judge_requests_planned": 34,
+ "evaluator": "openai/gpt-6-sol",
+ "estimated_judge_cost_usd": 1.0817,
+ "daily_free_request_cap": 50,
+ "within_budget": false,
+ "needs_authorization": [
+  "anthropic/claude-opus-5.5",
+  "anthropic/claude-fable-5.1",
+  "openai/gpt-6-astra",
+  "anthropic/claude-opus-5",
+  "anthropic/claude-fable-5"
+ ]
+}

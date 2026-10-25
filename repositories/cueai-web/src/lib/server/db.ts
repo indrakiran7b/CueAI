@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { WorkspaceRole } from "@/lib/roles";
 import type { OnboardingProfile } from "@/lib/onboarding";
 import type { ProfessionalProfile } from "@/lib/professional-profile";
+import type { PalettePreference } from "@/lib/themes";
 import type {
   MockInterviewStatus,
   MockReport,
@@ -35,6 +36,8 @@ export type DbUser = {
   onboarding?: OnboardingProfile;
   /** Settings → Profile professional details; absent until the user saves them. */
   professionalProfile?: ProfessionalProfile;
+  /** Settings → Appearance colour palette; absent until the user picks one. */
+  appearance?: { palette: PalettePreference; updatedAt: string };
   /** Optional billing entitlement. Absent means free. */
   plan?: "free" | "premium";
   /** Stripe Customer id (cus_…). Never expose secret keys. */
@@ -578,10 +581,21 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     if (!memory.userApiCredentials) memory.userApiCredentials = [];
     return memory;
   }
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  let parsed: WorkspaceStore | null;
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const raw = await fs.readFile(STORE_PATH, "utf8");
-    memory = JSON.parse(raw) as WorkspaceStore;
+    parsed = await readStoreFile();
+  } catch (err) {
+    // The file exists but could not be read or parsed. Never replace it with an empty default:
+    // that would erase every user, device and meeting.
+    if (memory) {
+      console.error("[DB] store read failed; serving cached copy", err instanceof Error ? err.message : err);
+      return memory;
+    }
+    throw new Error(`Workspace store at ${STORE_PATH} is unreadable; refusing to overwrite it.`);
+  }
+  if (parsed) {
+    memory = parsed;
     loadedMtimeMs = mtime || Date.now();
     const { ensureAiCatalog } = await import("@/lib/server/ai-config");
     ensureAiCatalog(memory.ai);
@@ -596,18 +610,51 @@ async function ensureLoaded(): Promise<WorkspaceStore> {
     migrateLegacyMockInterviews(memory);
     assertNoDefaultBootstrapInProduction(memory);
     return memory;
-  } catch (err) {
-    if (err instanceof Error && err.message.includes("default development bootstrap")) {
-      throw err;
+  }
+
+  memory = defaultStore();
+  const { ensureAiCatalog } = await import("@/lib/server/ai-config");
+  ensureAiCatalog(memory.ai);
+  memory.workspace.createdAt = new Date().toISOString();
+  assertNoDefaultBootstrapInProduction(memory);
+  await persist(memory);
+  loadedMtimeMs = await storeFileMtime();
+  return memory;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const TRANSIENT_FS_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+
+/** Returns null only when the file does not exist; retries transient read/parse failures. */
+async function readStoreFile(): Promise<WorkspaceStore | null> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const raw = await fs.readFile(STORE_PATH, "utf8");
+      return JSON.parse(raw) as WorkspaceStore;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      if (attempt >= 5) throw err;
+      await sleep(40 * (attempt + 1));
     }
-    memory = defaultStore();
-    const { ensureAiCatalog } = await import("@/lib/server/ai-config");
-    ensureAiCatalog(memory.ai);
-    memory.workspace.createdAt = new Date().toISOString();
-    assertNoDefaultBootstrapInProduction(memory);
-    await persist(memory);
-    loadedMtimeMs = await storeFileMtime();
-    return memory;
+  }
+}
+
+/** Write to a temp file and rename so readers never see a half-written store. */
+async function writeStoreFileAtomic(contents: string) {
+  const tmp = `${STORE_PATH}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  await fs.writeFile(tmp, contents, "utf8");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(tmp, STORE_PATH);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code || "";
+      if (!TRANSIENT_FS_CODES.has(code) || attempt >= 8) {
+        await fs.rm(tmp, { force: true }).catch(() => {});
+        throw err;
+      }
+      await sleep(25 * (attempt + 1));
+    }
   }
 }
 
@@ -615,7 +662,7 @@ async function persist(store: WorkspaceStore) {
   memory = store;
   writeQueue = writeQueue.then(async () => {
     await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
+    await writeStoreFileAtomic(JSON.stringify(store, null, 2));
     loadedMtimeMs = await storeFileMtime();
   });
   await writeQueue;

@@ -101,5 +101,11 @@ export function prewarmAnswerApi(apiBase: string) {
     const headers = await deviceAuthHeaders();
     await fetch(`${base}/api/live/health`, { cache: "no-store", headers }).catch(() => undefined);
     await fetch(`${base}/api/live/briefing`, { cache: "no-store", headers }).catch(() => undefined);
+    // OPTIONS has no side effects but makes a dev server compile each route before the first question needs it.
+    await Promise.all(
+      ["/api/live/answer", "/api/transcribe", "/api/live/meeting-event", "/api/live/screen"].map((path) =>
+        fetch(`${base}${path}`, { method: "OPTIONS", cache: "no-store" }).catch(() => undefined),
+      ),
+    );
   })();
 }

@@ -78,8 +78,8 @@ export function Gauge({
         />
         <defs>
           <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#14b8a6" />
-            <stop offset="100%" stopColor="#8b5cf6" />
+            <stop offset="0%" style={{ stopColor: "var(--gauge-from)" }} />
+            <stop offset="100%" style={{ stopColor: "var(--gauge-to)" }} />
           </linearGradient>
         </defs>
       </svg>

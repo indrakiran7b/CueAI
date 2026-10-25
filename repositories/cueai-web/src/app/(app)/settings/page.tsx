@@ -25,6 +25,7 @@ import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preference
 import { PersonalizationCard } from "@/components/settings/personalization-card";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
+import { ThemePicker } from "@/components/settings/theme-picker";
 import { deleteAccountLocal } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
 import { cn } from "@/lib/utils";
@@ -222,18 +223,20 @@ export default function SettingsPage() {
         )}
 
         {section === "appearance" && (
+          <div className="space-y-4">
           <Card className="space-y-4 p-6">
-            <CardTitle>Appearance</CardTitle>
-            <p className="text-sm text-muted">Theme preference for CueAI</p>
+            <CardTitle>Mode</CardTitle>
+            <p className="text-sm text-muted">Light or dark. Every colour theme adapts to the mode you choose.</p>
             <div className="grid grid-cols-2 gap-3">
               {(["dark", "light"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTheme(t)}
+                  aria-pressed={theme === t}
                   className={cn(
-                    "rounded-2xl border p-4 text-left transition",
+                    "rounded-2xl border-2 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                     theme === t
-                      ? "border-teal-500/40 bg-[var(--primary-muted)]"
+                      ? "border-[var(--primary)] bg-[var(--primary-muted)]"
                       : "border-[var(--border)] hover:border-[var(--border-strong)]"
                   )}
                 >
@@ -243,11 +246,24 @@ export default function SettingsPage() {
                       t === "dark" ? "bg-[#09090b]" : "bg-[#f8fafc]"
                     )}
                   />
-                  <p className="text-sm font-medium capitalize">{t} mode</p>
+                  <p className="text-sm font-medium capitalize">
+                    {t} mode
+                    {theme === t && <span className="ml-2 text-xs font-normal normal-case text-muted">(active)</span>}
+                  </p>
                 </button>
               ))}
             </div>
           </Card>
+          <Card className="space-y-4 p-6">
+            <div>
+              <CardTitle>Theme &amp; Appearance</CardTitle>
+              <p className="mt-1 text-sm text-muted">
+                Pick a colour theme for the whole app. Changes apply instantly and follow you when you sign in.
+              </p>
+            </div>
+            <ThemePicker />
+          </Card>
+          </div>
         )}
 
         {section === "shortcuts" && (

@@ -34,7 +34,7 @@ export type ButtonLinkProps = CommonProps & {
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-[var(--primary-foreground)] hover:opacity-90 shadow-sm rounded-full",
+    "bg-[var(--cta)] text-[var(--cta-foreground)] hover:opacity-90 shadow-sm rounded-full",
   secondary:
     "glass text-foreground border border-[var(--border-strong)] hover:bg-[var(--surface-hover)] rounded-full",
   ghost: "bg-transparent text-muted hover:text-foreground hover:bg-[var(--surface-hover)]",

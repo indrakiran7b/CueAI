@@ -280,9 +280,11 @@ export function ensureOverlayWindow(): BrowserWindow {
     minHeight: COMPANION_MIN_HEIGHT,
     show: false,
     frame: false,
-    transparent: true,
+    // Transparent + resizable windows on Windows can stop repainting after setBounds, leaving
+    // only the frame visible mid-answer. The panels are opaque, so an opaque window is safe.
+    transparent: process.platform !== "win32",
     thickFrame: process.platform === "win32",
-    backgroundColor: "#00000000",
+    backgroundColor: process.platform === "win32" ? "#0b0b0d" : "#00000000",
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
@@ -563,6 +565,7 @@ export function expandCompanion() {
   setStoreValue("companionExpanded", true);
   const next = expandedCompanionBounds(current);
   win.setBounds(next, true);
+  win.webContents.invalidate();
   applyWindowConstraints(win);
   win.webContents.send("companion:window-state", getCompanionWindowState());
   schedulePersistBounds();
@@ -579,6 +582,7 @@ export function restoreCompanion() {
   setStoreValue("companionExpanded", false);
   const next = sanitizeBounds(saved ?? defaultCompanionBounds());
   win.setBounds(next, true);
+  win.webContents.invalidate();
   setStoreValue("companionNormalBounds", null);
   applyWindowConstraints(win);
   win.webContents.send("companion:window-state", getCompanionWindowState());
@@ -598,6 +602,7 @@ export function fitCompanionHeight(height: number) {
     height: Math.round(Number(height) || COMPANION_DEFAULT_HEIGHT),
   });
   win.setBounds(next, true);
+  win.webContents.invalidate();
   applyWindowConstraints(win);
   win.webContents.send("companion:window-state", getCompanionWindowState());
   schedulePersistBounds();
@@ -612,6 +617,7 @@ export function resetCompanionSize() {
   setStoreValue("companionNormalBounds", null);
   const next = defaultCompanionBounds();
   win.setBounds(next, true);
+  win.webContents.invalidate();
   setStoreValue("companionBounds", next);
   applyWindowConstraints(win);
   win.webContents.send("companion:window-state", getCompanionWindowState());

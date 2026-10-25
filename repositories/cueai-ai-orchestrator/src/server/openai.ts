@@ -76,6 +76,30 @@ export function isOpenAiHardFailure(status: number, code: string): boolean {
   );
 }
 
+/** Reasoning-family models (o-series, GPT-5 and later, Luna) only accept the default temperature. */
+export function isOpenAiReasoningModel(model: string): boolean {
+  return /^(openai\/)?(o\d|gpt-([5-9]|\d{2,})|gpt-luna)/i.test(model.trim());
+}
+
+/** Optional `reasoning_effort` for reasoning models (e.g. "low" for faster first tokens). */
+const OPENAI_REASONING_EFFORT = process.env.OPENAI_REASONING_EFFORT?.trim() || "";
+
+/** Reasoning tokens are billed against max_completion_tokens; keep room so the visible answer isn't cut short. */
+const REASONING_HEADROOM_TOKENS = 400;
+
+/** Chat Completions sampling fields that `model` accepts. */
+export function openAiSamplingParams(
+  model: string,
+  temperature: number,
+  maxOutputTokens: number,
+): Record<string, unknown> {
+  if (!isOpenAiReasoningModel(model)) return { temperature, max_completion_tokens: maxOutputTokens };
+  return {
+    max_completion_tokens: maxOutputTokens + REASONING_HEADROOM_TOKENS,
+    ...(OPENAI_REASONING_EFFORT ? { reasoning_effort: OPENAI_REASONING_EFFORT } : {}),
+  };
+}
+
 export type OpenAiStreamResult = {
   text: string;
   model: string;
@@ -123,8 +147,7 @@ export async function streamOpenAiText(req: {
           model,
           stream: true,
           stream_options: { include_usage: true },
-          temperature: req.temperature ?? 0.3,
-          max_completion_tokens: req.maxOutputTokens ?? 500,
+          ...openAiSamplingParams(model, req.temperature ?? 0.3, req.maxOutputTokens ?? 500),
           messages: [
             ...(req.system ? [{ role: "system" as const, content: req.system }] : []),
             { role: "user" as const, content: req.prompt },

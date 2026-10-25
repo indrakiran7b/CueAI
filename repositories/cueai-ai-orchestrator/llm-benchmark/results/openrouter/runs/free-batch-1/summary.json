@@ -1,0 +1,393 @@
+{
+ "generated_at": "2026-10-25T14:55:46+00:00",
+ "run_name": "free-batch-1",
+ "dataset_version": "2026-10-25.1",
+ "judge_prompt_version": "judge-v1",
+ "catalog_retrieved_at": "2026-10-25T14:46:47+00:00",
+ "catalog_models": 467,
+ "eligible_models": 434,
+ "status_counts": {
+  "blocked": 418,
+  "tested": 2,
+  "untested": 12,
+  "failed": 2,
+  "ineligible": 33
+ },
+ "stop_reason": "blocked_daily_free_quota",
+ "spent_usd_reported": 0.0,
+ "evaluators": [
+  "nvidia/nemotron-3.5-super-vl:free"
+ ],
+ "models": [
+  {
+   "target": "cohere/north-mini-code:free",
+   "model_id": "cohere/north-mini-code:free",
+   "author": "cohere",
+   "provider_pin": null,
+   "serving_providers": [
+    "Cohere"
+   ],
+   "is_free": true,
+   "requests": 7,
+   "attempts": 7,
+   "successes": 3,
+   "success_rate": 0.429,
+   "timeout_rate": 0.0,
+   "errors": {
+    "empty_response": 4
+   },
+   "latency_samples": 3,
+   "ttft_p50_ms": 4994.3,
+   "ttfmc_p50_ms": 4994.3,
+   "total_p50_ms": 10292.7,
+   "total_p90_ms": null,
+   "total_p95_ms": null,
+   "throughput_p50_tps": 239.1,
+   "provider_latency_p50_ms": 449.0,
+   "quality": null,
+   "quality_samples": 0,
+   "technical": null,
+   "coding": 100.0,
+   "coding_samples": 1,
+   "coding_functional_rate": 1.0,
+   "grounding": 100.0,
+   "grounding_samples": 1,
+   "fabricated_answers": 0,
+   "multimodal": null,
+   "multimodal_samples": 0,
+   "cost_total_usd": 0.0,
+   "cost_known_requests": 7,
+   "cost_per_answer_usd": 0.0,
+   "cost_sources": [
+    "usage_reported"
+   ],
+   "cost_per_1k_answers_usd": 0.0,
+   "projection_monthly_usd": {
+    "1000": 0.0,
+    "5000": 0.0,
+    "10000": 0.0
+   },
+   "latency_score": 0.0,
+   "ttft_score": 0.1,
+   "reliability_score": 42.9,
+   "cost_score": 100.0,
+   "overall_score": null,
+   "live_score": null,
+   "passes_quality_gate": false
+  },
+  {
+   "target": "google/gemma-4-31b-it:free",
+   "model_id": "google/gemma-4-31b-it:free",
+   "author": "google",
+   "provider_pin": null,
+   "serving_providers": [],
+   "is_free": true,
+   "requests": 8,
+   "attempts": 8,
+   "successes": 0,
+   "success_rate": 0.0,
+   "timeout_rate": 0.0,
+   "errors": {
+    "rate_limited": 8
+   },
+   "latency_samples": 0,
+   "ttft_p50_ms": null,
+   "ttfmc_p50_ms": null,
+   "total_p50_ms": null,
+   "total_p90_ms": null,
+   "total_p95_ms": null,
+   "throughput_p50_tps": null,
+   "provider_latency_p50_ms": null,
+   "quality": null,
+   "quality_samples": 0,
+   "technical": null,
+   "coding": null,
+   "coding_samples": 0,
+   "coding_functional_rate": null,
+   "grounding": null,
+   "grounding_samples": 0,
+   "fabricated_answers": 0,
+   "multimodal": null,
+   "multimodal_samples": 0,
+   "cost_total_usd": 0.0,
+   "cost_known_requests": 8,
+   "cost_per_answer_usd": null,
+   "cost_sources": [
+    "free_model"
+   ],
+   "cost_per_1k_answers_usd": null,
+   "projection_monthly_usd": null,
+   "latency_score": null,
+   "ttft_score": null,
+   "reliability_score": 0.0,
+   "cost_score": 100.0,
+   "overall_score": null,
+   "live_score": null,
+   "passes_quality_gate": false
+  },
+  {
+   "target": "thinkingmachines/inkling:free",
+   "model_id": "thinkingmachines/inkling:free",
+   "author": "thinkingmachines",
+   "provider_pin": null,
+   "serving_providers": [],
+   "is_free": true,
+   "requests": 8,
+   "attempts": 8,
+   "successes": 0,
+   "success_rate": 0.0,
+   "timeout_rate": 0.0,
+   "errors": {
+    "forbidden": 8
+   },
+   "latency_samples": 0,
+   "ttft_p50_ms": null,
+   "ttfmc_p50_ms": null,
+   "total_p50_ms": null,
+   "total_p90_ms": null,
+   "total_p95_ms": null,
+   "throughput_p50_tps": null,
+   "provider_latency_p50_ms": null,
+   "quality": null,
+   "quality_samples": 0,
+   "technical": null,
+   "coding": null,
+   "coding_samples": 0,
+   "coding_functional_rate": null,
+   "grounding": null,
+   "grounding_samples": 0,
+   "fabricated_answers": 0,
+   "multimodal": null,
+   "multimodal_samples": 0,
+   "cost_total_usd": 0.0,
+   "cost_known_requests": 8,
+   "cost_per_answer_usd": null,
+   "cost_sources": [
+    "free_model"
+   ],
+   "cost_per_1k_answers_usd": null,
+   "projection_monthly_usd": null,
+   "latency_score": null,
+   "ttft_score": null,
+   "reliability_score": 0.0,
+   "cost_score": 100.0,
+   "overall_score": null,
+   "live_score": null,
+   "passes_quality_gate": false
+  },
+  {
+   "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "model_id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+   "author": "nvidia",
+   "provider_pin": null,
+   "serving_providers": [
+    "Nvidia"
+   ],
+   "is_free": true,
+   "requests": 7,
+   "attempts": 7,
+   "successes": 7,
+   "success_rate": 1.0,
+   "timeout_rate": 0.0,
+   "errors": {},
+   "latency_samples": 6,
+   "ttft_p50_ms": 7021.4,
+   "ttfmc_p50_ms": 7021.5,
+   "total_p50_ms": 12228.8,
+   "total_p90_ms": null,
+   "total_p95_ms": null,
+   "throughput_p50_tps": 153.6,
+   "provider_latency_p50_ms": 1671.5,
+   "quality": 100.0,
+   "quality_samples": 1,
+   "technical": null,
+   "coding": 70.0,
+   "coding_samples": 3,
+   "coding_functional_rate": 0.667,
+   "grounding": 100.0,
+   "grounding_samples": 2,
+   "fabricated_answers": 0,
+   "multimodal": null,
+   "multimodal_samples": 0,
+   "cost_total_usd": 0.0,
+   "cost_known_requests": 7,
+   "cost_per_answer_usd": 0.0,
+   "cost_sources": [
+    "usage_reported"
+   ],
+   "cost_per_1k_answers_usd": 0.0,
+   "projection_monthly_usd": {
+    "1000": 0.0,
+    "5000": 0.0,
+    "10000": 0.0
+   },
+   "latency_score": 0.0,
+   "ttft_score": 0.0,
+   "reliability_score": 100.0,
+   "cost_score": 100.0,
+   "overall_score": 74.0,
+   "live_score": 65.5,
+   "passes_quality_gate": true
+  }
+ ],
+ "rankings": {
+  "best_overall_quality": {
+   "title": "Best overall interview answer quality",
+   "metric": "quality",
+   "entries": [
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 100.0,
+     "samples": 1,
+     "provisional": true
+    }
+   ]
+  },
+  "best_technical": {
+   "title": "Best technical correctness",
+   "metric": "technical",
+   "entries": []
+  },
+  "best_coding": {
+   "title": "Best Python coding accuracy",
+   "metric": "coding",
+   "entries": [
+    {
+     "target": "cohere/north-mini-code:free",
+     "value": 100.0,
+     "samples": 1,
+     "provisional": true
+    },
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 70.0,
+     "samples": 3,
+     "provisional": true
+    }
+   ]
+  },
+  "best_grounding": {
+   "title": "Best resume-grounded responses",
+   "metric": "grounding",
+   "entries": [
+    {
+     "target": "cohere/north-mini-code:free",
+     "value": 100.0,
+     "samples": 1,
+     "provisional": true
+    },
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 100.0,
+     "samples": 2,
+     "provisional": true
+    }
+   ]
+  },
+  "fastest_ttft": {
+   "title": "Fastest median first-token latency",
+   "metric": "ttft_p50_ms",
+   "entries": [
+    {
+     "target": "cohere/north-mini-code:free",
+     "value": 4994.3,
+     "samples": 3,
+     "provisional": true
+    },
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 7021.4,
+     "samples": 6,
+     "provisional": false
+    }
+   ]
+  },
+  "fastest_total": {
+   "title": "Fastest median full-response latency",
+   "metric": "total_p50_ms",
+   "entries": [
+    {
+     "target": "cohere/north-mini-code:free",
+     "value": 10292.7,
+     "samples": 3,
+     "provisional": true
+    },
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 12228.8,
+     "samples": 6,
+     "provisional": false
+    }
+   ]
+  },
+  "highest_throughput": {
+   "title": "Highest output throughput (tokens/s)",
+   "metric": "throughput_p50_tps",
+   "entries": [
+    {
+     "target": "cohere/north-mini-code:free",
+     "value": 239.1,
+     "samples": 3,
+     "provisional": true
+    },
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 153.6,
+     "samples": 6,
+     "provisional": false
+    }
+   ]
+  },
+  "best_cost_adjusted": {
+   "title": "Best cost-adjusted quality",
+   "metric": "overall_score",
+   "entries": [
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 74.0,
+     "samples": 1,
+     "provisional": true
+    }
+   ]
+  },
+  "best_multimodal": {
+   "title": "Best eligible multimodal model",
+   "metric": "multimodal",
+   "entries": []
+  },
+  "best_live": {
+   "title": "Best model for CueAI live interviews (quality-gated)",
+   "metric": "live_score",
+   "entries": [
+    {
+     "target": "nvidia/nemotron-3-ultra-550b-a55b:free",
+     "value": 65.5,
+     "samples": 1,
+     "provisional": true
+    }
+   ]
+  }
+ },
+ "overall_weights": {
+  "quality": 0.4,
+  "coding": 0.2,
+  "latency": 0.2,
+  "reliability": 0.15,
+  "cost": 0.05
+ },
+ "quality_weights": {
+  "technical_correctness": 0.25,
+  "relevance": 0.15,
+  "clarity": 0.15,
+  "interview_readiness": 0.1,
+  "resume_grounding": 0.15,
+  "completeness": 0.1,
+  "conciseness": 0.05,
+  "uncertainty": 0.05
+ },
+ "quality_gate": {
+  "quality_min": 60.0,
+  "coding_min": 50.0,
+  "fabrications_allowed": 0
+ }
+}

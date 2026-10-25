@@ -1,0 +1,5 @@
+target,model_id,author,serving_providers,is_free,requests,successes,success_rate,timeout_rate,latency_samples,ttft_p50_ms,ttfmc_p50_ms,total_p50_ms,total_p90_ms,total_p95_ms,throughput_p50_tps,quality,quality_samples,technical,coding,coding_functional_rate,grounding,fabricated_answers,multimodal,cost_total_usd,cost_per_answer_usd,cost_per_1k_answers_usd,overall_score,live_score,passes_quality_gate
+cohere/north-mini-code:free,cohere/north-mini-code:free,cohere,Cohere,True,7,3,0.429,0.0,3,4994.3,4994.3,10292.7,,,239.1,,0,,100.0,1.0,100.0,0,,0.0,0.0,0.0,,,False
+google/gemma-4-31b-it:free,google/gemma-4-31b-it:free,google,,True,8,0,0.0,0.0,0,,,,,,,,0,,,,,0,,0.0,,,,,False
+thinkingmachines/inkling:free,thinkingmachines/inkling:free,thinkingmachines,,True,8,0,0.0,0.0,0,,,,,,,,0,,,,,0,,0.0,,,,,False
+nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3-ultra-550b-a55b:free,nvidia,Nvidia,True,7,7,1.0,0.0,6,7021.4,7021.5,12228.8,,,153.6,100.0,1,,70.0,0.667,100.0,0,,0.0,0.0,0.0,74.0,65.5,True

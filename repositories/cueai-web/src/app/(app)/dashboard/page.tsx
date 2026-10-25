@@ -13,7 +13,6 @@ import {
   YAxis,
 } from "recharts";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useTheme } from "@/components/providers/theme-provider";
 import { greetingFor } from "@/lib/auth";
 import { type StoredMeeting } from "@/lib/meetings-client";
 import { getDesktop } from "@/lib/desktop";
@@ -37,18 +36,16 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function DashboardPage() {
   const { session, ready } = useAuth();
-  const { theme } = useTheme();
   const name = session?.name || "there";
   const workspace = session?.workspace || "Your Workspace";
-  const isLight = theme === "light";
-  const chartTick = isLight ? "#999999" : "#666666";
-  const chartStroke = isLight ? "#090909" : "#ffffff";
+  const chartTick = "var(--chart-tick)";
+  const chartStroke = "var(--chart-line)";
   const tooltipStyle = {
-    background: isLight ? "#ffffff" : "#1c1c1c",
-    border: isLight ? "1px solid rgba(0, 0, 0, 0.08)" : "1px solid #262626",
+    background: "var(--surface-solid)",
+    border: "1px solid var(--border)",
     borderRadius: 12,
     fontSize: 12,
-    color: isLight ? "#090909" : "#ffffff",
+    color: "var(--foreground)",
   };
 
   const [meetings, setMeetings] = useState<StoredMeeting[]>([]);
@@ -259,8 +256,8 @@ export default function DashboardPage() {
                 <AreaChart data={usageSeries}>
                   <defs>
                     <linearGradient id="usageFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0099ff" stopOpacity={0.32} />
-                      <stop offset="100%" stopColor="#0099ff" stopOpacity={0} />
+                      <stop offset="0%" style={{ stopColor: "var(--chart-area)", stopOpacity: 0.32 }} />
+                      <stop offset="100%" style={{ stopColor: "var(--chart-area)", stopOpacity: 0 }} />
                     </linearGradient>
                   </defs>
                   <XAxis

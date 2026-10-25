@@ -131,6 +131,34 @@ function isJsonModeRejection(err: unknown) {
   return err instanceof LlmProviderError && err.status === 400 && /json/i.test(err.message);
 }
 
+const FALLBACK_ATTEMPT_TIMEOUT_MS = Math.min(
+  60_000,
+  Math.max(5_000, Number(process.env.AI_FALLBACK_ATTEMPT_TIMEOUT_MS || 20_000) || 20_000),
+);
+
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL?.trim() || "qwen/qwen3.8-27b";
+
+/** App-managed Groq keys default to a text-only model; screenshots need Groq's vision model. */
+function withVisionModel(cred: ResolvedCredential): ResolvedCredential {
+  if (cred.provider !== "groq" || cred.source === "user" || supportsVision(cred.provider, cred.model)) return cred;
+  return { ...cred, model: GROQ_VISION_MODEL };
+}
+
+/** App-managed order for screenshot requests: Gemini first, then OpenAI, then Groq. */
+const IMAGE_PROVIDER_ORDER = (process.env.AI_IMAGE_PROVIDER_ORDER || "gemini,openai,groq")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function orderForImages(candidates: ResolvedCredential[]): ResolvedCredential[] {
+  const rank = (p: string) => {
+    const i = IMAGE_PROVIDER_ORDER.indexOf(p);
+    return i < 0 ? IMAGE_PROVIDER_ORDER.length : i;
+  };
+  // Stable sort keeps workspace keys ahead of env keys for the same provider.
+  return [...candidates].sort((a, b) => rank(a.provider) - rank(b.provider));
+}
+
 /** Errors on one app-managed provider that justify trying the next one. */
 function shouldTryNext(err: AiRouterError) {
   return err.code !== "cancelled";
@@ -160,6 +188,7 @@ export async function generateAi(input: AiGenerateInput): Promise<AiRouterResult
   let notice: string | undefined;
 
   if (input.image) {
+    chain = { ...chain, candidates: chain.candidates.map(withVisionModel) };
     const visionCapable = chain.candidates.filter((c) => supportsVision(c.provider, c.model));
     if (chain.userOwned && !visionCapable.length && chain.candidates.length) {
       const own = chain.candidates[0]!;
@@ -180,6 +209,7 @@ export async function generateAi(input: AiGenerateInput): Promise<AiRouterResult
         throw new AiRouterError("vision_unsupported", "No vision-capable AI model is configured for screen analysis.");
       }
     }
+    if (!chain.userOwned) chain = { ...chain, candidates: orderForImages(chain.candidates) };
   }
 
   if (!chain.candidates.length) {
@@ -192,18 +222,32 @@ export async function generateAi(input: AiGenerateInput): Promise<AiRouterResult
   }
 
   let last: AiRouterError | null = null;
-  for (const cred of chain.candidates) {
+  for (const [index, cred] of chain.candidates.entries()) {
     const started = Date.now();
+    const hasNext = !chain.userOwned && index < chain.candidates.length - 1;
+    // A slow provider must not hold the request when a fallback is waiting.
+    const attempt = hasNext
+      ? { ...input, timeoutMs: Math.min(input.timeoutMs ?? Infinity, FALLBACK_ATTEMPT_TIMEOUT_MS) }
+      : input;
     try {
       let result;
       try {
-        result = await generateWithCredential(cred, input);
+        result = await generateWithCredential(cred, attempt);
       } catch (err) {
         if (!(input.jsonObject && isJsonModeRejection(err))) throw err;
         // Some providers (e.g. Groq) reject strict JSON mode intermittently; callers parse JSON from plain text.
-        result = await generateWithCredential(cred, { ...input, jsonObject: false });
+        result = await generateWithCredential(cred, { ...attempt, jsonObject: false });
       }
       if (!result.text.trim()) throw new LlmProviderError("Empty answer.", 502);
+      if (index > 0) {
+        console.log("[AI_ROUTER] served_by_fallback", {
+          feature: input.feature,
+          provider: cred.provider,
+          model: cred.model,
+          source: cred.source,
+          ms: Date.now() - started,
+        });
+      }
       return { ...result, latencyMs: Date.now() - started, notice };
     } catch (err) {
       last = classifyAiError(err, cred);
