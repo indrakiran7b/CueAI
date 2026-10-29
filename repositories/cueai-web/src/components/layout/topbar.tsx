@@ -5,12 +5,11 @@ import {
   Moon,
   Search,
   Sun,
-  ChevronDown,
   LogOut,
+  CircleHelp,
   Video,
   FileText,
   Settings,
-  Check,
   User,
   Shield,
   Palette,
@@ -36,12 +35,6 @@ type AppNotification = {
   createdAt: string;
 };
 
-type WorkspaceRow = {
-  id: string;
-  name: string;
-  current?: boolean;
-};
-
 const COMMAND_LINKS = [
   { label: "Start live meeting", href: "/meetings/live", icon: Video },
   { label: "Meetings", href: "/meetings", icon: FileText },
@@ -55,14 +48,11 @@ export function Topbar() {
   const router = useRouter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
   const [notifError, setNotifError] = useState<string | null>(null);
   const [readIds, setReadIds] = useState<string[]>([]);
-  const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [meetingHits, setMeetingHits] = useState<{ id: string; title: string }[]>([]);
   const [macDesktop, setMacDesktop] = useState(false);
   const [searchShortcut, setSearchShortcut] = useState("Ctrl + K");
@@ -116,33 +106,6 @@ export function Topbar() {
         if (!cancelled) {
           setNotifs([]);
           setNotifError("Unable to load notifications.");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.userId]);
-
-  useEffect(() => {
-    if (!session?.userId) {
-      setWorkspaces([]);
-      return;
-    }
-    let cancelled = false;
-    void fetch("/api/workspaces", { cache: "no-store", credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Unable to load workspaces.");
-        return res.json() as Promise<{ workspaces?: WorkspaceRow[] }>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setWorkspaces(data.workspaces || []);
-        setWorkspaceError(null);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkspaces([]);
-          setWorkspaceError("Unable to load workspaces.");
         }
       });
     return () => {
@@ -212,8 +175,6 @@ export function Topbar() {
   }, [router]);
 
   const displayName = session?.name || "Guest";
-  const workspace =
-    workspaces.find((row) => row.current)?.name || session?.workspace || "CueAI";
   const unread = notifs.filter((n) => !readIds.includes(n.id)).length;
   const q = commandQuery.trim().toLowerCase();
   const filteredCommands = COMMAND_LINKS.filter((c) => !q || c.label.toLowerCase().includes(q));
@@ -240,85 +201,16 @@ export function Topbar() {
   function closeMenus() {
     setNotifOpen(false);
     setProfileOpen(false);
-    setWorkspaceOpen(false);
-  }
-
-  async function selectWorkspace(id: string) {
-    try {
-      const res = await fetch("/api/workspaces", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId: id }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setWorkspaceError(data.error || "Unable to switch workspace.");
-        return;
-      }
-      setWorkspaces((rows) => rows.map((row) => ({ ...row, current: row.id === id })));
-      setWorkspaceOpen(false);
-      router.refresh();
-    } catch {
-      setWorkspaceError("Unable to switch workspace.");
-    }
   }
 
   return (
     <header
       ref={headerRef}
       className={cn(
-        "mac-toolbar sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-[var(--border)] bg-[var(--background)]/80 px-4 backdrop-blur-xl sm:px-6"
+        "mac-toolbar mac-toolbar--v0 sticky top-0 z-20 flex h-14 min-w-0 items-center border-b border-[var(--border)] bg-[var(--background)]/80 px-3 backdrop-blur-xl sm:px-4"
       )}
       style={macDesktop ? ({ WebkitAppRegion: "drag" } as React.CSSProperties) : undefined}
     >
-      <div className="relative hidden md:block">
-        <button
-          type="button"
-          onClick={() => {
-            setWorkspaceOpen((o) => !o);
-            setNotifOpen(false);
-            setProfileOpen(false);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-sm transition hover:border-[var(--border-strong)]"
-        >
-          <span className="max-w-[140px] truncate font-medium">{workspace}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-subtle" />
-        </button>
-        {workspaceOpen && (
-          <div className="absolute left-0 top-11 z-50 w-64 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-2 shadow-[var(--shadow-lg)]">
-            <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-subtle">
-              Workspace
-            </p>
-            {workspaceError && (
-              <p className="px-3 py-2 text-sm text-[var(--cue-danger)]">{workspaceError}</p>
-            )}
-            {workspaces.length === 0 && !workspaceError ? (
-              <p className="px-3 py-3 text-sm text-muted">No workspace yet.</p>
-            ) : (
-              workspaces.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground hover:bg-[var(--surface-hover)]"
-                  onClick={() => void selectWorkspace(row.id)}
-                >
-                  {row.current ? <Check className="h-3.5 w-3.5 text-foreground" /> : <span className="w-3.5" />}
-                  {row.name}
-                </button>
-              ))
-            )}
-            <Link
-              href="/settings"
-              className="mt-1 block rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
-              onClick={() => setWorkspaceOpen(false)}
-            >
-              Workspace settings
-            </Link>
-          </div>
-        )}
-      </div>
-
       <button
         type="button"
         data-command-trigger
@@ -327,12 +219,12 @@ export function Topbar() {
           setCommandOpen(true);
           setCommandQuery("");
         }}
-        className="mac-toolbar-search group flex h-9 max-w-md flex-1 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 text-sm text-subtle transition hover:border-[var(--border-strong)]"
+        className="mac-toolbar-search group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 text-sm text-subtle transition hover:border-[var(--border-strong)]"
         style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
       >
         <Search className="h-4 w-4" />
-        <span className="flex-1 text-left">Search meetings, docs, answers…</span>
-        <kbd className="hidden items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-[10px] font-medium text-subtle sm:inline-flex">
+        <span className="min-w-0 flex-1 truncate text-left">Search meetings, docs, answers…</span>
+        <kbd className="hidden shrink-0 items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-[10px] font-medium text-subtle md:inline-flex">
           {searchShortcut}
         </kbd>
       </button>
@@ -342,6 +234,14 @@ export function Topbar() {
         style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
       >
         <UpgradeButton />
+
+        <Link
+          href="/settings"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
+          aria-label="Help and settings"
+        >
+          <CircleHelp className="h-4 w-4" />
+        </Link>
 
         <button
           type="button"
@@ -361,7 +261,6 @@ export function Topbar() {
             onClick={() => {
               setNotifOpen((o) => !o);
               setProfileOpen(false);
-              setWorkspaceOpen(false);
             }}
             className="relative flex h-9 w-9 items-center justify-center rounded-xl text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
             aria-label="Notifications"
@@ -423,14 +322,11 @@ export function Topbar() {
             onClick={() => {
               setProfileOpen((o) => !o);
               setNotifOpen(false);
-              setWorkspaceOpen(false);
             }}
-            className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition hover:bg-[var(--surface-hover)]"
+            className="flex items-center rounded-xl p-0.5 transition hover:bg-[var(--surface-hover)]"
+            aria-label="Account menu"
           >
             <Avatar name={displayName} size="sm" />
-            <span className="hidden max-w-[120px] truncate text-sm font-medium lg:inline">
-              {displayName}
-            </span>
           </button>
           {profileOpen && (
             <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-2 shadow-[var(--shadow-lg)]">

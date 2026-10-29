@@ -1,19 +1,6 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import {
-  Bell,
-  CreditCard,
-  Keyboard,
-  KeyRound,
-  Monitor,
-  Palette,
-  Shield,
-  Sparkles,
-  Trash2,
-  User,
-  Building2,
-} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -26,31 +13,31 @@ import { PersonalizationCard } from "@/components/settings/personalization-card"
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
+import { SettingsNav } from "@/components/settings/settings-nav";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { deleteAccountLocal } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
-import { cn } from "@/lib/utils";
 import { CUEAI_SHORTCUTS, formatShortcut } from "@/lib/shortcuts";
 
-const sections = [
-  { id: "profile", label: "Profile", icon: User },
-  { id: "models", label: "AI Models", icon: Sparkles },
-  { id: "privacy", label: "Privacy", icon: Shield },
-  { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
-  { id: "desktop", label: "Desktop Preferences", icon: Monitor },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "workspace", label: "Workspace", icon: Building2 },
-  { id: "billing", label: "Billing", icon: CreditCard },
-  { id: "api", label: "API Keys", icon: KeyRound },
-  { id: "danger", label: "Delete Account", icon: Trash2 },
-];
+const SECTION_IDS = [
+  "profile",
+  "models",
+  "privacy",
+  "appearance",
+  "shortcuts",
+  "desktop",
+  "notifications",
+  "workspace",
+  "billing",
+  "api",
+  "danger",
+] as const;
 
 export default function SettingsPage() {
   const [section, setSection] = useState("profile");
   const { theme, setTheme } = useTheme();
   const { session, refresh, logout } = useAuth();
   const admin = isAdminUser(session?.role);
-  const visibleSections = sections.filter((item) => admin || item.id !== "workspace");
   const [workspace, setWorkspace] = useState(session?.workspace || "");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [shortcutRows, setShortcutRows] = useState(() =>
@@ -87,7 +74,7 @@ export default function SettingsPage() {
     const applyHash = () => {
       const hash = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
       if (!hash) return;
-      const allowed = sections.some((s) => s.id === hash);
+      const allowed = SECTION_IDS.includes(hash as (typeof SECTION_IDS)[number]);
       if (!allowed) return;
       window.setTimeout(() => setSection(hash), 0);
     };
@@ -142,32 +129,14 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 animate-fade-up lg:flex-row">
-      <aside className="w-full shrink-0 lg:w-56">
-        <h1 className="mb-4 font-display text-2xl font-semibold tracking-tight lg:mb-6">
-          Settings
-        </h1>
-        <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
-          {visibleSections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => selectSection(s.id)}
-              className={cn(
-                "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm transition",
-                section === s.id
-                  ? "bg-[var(--primary-muted)] text-primary"
-                  : "text-muted hover:bg-[var(--surface-hover)] hover:text-foreground",
-                s.id === "danger" && section !== s.id && "text-red-400/80"
-              )}
-            >
-              <s.icon className="h-4 w-4" />
-              {s.label}
-            </button>
-          ))}
-        </nav>
+    <div className="@container/settings w-full min-w-0 max-w-full">
+    <div className="cue-settings-page mx-auto flex w-full min-w-0 max-w-full flex-col gap-5 animate-fade-up">
+      <aside className="cue-settings-nav w-full min-w-0 shrink-0">
+        <h1 className="mb-4 font-display text-2xl font-semibold tracking-tight">Settings</h1>
+        <SettingsNav section={section} admin={admin} onSelect={selectSection} />
       </aside>
 
-      <div className="min-w-0 flex-1 space-y-4">
+      <div className="cue-settings-panel min-w-0 flex-1 space-y-4 overflow-x-hidden">
         {section === "profile" && <ProfileSettings />}
 
         {section === "profile" && <PersonalizationCard />}
@@ -224,37 +193,24 @@ export default function SettingsPage() {
 
         {section === "appearance" && (
           <div className="space-y-4">
-          <Card className="space-y-4 p-6">
-            <CardTitle>Mode</CardTitle>
-            <p className="text-sm text-muted">Light or dark. Every colour theme adapts to the mode you choose.</p>
-            <div className="grid grid-cols-2 gap-3">
-              {(["dark", "light"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTheme(t)}
-                  aria-pressed={theme === t}
-                  className={cn(
-                    "rounded-2xl border-2 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-                    theme === t
-                      ? "border-[var(--primary)] bg-[var(--primary-muted)]"
-                      : "border-[var(--border)] hover:border-[var(--border-strong)]"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "mb-3 h-16 rounded-xl border border-[var(--border)]",
-                      t === "dark" ? "bg-[#09090b]" : "bg-[#f8fafc]"
-                    )}
-                  />
-                  <p className="text-sm font-medium capitalize">
-                    {t} mode
-                    {theme === t && <span className="ml-2 text-xs font-normal normal-case text-muted">(active)</span>}
-                  </p>
-                </button>
-              ))}
+          <Card className="min-w-0 space-y-4 p-4 sm:p-5">
+            <div>
+              <CardTitle>Mode</CardTitle>
+              <p className="mt-1 text-sm text-muted">
+                Light or dark. Every colour theme adapts to the mode you choose.
+              </p>
             </div>
+            <SegmentedControl
+              label="Mode"
+              value={theme}
+              options={[
+                { value: "dark", label: "Dark mode" },
+                { value: "light", label: "Light mode" },
+              ]}
+              onChange={setTheme}
+            />
           </Card>
-          <Card className="space-y-4 p-6">
+          <Card className="min-w-0 space-y-4 overflow-hidden p-4 sm:p-5">
             <div>
               <CardTitle>Theme &amp; Appearance</CardTitle>
               <p className="mt-1 text-sm text-muted">
@@ -369,6 +325,7 @@ export default function SettingsPage() {
           </Card>
         )}
       </div>
+    </div>
     </div>
   );
 }

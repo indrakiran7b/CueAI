@@ -100,14 +100,18 @@ export function ThemePicker() {
         </Button>
       </div>
 
-      <div role="radiogroup" aria-label="Colour theme" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div
+        role="radiogroup"
+        aria-label="Colour theme"
+        className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 2xl:grid-cols-3"
+      >
         {PALETTES.map((p) => {
           const selected = palette === p.id;
           return (
             <label
               key={p.id}
               className={cn(
-                "group relative flex cursor-pointer flex-col gap-3 rounded-2xl border-2 bg-[var(--surface)] p-3",
+                "@container/theme group relative flex min-w-0 cursor-pointer flex-col gap-3 rounded-2xl border-2 bg-[var(--surface)] p-3",
                 "transition-[transform,box-shadow,border-color,background-color] duration-200 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none",
                 "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--ring)] has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-[var(--background)]",
                 selected
@@ -123,7 +127,7 @@ export function ThemePicker() {
                 onChange={() => void setPalette(p.id)}
                 className="sr-only"
               />
-              <div className="flex gap-2">
+              <div className="flex min-w-0 flex-col gap-2 @[22rem]/theme:flex-row">
                 <MiniPreview palette={p} mode="light" current={theme === "light"} />
                 <MiniPreview palette={p} mode="dark" current={theme === "dark"} />
               </div>

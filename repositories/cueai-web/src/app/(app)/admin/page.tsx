@@ -262,6 +262,10 @@ type SettingsData = {
 const selectClass =
   "h-11 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[var(--primary-muted)]";
 
+/** Keeps wide tables inside cards without widening the page (Overview-style main column). */
+const ADMIN_TABLE_SCROLLER =
+  "mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain";
+
 function formatDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : "—";
 }
@@ -538,9 +542,9 @@ function AdminPortalInner() {
     ai?.providers.find((provider) => provider.id === id)?.name || "Unknown";
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 animate-fade-up lg:flex-row">
-      <aside className="w-full shrink-0 lg:w-60">
-        <nav className="sticky top-20 rounded-2xl border border-[var(--border)] bg-[var(--background-elevated)] p-2">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 overflow-x-hidden animate-fade-up lg:flex-row lg:items-start">
+      <aside className="w-full shrink-0 lg:w-60 lg:self-start">
+        <nav className="sticky top-0 z-10 max-h-[calc(100dvh-7.5rem)] overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--background-elevated)] p-2 cue-scroll">
           <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-subtle">
             Admin portal
           </p>
@@ -579,7 +583,7 @@ function AdminPortalInner() {
         </nav>
       </aside>
 
-      <main className="min-w-0 flex-1 space-y-4">
+      <main className="min-w-0 flex-1 space-y-4 overflow-x-hidden">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight">
@@ -1001,47 +1005,49 @@ function AdminPortalInner() {
             )}
 
             {tab === "roles" && (
-              <Card className="p-5">
-                <SectionTitle
-                  icon={Shield}
-                  title="Role permissions"
-                  description="This matrix is read-only and reflects the permissions enforced by the server."
-                />
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-left text-sm">
-                    <thead className="text-xs text-subtle">
-                      <tr className="border-b border-[var(--border)]">
-                        <th className="py-2 pr-3">Permission</th>
-                        <th className="py-2 text-center">Admin</th>
-                        <th className="py-2 text-center">Manager</th>
-                        <th className="py-2 text-center">User</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ALL_ADMIN_PERMISSIONS.map((permission) => (
-                        <tr key={permission} className="border-b border-[var(--border)]/60">
-                          <td className="py-3 pr-3 font-mono text-xs">{permission}</td>
-                          {(["Admin", "Manager", "User"] as WorkspaceRole[]).map((matrixRole) => (
-                            <td key={matrixRole} className="py-3 text-center">
-                              {permissions[matrixRole].includes(permission) ? (
-                                <Check className="mx-auto h-4 w-4 text-emerald-400" />
-                              ) : (
-                                <X className="mx-auto h-4 w-4 text-subtle" />
-                              )}
-                            </td>
-                          ))}
+              <div className="space-y-4">
+                <Card className="min-w-0 p-5">
+                  <SectionTitle
+                    icon={Shield}
+                    title="Role permissions"
+                    description="This matrix is read-only and reflects the permissions enforced by the server."
+                  />
+                  <div className={ADMIN_TABLE_SCROLLER}>
+                    <table className="w-full min-w-[680px] text-left text-sm">
+                      <thead className="text-xs text-subtle">
+                        <tr className="border-b border-[var(--border)]">
+                          <th className="py-2 pr-3">Permission</th>
+                          <th className="py-2 text-center">Admin</th>
+                          <th className="py-2 text-center">Manager</th>
+                          <th className="py-2 text-center">User</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+                      </thead>
+                      <tbody>
+                        {ALL_ADMIN_PERMISSIONS.map((permission) => (
+                          <tr key={permission} className="border-b border-[var(--border)]/60">
+                            <td className="py-3 pr-3 font-mono text-xs">{permission}</td>
+                            {(["Admin", "Manager", "User"] as WorkspaceRole[]).map((matrixRole) => (
+                              <td key={matrixRole} className="py-3 text-center">
+                                {permissions[matrixRole].includes(permission) ? (
+                                  <Check className="mx-auto h-4 w-4 text-emerald-400" />
+                                ) : (
+                                  <X className="mx-auto h-4 w-4 text-subtle" />
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
             )}
 
             {tab === "providers" && (
               <div className="space-y-4">
                 {can(role, "ai.write") && (
-                  <Card className="space-y-3 p-5">
+                  <Card className="min-w-0 space-y-3 p-5">
                     <SectionTitle icon={Plus} title="Add provider" />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <select
@@ -1096,22 +1102,22 @@ function AdminPortalInner() {
                     </Button>
                   </Card>
                 )}
-                <Card className="p-5">
+                <Card className="min-w-0 p-5">
                   <SectionTitle icon={KeyRound} title="AI providers" />
                   {!ai?.providers.length ? (
                     <Empty>No AI providers configured yet.</Empty>
                   ) : (
-                    <div className="mt-4 overflow-x-auto">
-                      <table className="w-full min-w-[980px] text-left text-sm">
+                    <div className={ADMIN_TABLE_SCROLLER}>
+                      <table className="w-full min-w-[920px] table-fixed text-left text-sm">
                         <thead className="text-xs text-subtle">
                           <tr className="border-b border-[var(--border)]">
-                            <th className="py-2 pr-3">Provider</th>
-                            <th className="py-2 pr-3">Status</th>
-                            <th className="py-2 pr-3">Endpoint</th>
-                            <th className="py-2 pr-3">API key</th>
-                            <th className="py-2 pr-3">Models</th>
-                            <th className="py-2 pr-3">Updated</th>
-                            <th className="py-2">Actions</th>
+                            <th className="w-[11%] py-2 pr-3">Provider</th>
+                            <th className="w-[9%] py-2 pr-3">Status</th>
+                            <th className="w-[22%] py-2 pr-3">Endpoint</th>
+                            <th className="w-[18%] py-2 pr-3">API key</th>
+                            <th className="w-[7%] py-2 pr-3">Models</th>
+                            <th className="w-[13%] py-2 pr-3">Updated</th>
+                            <th className="w-[20%] py-2">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1126,10 +1132,10 @@ function AdminPortalInner() {
                                   {provider.enabled ? "Enabled" : "Disabled"}
                                 </Badge>
                               </td>
-                              <td className="max-w-72 py-3 pr-3">
+                              <td className="py-3 pr-3">
                                 <Input
                                   aria-label={`${provider.name} endpoint`}
-                                  className="h-9"
+                                  className="h-9 min-w-0"
                                   value={provider.endpoint}
                                   disabled={!can(role, "ai.write")}
                                   onChange={(event) =>
@@ -1159,7 +1165,7 @@ function AdminPortalInner() {
                                   <Input
                                     aria-label={`${provider.name} API key`}
                                     type="password"
-                                    className="mt-2 h-9 w-44"
+                                    className="mt-2 h-9 min-w-0 w-full max-w-full"
                                     placeholder="New API key"
                                     value={providerKeys[provider.id] || ""}
                                     onChange={(event) =>
@@ -1175,7 +1181,7 @@ function AdminPortalInner() {
                               <td className="py-3 pr-3 text-xs text-muted">{formatDate(provider.updatedAt)}</td>
                               <td className="py-3">
                                 {can(role, "ai.write") && (
-                                  <div className="flex max-w-56 flex-wrap gap-2">
+                                  <div className="grid grid-cols-2 gap-2">
                                     <Button
                                       size="sm"
                                       variant="secondary"

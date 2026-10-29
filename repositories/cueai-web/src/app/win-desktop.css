@@ -1,0 +1,29 @@
+/* Windows Electron — layout/density; colors follow the active palette on html */
+
+html[data-desktop="win"] {
+  --sidebar-width: 220px;
+  overflow-x: hidden;
+}
+
+html[data-desktop="win"] body {
+  overflow-x: hidden;
+}
+
+html[data-desktop="win"] .mac-stage main {
+  background: radial-gradient(1200px 600px at 20% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+    var(--background);
+}
+
+html[data-desktop="win"] .mac-toolbar--v0 .mac-toolbar-search {
+  flex: 1 1 6rem;
+}
+
+html[data-desktop="win"] .cue-main-stage {
+  padding: 0.85rem 0.85rem 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  html[data-desktop="win"] .cue-main-stage {
+    padding: 1rem 1rem 1.75rem;
+  }
+}

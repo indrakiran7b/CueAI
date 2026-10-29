@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { WebCompanionProvider } from "@/components/companion/web-companion-provider";
@@ -14,10 +15,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <DesktopHandoffRescue />
         <CueAiRouteGate>
         <MacWorkspace>
-          <Sidebar />
+          <Suspense fallback={null}>
+            <Sidebar />
+          </Suspense>
           <div className="mac-stage flex min-w-0 min-h-0 flex-1 flex-col">
             <Topbar />
-            <main className="cue-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+            <main className="cue-scroll cue-main-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+              {children}
+            </main>
           </div>
         </MacWorkspace>
         </CueAiRouteGate>

@@ -29,17 +29,24 @@ import {
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import { formatShortcut } from "@/lib/shortcuts";
 import "./live-session.css";
 
 type InterviewMode = "regular" | "mock" | "test";
 
-const INTERVIEW_MODES: { id: InterviewMode; label: string }[] = [
+/** Modes shown in the Live Session pill (Mock Interview lives in the sidebar). */
+const LIVE_SESSION_MODES: { id: InterviewMode; label: string }[] = [
   { id: "regular", label: "Regular Interview" },
-  { id: "mock", label: "Mock Interview" },
   { id: "test", label: "Test CueAI" },
 ];
+
+const PAGE_TITLES: Record<InterviewMode, string> = {
+  regular: "Live Session",
+  mock: "Mock Interview",
+  test: "Live Session",
+};
 
 const MODE_DESCRIPTIONS: Record<InterviewMode, string> = {
   regular: "Start a live session to open Create Session. Cancel returns here without creating a meeting.",
@@ -47,13 +54,13 @@ const MODE_DESCRIPTIONS: Record<InterviewMode, string> = {
   test: "Ask CueAI an interview question by voice or text and see the answer it would give in a Regular Interview.",
 };
 
-function setLiveQuery(params: Record<string, string | null>) {
-  const url = new URL(window.location.href);
-  for (const [key, value] of Object.entries(params)) {
-    if (value) url.searchParams.set(key, value);
-    else url.searchParams.delete(key);
-  }
-  window.history.replaceState(null, "", url.toString());
+function modeFromSearchParams(params: URLSearchParams): InterviewMode {
+  const requested = params.get("mode");
+  const session = params.get("session") || params.get("mock");
+  const practice = params.get("practice");
+  if (requested === "test") return "test";
+  if (requested === "mock" || session || practice) return "mock";
+  return "regular";
 }
 
 type TranscriptLine = {
@@ -66,6 +73,9 @@ type TranscriptLine = {
 };
 
 export default function LiveMeetingPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [session, setSession] = useState<LiveSessionConfig | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [meetingId, setMeetingId] = useState<string | null>(null);
@@ -79,36 +89,70 @@ export default function LiveMeetingPage() {
   const [mockSessionId, setMockSessionId] = useState<string | null>(null);
   const [practiceId, setPracticeId] = useState<string | null>(null);
 
+  const replaceLiveQuery = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value) params.set(key, value);
+        else params.delete(key);
+      }
+      if (params.get("mock")) {
+        const legacySession = params.get("mock");
+        if (legacySession) {
+          params.delete("mock");
+          if (!params.get("session")) params.set("session", legacySession);
+        }
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
   useEffect(() => {
     setHydrated(true);
     persistDesktopQuery();
-    const params = new URLSearchParams(window.location.search);
-    // `?mock=<id>` is the older link format for continuing a mock interview.
-    const session = params.get("session") || params.get("mock");
-    const practice = params.get("practice");
-    const requested = params.get("mode");
-    const initial: InterviewMode | null =
-      requested === "test" ? "test" : session || practice || requested === "mock" ? "mock" : null;
-    if (!initial) return;
-    queueMicrotask(() => {
-      setMode(initial);
-      setOpened((list) => (list.includes(initial) ? list : [...list, initial]));
-      setMockSessionId(session);
-      setPracticeId(practice);
-      if (params.get("mock")) setLiveQuery({ mock: null, session, mode: "mock" });
-      if (practice) setLiveQuery({ practice: null });
-    });
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const params = new URLSearchParams(searchParams.toString());
+    const nextMode = modeFromSearchParams(params);
+    const sessionParam = params.get("session") || params.get("mock");
+    const practice = params.get("practice");
+
+    setMode(nextMode);
+    setOpened((list) => (list.includes(nextMode) ? list : [...list, nextMode]));
+    setMockSessionId(sessionParam);
+    setPracticeId(practice);
+
+    if (params.get("mock") && sessionParam) {
+      replaceLiveQuery({ mock: null, session: sessionParam, mode: "mock" });
+    } else if (practice && params.has("practice")) {
+      replaceLiveQuery({ practice: null, mode: "mock" });
+    }
+  }, [hydrated, searchParams, replaceLiveQuery]);
 
   function changeMode(next: InterviewMode) {
     setMode(next);
     setOpened((list) => (list.includes(next) ? list : [...list, next]));
-    setLiveQuery({ mode: next === "regular" ? null : next });
+    if (next === "regular") {
+      replaceLiveQuery({ mode: null, session: null, practice: null, mock: null });
+      return;
+    }
+    if (next === "mock") {
+      replaceLiveQuery({ mode: "mock", practice: null });
+      return;
+    }
+    replaceLiveQuery({ mode: "test", session: null, practice: null, mock: null });
   }
 
-  const onMockSessionChange = useCallback((id: string | null) => {
-    setLiveQuery({ session: id });
-  }, []);
+  const onMockSessionChange = useCallback(
+    (id: string | null) => {
+      replaceLiveQuery({ session: id, mode: "mock" });
+    },
+    [replaceLiveQuery],
+  );
 
   useEffect(() => {
     function onEndFromOverlay() {
@@ -246,32 +290,34 @@ export default function LiveMeetingPage() {
       <div
         data-live
         className={cn(
-          "mx-auto space-y-6 text-center animate-fade-up",
-          mode === "regular" ? "max-w-xl py-16" : mode === "mock" ? "max-w-6xl py-6" : "max-w-3xl py-6",
+          "w-full min-w-0 animate-fade-up",
+          mode === "mock" ? "max-w-6xl space-y-6 text-left" : "mx-auto max-w-2xl space-y-6 py-4 text-center",
         )}
       >
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Live Session</h1>
-          <p className="mt-2 text-sm text-muted">{MODE_DESCRIPTIONS[mode]}</p>
+        <div className={cn(mode === "mock" && "text-center sm:text-left")}>
+          <h1 className="ls-hero-title">{PAGE_TITLES[mode]}</h1>
+          <p className="ls-hero-sub mx-auto mt-2 sm:mx-0">{MODE_DESCRIPTIONS[mode]}</p>
         </div>
-        <div className="flex justify-center">
-          <div className="ls-mode-group">
-            <span className="text-xs font-medium text-muted">Mode</span>
-            <div className="ls-mode-toggle" role="group" aria-label="Live Session mode">
-              {INTERVIEW_MODES.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={mode === id}
-                  onClick={() => changeMode(id)}
-                  className="ls-mode-btn"
-                >
-                  {label}
-                </button>
-              ))}
+        {mode !== "mock" && (
+          <div className="flex justify-center">
+            <div className="ls-mode-group">
+              <span className="text-xs font-medium text-muted">Mode</span>
+              <div className="ls-mode-toggle" role="group" aria-label="Live Session mode">
+                {LIVE_SESSION_MODES.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={mode === id}
+                    onClick={() => changeMode(id)}
+                    className="ls-mode-btn"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
         {mode === "regular" && (
           <Button
             variant="gradient"
@@ -283,7 +329,7 @@ export default function LiveMeetingPage() {
             Start Live Session
           </Button>
         )}
-        {opened.includes("mock") && (
+        {(opened.includes("mock") || mode === "mock") && (
           <div hidden={mode !== "mock"}>
             <MockInterviewMode
               active={mode === "mock"}

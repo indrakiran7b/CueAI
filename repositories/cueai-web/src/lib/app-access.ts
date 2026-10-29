@@ -16,6 +16,7 @@ export const CUEAI_NAV: CueAiNavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/meetings", label: "Meetings" },
   { href: "/meetings/live", label: "Live Session" },
+  { href: "/meetings/live?mode=mock", label: "Mock Interview" },
   { href: "/resume", label: "Resume Tailor" },
   { href: "/translation", label: "Translation", adminOnly: true },
   { href: "/screen-context", label: "Screen Context", adminOnly: true },
@@ -39,7 +40,10 @@ export function visibleCueAiNav(role?: string | null): CueAiNavItem[] {
 
 export function isCueAiUserNavHref(href: string): boolean {
   const item = CUEAI_NAV.find((entry) => entry.href === href);
-  return Boolean(item && !item.adminOnly);
+  if (item) return !item.adminOnly;
+  const path = href.split("?")[0] || "/";
+  const fallback = CUEAI_NAV.find((entry) => entry.href.split("?")[0] === path);
+  return Boolean(fallback && !fallback.adminOnly && href.includes("mode=mock"));
 }
 
 /** Rewrite a link so USER cannot be sent to admin-only CueAI routes. */

@@ -10,6 +10,8 @@ import { DesktopBridge } from "@/components/desktop/desktop-bridge";
 import { DesktopAccessGuard } from "@/components/desktop/desktop-access-guard";
 import "./globals.css";
 import "./mac-desktop.css";
+import "./win-desktop.css";
+import "./product-shell.css";
 import "@/components/mac/mac-glass.css";
 
 const outfit = Outfit({

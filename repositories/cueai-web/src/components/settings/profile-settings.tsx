@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -79,6 +79,44 @@ function FieldMessage({ error, hint }: { error?: string; hint?: string }) {
   if (error) return <p className="text-xs text-[var(--cue-danger)]">{error}</p>;
   if (hint) return <p className="text-xs text-subtle">{hint}</p>;
   return null;
+}
+
+function optionLabel(options: ProfileOption[], id: string): string {
+  if (!id) return "—";
+  return options.find((o) => o.id === id)?.label ?? id;
+}
+
+function displayValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed || "—";
+}
+
+function ReadOnlyField({
+  label,
+  value,
+  optional,
+  required,
+  hint,
+}: {
+  label: string;
+  value: string;
+  optional?: boolean;
+  required?: boolean;
+  hint?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="flex items-center gap-2 text-sm font-medium text-foreground/90">
+        {label}
+        {required && <span className="text-[var(--cue-danger)]" aria-hidden>*</span>}
+        {optional && <span className="text-xs font-normal text-subtle">Optional</span>}
+      </span>
+      <p className="rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3.5 py-2.5 text-sm text-foreground">
+        {displayValue(value)}
+      </p>
+      {hint ? <p className="text-xs text-subtle">{hint}</p> : null}
+    </div>
+  );
 }
 
 function TextField(props: {
@@ -225,6 +263,8 @@ export function ProfileSettings() {
   const [status, setStatus] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [openProfessional, setOpenProfessional] = useState(true);
   const [saved, setSaved] = useState<ProfessionalProfile>({});
+  const [editing, setEditing] = useState(false);
+  const [baseline, setBaseline] = useState<Form | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -235,10 +275,13 @@ export function ProfileSettings() {
         setLoadError(data?.error || (res.status === 401 ? "Your session expired. Sign in again." : "Couldn't load your profile."));
         return;
       }
-      setForm(toForm(data));
+      const next = toForm(data);
+      setForm(next);
+      setBaseline(next);
       setSaved(data.profile || {});
       setEmail(data.email || "");
       setAccessRole(data.accessRole || "");
+      setEditing(false);
     } catch {
       setLoadError("Couldn't reach CueAI. Check your connection and retry.");
     }
@@ -271,6 +314,13 @@ export function ProfileSettings() {
     });
   }
 
+  function cancelEdit() {
+    if (baseline) setForm(baseline);
+    setErrors({});
+    setStatus(null);
+    setEditing(false);
+  }
+
   async function save() {
     if (!form || saving) return;
     const local = validateProfileUpdate(toPayload(form, saved));
@@ -295,13 +345,16 @@ export function ProfileSettings() {
         else setStatus({ kind: "error", text: data?.error || "Couldn't save your profile. Please retry." });
         return;
       }
-      setForm(toForm(data));
+      const next = toForm(data);
+      setForm(next);
+      setBaseline(next);
       setSaved(data.profile || {});
       setErrors({});
       localStorage.removeItem(LEGACY_ROLE_KEY);
       updateSessionProfile({ name: data.name });
       void refresh();
       setStatus({ kind: "success", text: "Profile saved." });
+      setEditing(false);
     } catch {
       setStatus({ kind: "error", text: "Couldn't reach CueAI. Your changes were not saved." });
     } finally {
@@ -336,14 +389,119 @@ export function ProfileSettings() {
   const employerRequired = form.workStatus === "working" && form.experience !== "fresher";
   const emailInvalid = Boolean(email) && !isValidEmail(email);
 
+  const professionalReadOnly = (
+    <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+      <ReadOnlyField
+        label="Current work status"
+        required
+        value={optionLabel(WORK_STATUSES, form.workStatus)}
+      />
+      <ReadOnlyField
+        label="Work experience"
+        required
+        value={optionLabel(EXPERIENCE_LEVELS, form.experience)}
+      />
+      <ReadOnlyField
+        label="Current company"
+        optional={!employerRequired}
+        required={employerRequired}
+        value={form.company}
+        hint={earlyCareer ? "Not needed for freshers, students or job seekers." : undefined}
+      />
+      <ReadOnlyField
+        label="Job title / designation"
+        optional={!employerRequired}
+        required={employerRequired}
+        value={form.jobTitle}
+      />
+      <ReadOnlyField
+        label="Employment type"
+        optional
+        value={optionLabel(EMPLOYMENT_TYPES, form.employmentType)}
+      />
+      <div className="md:col-span-2">
+        <ReadOnlyField label="Professional summary / About me" optional value={form.summary} />
+      </div>
+    </div>
+  );
+
+  const professionalEditable = (
+    <>
+      <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+        <SelectField
+          id="profile-work-status"
+          label="Current work status"
+          required
+          options={WORK_STATUSES}
+          value={form.workStatus}
+          error={errors.workStatus}
+          onChange={(v) => set("workStatus", v)}
+        />
+        <SelectField
+          id="profile-experience"
+          label="Work experience"
+          required
+          options={EXPERIENCE_LEVELS}
+          value={form.experience}
+          error={errors.experience}
+          onChange={(v) => set("experience", v)}
+        />
+        <TextField
+          id="profile-company"
+          label="Current company"
+          optional={!employerRequired}
+          required={employerRequired}
+          value={form.company}
+          error={errors.company}
+          hint={earlyCareer ? "Not needed for freshers, students or job seekers." : undefined}
+          onChange={(v) => set("company", v)}
+        />
+        <TextField
+          id="profile-job-title"
+          label="Job title / designation"
+          optional={!employerRequired}
+          required={employerRequired}
+          value={form.jobTitle}
+          error={errors.jobTitle}
+          onChange={(v) => set("jobTitle", v)}
+        />
+        <SelectField
+          id="profile-employment-type"
+          label="Employment type"
+          optional
+          options={EMPLOYMENT_TYPES}
+          value={form.employmentType}
+          onChange={(v) => set("employmentType", v)}
+        />
+      </div>
+      <AreaField
+        id="profile-summary"
+        label="Professional summary / About me"
+        optional
+        rows={3}
+        placeholder="A few sentences about your background and what you're looking for."
+        value={form.summary}
+        onChange={(v) => set("summary", v)}
+      />
+    </>
+  );
+
   return (
-    <Card className="space-y-5 p-6">
-      <div>
-        <CardTitle>Profile</CardTitle>
-        <CardDescription>
-          Your details stay private to your account. CueAI uses them only to personalize your own live answers and
-          mock interviews.
-        </CardDescription>
+    <Card className="min-w-0 space-y-5 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <CardTitle>Profile</CardTitle>
+          <CardDescription>
+            Your details stay private to your account. CueAI uses them only to personalize your own live answers and
+            mock interviews.
+          </CardDescription>
+        </div>
+        {!editing && (
+          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+            Edit
+          </Button>
+        )}
       </div>
 
       <section className="space-y-4">
@@ -351,116 +509,101 @@ export function ProfileSettings() {
           <h3 className="text-sm font-semibold text-foreground">Personal Information</h3>
           {accessRole && <Badge variant="info">{accessRole} access</Badge>}
         </div>
-        <TextField
-          id="profile-name"
-          label="Full name"
-          required
-          maxLength={80}
-          value={form.name}
-          error={errors.name}
-          onChange={(v) => set("name", v)}
-        />
-        <Input
-          id="profile-email"
-          label="Email"
-          type="email"
-          value={email}
-          readOnly
-          error={emailInvalid ? "This sign-in email looks invalid. Contact your workspace admin." : undefined}
-          hint="Your sign-in email. It can't be changed here."
-        />
-        <TextField
-          id="profile-role"
-          label="Role"
-          optional
-          placeholder="e.g. Software Engineer"
-          value={form.role}
-          onChange={(v) => set("role", v)}
-        />
+        {editing ? (
+          <>
+            <TextField
+              id="profile-name"
+              label="Full name"
+              required
+              maxLength={80}
+              value={form.name}
+              error={errors.name}
+              onChange={(v) => set("name", v)}
+            />
+            <Input
+              id="profile-email"
+              label="Email"
+              type="email"
+              value={email}
+              readOnly
+              error={emailInvalid ? "This sign-in email looks invalid. Contact your workspace admin." : undefined}
+              hint="Your sign-in email. It can't be changed here."
+            />
+            <TextField
+              id="profile-role"
+              label="Role"
+              optional
+              placeholder="e.g. Software Engineer"
+              value={form.role}
+              onChange={(v) => set("role", v)}
+            />
+          </>
+        ) : (
+          <>
+            <ReadOnlyField label="Full name" required value={form.name} />
+            <ReadOnlyField
+              label="Email"
+              value={email}
+              hint="Your sign-in email. It can't be changed here."
+            />
+            <ReadOnlyField label="Role" optional value={form.role} />
+          </>
+        )}
       </section>
 
-      <Section
-        id="profile-professional"
-        title="Professional Profile"
-        description="Current position, experience and a short summary."
-        open={openProfessional}
-        onToggle={() => setOpenProfessional((v) => !v)}
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField
-            id="profile-work-status"
-            label="Current work status"
-            required
-            options={WORK_STATUSES}
-            value={form.workStatus}
-            error={errors.workStatus}
-            onChange={(v) => set("workStatus", v)}
-          />
-          <SelectField
-            id="profile-experience"
-            label="Work experience"
-            required
-            options={EXPERIENCE_LEVELS}
-            value={form.experience}
-            error={errors.experience}
-            onChange={(v) => set("experience", v)}
-          />
-          <TextField
-            id="profile-company"
-            label="Current company"
-            optional={!employerRequired}
-            required={employerRequired}
-            value={form.company}
-            error={errors.company}
-            hint={earlyCareer ? "Not needed for freshers, students or job seekers." : undefined}
-            onChange={(v) => set("company", v)}
-          />
-          <TextField
-            id="profile-job-title"
-            label="Job title / designation"
-            optional={!employerRequired}
-            required={employerRequired}
-            value={form.jobTitle}
-            error={errors.jobTitle}
-            onChange={(v) => set("jobTitle", v)}
-          />
-          <SelectField
-            id="profile-employment-type"
-            label="Employment type"
-            optional
-            options={EMPLOYMENT_TYPES}
-            value={form.employmentType}
-            onChange={(v) => set("employmentType", v)}
-          />
-        </div>
-        <AreaField
-          id="profile-summary"
-          label="Professional summary / About me"
-          optional
-          rows={3}
-          placeholder="A few sentences about your background and what you're looking for."
-          value={form.summary}
-          onChange={(v) => set("summary", v)}
-        />
-      </Section>
+      {editing ? (
+        <Section
+          id="profile-professional"
+          title="Professional Profile"
+          description="Current position, experience and a short summary."
+          open={openProfessional}
+          onToggle={() => setOpenProfessional((v) => !v)}
+        >
+          {professionalEditable}
+        </Section>
+      ) : (
+        <section className="rounded-2xl border border-[var(--border)]">
+          <div className="px-5 py-4">
+            <h3 className="text-sm font-semibold text-foreground">Professional Profile</h3>
+            <p className="text-xs text-muted">Current position, experience and a short summary.</p>
+          </div>
+          <div className="space-y-4 border-t border-[var(--border)] px-5 py-5">{professionalReadOnly}</div>
+        </section>
+      )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="primary" loading={saving} onClick={() => void save()}>
-          Save Changes
-        </Button>
-        {status && (
-          <p
-            role={status.kind === "error" ? "alert" : "status"}
-            className={cn(
-              "flex items-center gap-1.5 text-xs",
-              status.kind === "success" ? "text-teal-300" : "text-[var(--cue-danger)]",
-            )}
-          >
-            {status.kind === "success" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
-            {status.text}
-          </p>
-        )}
-      </div>
+      {editing && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="primary" loading={saving} onClick={() => void save()}>
+            Save Changes
+          </Button>
+          <Button type="button" variant="secondary" disabled={saving} onClick={cancelEdit}>
+            Cancel
+          </Button>
+          {status && (
+            <p
+              role={status.kind === "error" ? "alert" : "status"}
+              className={cn(
+                "flex items-center gap-1.5 text-xs",
+                status.kind === "success" ? "text-teal-300" : "text-[var(--cue-danger)]",
+              )}
+            >
+              {status.kind === "success" ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5" />
+              )}
+              {status.text}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!editing && status?.kind === "success" && (
+        <p role="status" className="flex items-center gap-1.5 text-xs text-teal-300">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {status.text}
+        </p>
+      )}
     </Card>
   );
 }

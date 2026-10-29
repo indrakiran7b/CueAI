@@ -1,0 +1,254 @@
+/* Product shell layout — fit desktop window without horizontal scroll */
+
+.cue-ws-trigger--sidebar {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  padding: 0.55rem 0.65rem;
+  font-size: 0.8125rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cue-ws-trigger--sidebar:hover {
+  border-color: var(--border-strong);
+}
+
+.cue-sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.cue-sidebar-settings {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground-muted);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cue-sidebar-settings:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.cue-sidebar-settings.is-active {
+  background: var(--surface-active);
+  color: var(--foreground);
+}
+
+.cue-sidebar-user-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  padding: 0.5rem 0.55rem 0.5rem 0.5rem;
+  min-width: 0;
+}
+
+.cue-sidebar-user-menu {
+  position: relative;
+}
+
+.cue-sidebar-user-menu-btn {
+  display: inline-flex;
+  padding: 0.35rem;
+  border-radius: 8px;
+  color: var(--foreground-subtle);
+}
+
+.cue-sidebar-user-menu-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.mac-sidebar {
+  min-width: 0;
+}
+
+.mac-toolbar--v0 {
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.mac-toolbar--v0 .mac-toolbar-search {
+  max-width: none;
+  margin-inline: 0;
+  flex: 1 1 8rem;
+}
+
+.cue-main-stage {
+  padding: 1rem 1rem 1.75rem;
+}
+
+@media (min-width: 1024px) {
+  .cue-main-stage {
+    padding: 1.25rem 1.25rem 2rem;
+  }
+}
+
+/* Settings — vertical pill nav (reference: mode capsule + settings sidebar) */
+.cue-settings-page {
+  gap: 1.5rem;
+}
+
+.cue-settings-nav {
+  flex-shrink: 0;
+}
+
+.cue-settings-nav-rail {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-solid) 92%, transparent);
+  padding: 0.4rem;
+}
+
+.cue-settings-nav-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.cue-settings-nav-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.cue-settings-nav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.625rem;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--foreground-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.cue-settings-nav-item:hover:not(.is-active) {
+  color: var(--foreground);
+  background: var(--surface-hover);
+}
+
+.cue-settings-nav-item.is-active {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.cue-settings-nav-item--sub {
+  padding-left: 2rem;
+  font-size: 0.78125rem;
+}
+
+.cue-settings-nav-item.is-danger:not(.is-active) {
+  color: var(--danger-fg, #f87171);
+}
+
+.cue-settings-nav-item.is-danger:not(.is-active):hover {
+  background: color-mix(in srgb, var(--cue-danger) 12%, transparent);
+}
+
+/* Segmented pill control */
+.cue-segmented {
+  display: inline-flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surface-solid) 94%, transparent);
+  padding: 0.35rem 0.45rem 0.35rem 0.9rem;
+}
+
+.cue-segmented-label {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground-muted);
+}
+
+.cue-segmented-track {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.cue-segmented-option {
+  border: none;
+  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--foreground-muted);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.cue-segmented-option:hover:not(.is-active) {
+  color: var(--foreground);
+}
+
+.cue-segmented-option.is-active {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.cue-segmented-option:focus-visible,
+.cue-settings-nav-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@container settings (min-width: 40rem) {
+  .cue-settings-page {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.75rem;
+  }
+
+  .cue-settings-nav {
+    width: 12.75rem;
+  }
+}
+
+.cue-settings-panel > * {
+  min-width: 0;
+  max-width: 100%;
+}
