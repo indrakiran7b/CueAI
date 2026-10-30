@@ -329,7 +329,7 @@ describe("rewrites never add facts", () => {
     const r = validateRewrites(fixture(), source, [
       { target: "experience.0.bullets.0", text: "Built REST APIs in Django serving 40 internal clients, cutting latency by 75%.", reason: "" },
       { target: "experience.1.bullets.1", text: "Containerised legacy services with Docker and Kubernetes.", reason: "" },
-      { target: "experience.0.bullets.1", text: "Designed a nightly Python ETL pipeline loading 2 million rows into PostgreSQL with automated data-quality checks.", reason: "" },
+      { target: "experience.0.bullets.1", text: "Built a nightly Python ETL pipeline that loads 2 million rows into PostgreSQL and validates each load with automated data-quality checks.", reason: "" },
     ], ["Kubernetes"]);
     assert.equal(r[0]!.valid, false);
     assert.match(r[0]!.rejectReason!, /75/);
@@ -343,7 +343,7 @@ describe("rewrites never add facts", () => {
   it("applies every validated rewrite automatically and keeps the original line for rejected ones", () => {
     const original = fixture();
     const set = validateRewrites(original, source, [
-      { target: "experience.0.bullets.1", text: "Designed a nightly Python ETL pipeline loading 2 million rows into PostgreSQL with automated data-quality checks.", reason: "" },
+      { target: "experience.0.bullets.1", text: "Built a nightly Python ETL pipeline that loads 2 million rows into PostgreSQL and validates each load with automated data-quality checks.", reason: "" },
       { target: "experience.0.bullets.0", text: "Built REST APIs serving 999 clients.", reason: "" },
       { target: "experience.9.bullets.0", text: "Nonexistent target.", reason: "" },
     ]);

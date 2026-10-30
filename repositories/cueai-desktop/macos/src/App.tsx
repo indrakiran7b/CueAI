@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  BookOpen,
   Camera,
   Check,
   Copy,
@@ -14,9 +15,18 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "./lib/utils";
+import { TransparencyControl } from "./components/TransparencyControl";
+import { useOverlayTransparency } from "./lib/use-overlay-transparency";
+import { pickManualQuestion } from "./lib/manual-question";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
-import { configureAnswerApi, requestLiveAnswerStream } from "./services/live-answer";
+import {
+  configureAnswerApi,
+  requestLiveAnswerStream,
+  type AnswerSource,
+  type KnowledgeBaseSource,
+  type KnowledgeBaseStatus,
+} from "./services/live-answer";
 import { createCueaiLatency } from "../../shared/cueai-latency";
 import {
   AnswerSequencer,
@@ -103,6 +113,49 @@ function createLivePipeline(onFinal: (u: FinalUtterance) => void): LivePipeline 
   return pipeline;
 }
 
+const ANSWER_SOURCE_KEY = "cueai.overlay.answerSource";
+
+function loadAnswerSource(): AnswerSource {
+  try {
+    return localStorage.getItem(ANSWER_SOURCE_KEY) === "knowledge_base" ? "knowledge_base" : "general";
+  } catch {
+    return "general";
+  }
+}
+
+type KbMeta = { status: KnowledgeBaseStatus; sources: KnowledgeBaseSource[]; notice: string | null };
+
+const KB_STATUS_LABEL: Record<KnowledgeBaseStatus, string> = {
+  answered: "Answered from your Knowledge Base",
+  partial: "Partly answered from your Knowledge Base",
+  not_found: "Not found in your Knowledge Base",
+  no_documents: "No Knowledge Base documents",
+  not_ready: "Documents still indexing",
+  indexing_failed: "Indexing failed",
+};
+
+function KnowledgeBaseFooter({ meta }: { meta: KbMeta }) {
+  return (
+    <div className="cue-kb" aria-label="Knowledge Base sources">
+      <p className="cue-kb-status">{KB_STATUS_LABEL[meta.status]}</p>
+      {meta.notice && <p className="cue-kb-note">{meta.notice}</p>}
+      {meta.sources.length > 0 && (
+        <ol className="cue-kb-sources">
+          {meta.sources.map((s) => (
+            <li key={`${s.ref}-${s.documentId}`}>
+              <span className="cue-kb-file">
+                [{s.ref}] {s.filename}
+                {s.page != null ? ` · page ${s.page}` : ""}
+              </span>
+              <span className="cue-kb-excerpt">{s.excerpt}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function formatElapsed(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(total / 60);
@@ -144,7 +197,12 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [ending, setEnding] = useState(false);
   const [autoAnswer, setAutoAnswer] = useState(true);
+  const [answerSource, setAnswerSource] = useState<AnswerSource>(loadAnswerSource);
+  const answerSourceRef = useRef(answerSource);
+  answerSourceRef.current = answerSource;
+  const [kbMeta, setKbMeta] = useState<KbMeta | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const transparency = useOverlayTransparency();
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [webApiBase, setWebApiBase] = useState("http://127.0.0.1:3002");
   const [expanded, setExpanded] = useState(false);
@@ -185,6 +243,8 @@ export default function App() {
   const systemOnRef = useRef(false);
 
   const privacyOn = capture?.requested !== false;
+  /** Requested is the user's choice; applied is what the OS actually confirmed. */
+  const privacyConfirmed = privacyOn && capture?.applied === true;
   const lastHeard = [...transcript].reverse().find((t) => t.who !== "CueAI");
   const hasAnswer = Boolean(answer.trim());
   const boardOpen = streaming || hasAnswer || Boolean(question.trim());
@@ -392,7 +452,7 @@ export default function App() {
 
   useEffect(() => {
     if (boardOpen || expanded) return;
-    void window.cueai?.fitHeight?.(menuOpen ? 320 : sourceProblem ? 168 : 120);
+    void window.cueai?.fitHeight?.(menuOpen ? 340 : sourceProblem ? 200 : 152);
   }, [menuOpen, boardOpen, expanded, sourceProblem]);
 
   useEffect(() => {
@@ -461,8 +521,10 @@ export default function App() {
     setStreaming(true);
     streamingRef.current = true;
     setAnswer("");
+    setKbMeta(null);
     setStatusMsg(image ? null : "Answering...");
     aiBusyRef.current = true;
+    const source = image ? "general" : answerSourceRef.current;
     const context = getRollingContext(3);
     if (!image && opts?.echoAsYou !== false) appendTranscript({ who: "You", text: q });
     const cueLat = createCueaiLatency("01");
@@ -487,9 +549,10 @@ export default function App() {
           signal: ticket.signal,
           history: selectHistory(q, exchangesRef.current),
           uncertain: opts?.uncertain,
+          source,
           onConnected: () => cueLat.mark("llmConnected"),
           onToken: (_token, full) => {
-            if (isStale()) return;
+            if (isStale() || source === "knowledge_base") return;
             streamed = full;
             pendingFull = full;
             if (!cueLat.marks.firstToken) {
@@ -511,8 +574,13 @@ export default function App() {
           },
         });
         answerText = result.answer;
+        if (result.kbStatus && !isStale()) {
+          setKbMeta({ status: result.kbStatus, sources: result.sources || [], notice: result.notice ?? null });
+        }
       } catch (err) {
         if (isStale()) throw err;
+        // Knowledge Base mode never falls back to a general AI answer.
+        if (source === "knowledge_base") throw err;
         // A partially streamed answer is shown as-is; retrying would duplicate or contradict it.
         if (streamed.trim()) {
           setAnswer(streamed);
@@ -585,12 +653,18 @@ export default function App() {
   }
 
   async function generateAnswer() {
-    const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
-    await runAsk(
-      last || "Give me a ready-to-say self-introduction from my resume and the job briefing.",
-      undefined,
-      { echoAsYou: false },
-    );
+    const typed = ask.trim();
+    const q = pickManualQuestion(typed, lastCompleteRef.current || lastHeard?.text);
+    if (!q) {
+      askRef.current?.focus();
+      return;
+    }
+    if (q === typed) {
+      setAsk("");
+      await runAsk(q);
+      return;
+    }
+    await runAsk(q, undefined, { echoAsYou: false });
   }
 
   async function analyzeScreen() {
@@ -630,14 +704,31 @@ export default function App() {
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
+      setStatusMsg("Copy failed. Select the answer text to copy it.");
     }
   }
 
   function clearBoard() {
     bumpActivity();
+    pipeline.sequencer.cancel();
+    streamingRef.current = false;
+    aiBusyRef.current = false;
+    setStreaming(false);
     setAnswer("");
+    setKbMeta(null);
     setQuestion("");
     setStatusMsg(null);
+  }
+
+  function toggleAnswerSource() {
+    bumpActivity();
+    const next: AnswerSource = answerSource === "knowledge_base" ? "general" : "knowledge_base";
+    setAnswerSource(next);
+    try {
+      localStorage.setItem(ANSWER_SOURCE_KEY, next);
+    } catch {
+      // Preference only; the toggle still applies for this window.
+    }
   }
 
   async function onEndSession() {
@@ -649,6 +740,8 @@ export default function App() {
       await window.cueai?.endSession();
       clearBoard();
       setMenuOpen(false);
+    } catch {
+      setStatusMsg("Could not end the session. Try again.");
     } finally {
       setEnding(false);
     }
@@ -672,17 +765,17 @@ export default function App() {
 
   async function togglePrivacy() {
     bumpActivity();
-    const status = await window.cueai?.setExcludeCapture(!privacyOn);
-    if (status) {
+    try {
+      const status = await window.cueai?.setExcludeCapture(!privacyOn);
+      if (!status) {
+        setStatusMsg("Privacy could not be changed.");
+        return;
+      }
       setCapture(status);
-      return;
+      if (status.requested && !status.applied) setStatusMsg(status.message);
+    } catch {
+      setStatusMsg("Privacy could not be changed.");
     }
-    setCapture({
-      requested: !privacyOn,
-      applied: !privacyOn,
-      supported: true,
-      message: privacyOn ? "Visible in screen share" : "Hidden from screen share",
-    });
   }
 
   async function toggleListen(kind: ListenKind) {
@@ -720,12 +813,20 @@ export default function App() {
     ? "Reading what’s on screen…"
     : streaming
       ? "Composing a speakable reply…"
-      : "Ask CueAI for this call";
+      : answerSource === "knowledge_base"
+        ? "Ask your Knowledge Base"
+        : "Ask CueAI for this call";
 
   return (
     <div
       ref={rootRef}
-      className={cn("cue-root", boardOpen && "is-open", !boardOpen && sourceProblem && "has-hint")}
+      className={cn(
+        "cue-root",
+        boardOpen && "is-open",
+        !boardOpen && sourceProblem && "has-hint",
+        transparency.value > 0 && "is-see-through",
+      )}
+      style={transparency.style}
       onMouseMove={bumpActivity}
       onFocus={bumpActivity}
     >
@@ -740,11 +841,17 @@ export default function App() {
               className={cn("cue-privacy", privacyOn ? "is-hidden" : "is-visible")}
               aria-label={privacyOn ? "Privacy on" : "Privacy off"}
               aria-pressed={privacyOn}
-              title={privacyOn ? "Hidden from screen share" : "Visible in screen share"}
+              title={
+                !privacyOn
+                  ? "Visible in screen share"
+                  : privacyConfirmed
+                    ? "Hidden from screen share"
+                    : `Hiding requested, not confirmed by macOS: ${capture?.message || "status unknown"}`
+              }
               onClick={() => void togglePrivacy()}
             >
               <span className="cue-led" />
-              {privacyOn ? "Hidden" : "Visible"}
+              {!privacyOn ? "Visible" : privacyConfirmed ? "Hidden" : "Unconfirmed"}
             </button>
           </span>
           <div className="cue-more no-drag">
@@ -786,6 +893,14 @@ export default function App() {
             <X className="h-4 w-4" />
           </button>
         </header>
+        <TransparencyControl
+          value={transparency.value}
+          error={transparency.error}
+          onChange={(v) => {
+            bumpActivity();
+            transparency.change(v);
+          }}
+        />
 
         <form className="cue-composer no-drag" onSubmit={(e) => void onAsk(e)}>
           <Search className="cue-search-icon" aria-hidden />
@@ -809,6 +924,21 @@ export default function App() {
           >
             <Sparkles className="h-3.5 w-3.5" />
             Reply
+          </button>
+          <button
+            type="button"
+            className={cn("cue-action", answerSource === "knowledge_base" && "is-on is-kb")}
+            onClick={toggleAnswerSource}
+            aria-pressed={answerSource === "knowledge_base"}
+            aria-label={answerSource === "knowledge_base" ? "Answer source: Knowledge Base" : "Answer source: General AI"}
+            title={
+              answerSource === "knowledge_base"
+                ? "Knowledge Base: answers only from your uploaded documents. Click for General AI."
+                : "General AI. Click to answer only from your Knowledge Base documents."
+            }
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            {answerSource === "knowledge_base" ? "KB" : "General"}
           </button>
           <button
             type="button"
@@ -953,6 +1083,7 @@ export default function App() {
                     <p key={i}>{block.text}</p>
                   ),
                 )}
+                {kbMeta && <KnowledgeBaseFooter meta={kbMeta} />}
               </div>
             )}
           </section>

@@ -194,6 +194,15 @@ export type StreamLiveAnswerHandlers = {
   history?: { question: string; answer: string }[];
 };
 
+/** Accept both token deltas and providers that emit the full text-so-far. */
+export function mergeStreamChunk(current: string, incoming: string): string {
+  if (!incoming) return current;
+  if (!current) return incoming;
+  if (incoming === current || current.endsWith(incoming)) return current;
+  if (incoming.startsWith(current)) return incoming;
+  return current + incoming;
+}
+
 function needsLiveKnowledge(question: string) {
   const q = question.toLowerCase();
   return /\b((my|our|this|the)\s+)?(project|resume|experience|background|company|knowledge base|codebase|policy|onboarding|handbook|document|wiki)\b|\b(i|we)\s+(used|built|implemented|worked)\b/.test(
@@ -325,7 +334,7 @@ export async function requestLiveAnswerStream(
           continue;
         }
         if (evt.type === "token" && evt.text) {
-          full += evt.text;
+          full = mergeStreamChunk(full, evt.text);
           if (!sawFirst) {
             sawFirst = true;
             latency.mark("firstToken");

@@ -7,7 +7,7 @@ import type { AtsCheck, AtsReport, StructuredResume } from "./types";
  * affects the score — only resume content does.
  */
 
-const SKILLS = [
+export const SKILLS = [
   "python", "java", "javascript", "typescript", "c++", "c#", "go", "golang", "rust", "kotlin", "swift", "scala", "ruby", "php", "r", "matlab", "sql", "nosql", "bash", "shell scripting",
   "react", "react native", "next.js", "angular", "vue", "node.js", "express", "django", "flask", "fastapi", "spring", "spring boot", "hibernate", ".net", "asp.net", "laravel", "rails",
   "html", "css", "tailwind", "redux", "graphql", "rest api", "grpc", "microservices", "websockets",
@@ -19,6 +19,9 @@ const SKILLS = [
   "system design", "data structures", "algorithms", "oop", "design patterns", "distributed systems", "security", "oauth", "networking", "performance optimization",
   "figma", "ui/ux", "accessibility", "seo",
   "project management", "stakeholder management", "communication", "leadership", "mentoring", "product management", "salesforce", "sap",
+  "sqlalchemy", "celery", "orm", "database design", "backend development", "api development", "data pipelines", "data warehousing",
+  "bigquery", "redshift", "dbt", "data cleaning", "data modeling", "dashboards", "reporting", "business intelligence", "kpi", "looker",
+  "google sheets", "matplotlib", "seaborn", "plotly", "jupyter", "data mining", "forecasting",
 ];
 
 const ALIASES: Record<string, string[]> = {
@@ -41,6 +44,14 @@ const ALIASES: Record<string, string[]> = {
   llm: ["llms", "large language models"],
   "unit testing": ["unit tests"],
   "spring boot": ["springboot"],
+  dashboards: ["dashboard"],
+  kpi: ["kpis"],
+  "data cleaning": ["data cleansing", "data wrangling"],
+  "data pipelines": ["data pipeline", "etl pipelines"],
+  "data modeling": ["data modelling"],
+  "database design": ["schema design", "database schemas"],
+  "api development": ["api design"],
+  "backend development": ["backend engineering", "back-end development"],
 };
 
 const AMBIGUOUS_SHORT = new Set(["r", "go", "rest", "ts", "js", "node", "ml"]);
@@ -71,7 +82,38 @@ export function isKnownSkill(term: string) {
   return SKILLS.includes(t) || Object.entries(ALIASES).some(([k, v]) => k === t || v.includes(t));
 }
 
-function display(term: string) {
+/** The canonical skill name for an alias ("rest apis" → "rest api"); other terms are returned lower-cased. */
+export function canonicalSkill(term: string) {
+  const t = term.toLowerCase().trim();
+  if (SKILLS.includes(t)) return t;
+  return Object.entries(ALIASES).find(([, v]) => v.includes(t))?.[0] ?? t;
+}
+
+/**
+ * A specific tool that proves a general skill (Matplotlib charts are data visualization; PostgreSQL
+ * queries are SQL). One-directional: knowing SQL never implies PostgreSQL.
+ */
+export const IMPLIED_BY: Record<string, string[]> = {
+  sql: ["postgresql", "mysql", "sqlite", "oracle"],
+  nosql: ["mongodb", "dynamodb", "cassandra"],
+  "data visualization": ["matplotlib", "seaborn", "plotly", "tableau", "power bi", "looker"],
+  "data analysis": ["pandas"],
+  "backend development": ["django", "flask", "fastapi", "spring boot", "express"],
+  "api development": ["rest api", "graphql", "fastapi"],
+  "machine learning": ["scikit-learn", "tensorflow", "pytorch", "keras"],
+  "deep learning": ["pytorch", "tensorflow", "keras"],
+  "unit testing": ["pytest", "jest", "junit"],
+  "ci/cd": ["github actions", "gitlab ci", "jenkins"],
+  orm: ["sqlalchemy", "hibernate"],
+};
+
+/** Does the text show this skill, by name, alias, or a specific tool that proves it? */
+export function evidences(text: string, term: string): boolean {
+  const key = canonicalSkill(term);
+  return mentions(text, key) || (IMPLIED_BY[key] || []).some((t) => mentions(text, t));
+}
+
+export function display(term: string) {
   const special: Record<string, string> = {
     "c++": "C++", "c#": "C#", ".net": ".NET", "asp.net": "ASP.NET", "node.js": "Node.js", "next.js": "Next.js", aws: "AWS", gcp: "GCP",
     sql: "SQL", nosql: "NoSQL", html: "HTML", css: "CSS", "ci/cd": "CI/CD", nlp: "NLP", llm: "LLM", rag: "RAG", etl: "ETL", oop: "OOP", tdd: "TDD",
@@ -79,6 +121,7 @@ function display(term: string) {
     postgresql: "PostgreSQL", mysql: "MySQL", mongodb: "MongoDB", "scikit-learn": "scikit-learn", pytorch: "PyTorch", tensorflow: "TensorFlow",
     numpy: "NumPy", javascript: "JavaScript", typescript: "TypeScript", "github actions": "GitHub Actions", "gitlab ci": "GitLab CI", sap: "SAP",
     rabbitmq: "RabbitMQ", websockets: "WebSockets", nginx: "NGINX", "spring boot": "Spring Boot",
+    kpi: "KPI", orm: "ORM", "api development": "API development", "database design": "Database design", "data modeling": "Data modeling", sqlalchemy: "SQLAlchemy", bigquery: "BigQuery", dbt: "dbt",
     oauth: "OAuth", fastapi: "FastAPI", junit: "JUnit", pytest: "pytest", jest: "Jest", "generative ai": "Generative AI", dynamodb: "DynamoDB",
   };
   return special[term] || term.replace(/\b[a-z]/g, (c) => c.toUpperCase());

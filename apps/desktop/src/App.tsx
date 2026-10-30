@@ -1,18 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import {
-  Camera,
-  Copy,
-  Mic,
-  MicOff,
-  MoreHorizontal,
-  Shield,
-  ShieldOff,
-  Sparkles,
-  Square,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
+import { Camera, Copy, MoreHorizontal, Sparkles, X } from "lucide-react";
 import { cn } from "./lib/utils";
 import { useCompanionStore } from "./store/companion-store";
 import { AIService } from "./services";
@@ -63,7 +50,11 @@ import {
   requestScreenContext,
 } from "./services/screen-context";
 import type { ScreenshotResult } from "./types/companion";
+import { OverlayMenu } from "./components/OverlayMenu";
 import { ResizeHandles } from "./components/ResizeHandles";
+import { TransparencyControl } from "./components/TransparencyControl";
+import { useOverlayTransparency } from "./lib/use-overlay-transparency";
+import { pickManualQuestion } from "./lib/manual-question";
 
 function formatElapsed(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -75,8 +66,8 @@ function formatElapsed(ms: number) {
 function answerLines(text: string) {
   const bullets = text
     .split(/\n+/)
-    .map((line) => line.replace(/^[-*•]\s*/, "").trim())
-    .filter(Boolean);
+    .map((line) => line.replace(/^[-*•]\s*/, "").replace(/^#{1,6}\s+/, "").trim())
+    .filter((line) => Boolean(line) && !/^```[\w#+.-]*$/.test(line));
   if (bullets.length > 1) return bullets;
   const sentences = text
     .split(/(?<=[.!?])\s+/)
@@ -108,6 +99,7 @@ export default function App() {
   const [ending, setEnding] = useState(false);
   const [autoAnswer, setAutoAnswer] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const transparency = useOverlayTransparency();
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [apiHealthError, setApiHealthError] = useState<string | null>(null);
   const [webApiBase, setWebApiBase] = useState("http://127.0.0.1:3000");
@@ -280,12 +272,12 @@ export default function App() {
           setQuestion(assembled);
           return;
         }
+        // Only a genuine question or request is answered; other interviewer speech is context.
         const decision = evaluateQuestion(u.text, {
           who: u.lane,
           allowSelfQuestions: true,
           finalized: true,
           turnFinalized: true,
-          forceSystem: true,
         });
         if (!decision.accept) {
           if (decision.reason === "duplicate") pipelineCounters.duplicates += 1;
@@ -314,8 +306,11 @@ export default function App() {
     if (snap.question) setQuestion(snap.question);
     if (snap.answer !== lastSyncedAnswerRef.current) {
       lastSyncedAnswerRef.current = snap.answer;
-      // Do not flash single-character fragments; show once the answer is speakable.
-      if (!generating || isFirstMeaningfulAnswer(snap.answer)) {
+      // A new request owns a new answer. Clear the previous answer immediately,
+      // then avoid flashing single-character fragments from the new stream.
+      if (generating && !snap.answer) {
+        setAnswer("");
+      } else if (!generating || isFirstMeaningfulAnswer(snap.answer)) {
         setAnswer(snap.answer);
         if (snap.answer && generating) markTimeline(snap.utteranceId, "firstRender");
       }
@@ -404,11 +399,13 @@ export default function App() {
   }
 
   function generateAnswer() {
-    const last = lastCompleteRef.current.trim() || lastHeard?.text?.trim();
-    // Same path as auto-answer — re-trigger / retry for the last heard question.
-    answerHeardQuestion(
-      last || "Give me a ready-to-say self-introduction from my resume and the job briefing.",
-    );
+    const q = pickManualQuestion(ask, lastCompleteRef.current || lastHeard?.text);
+    if (!q) {
+      askRef.current?.focus();
+      return;
+    }
+    if (q === ask.trim()) setAsk("");
+    answerHeardQuestion(q);
   }
 
   useEffect(() => {
@@ -478,7 +475,7 @@ export default function App() {
 
   useEffect(() => {
     if (boardOpen || expanded) return;
-    void window.cueai?.fitHeight?.(menuOpen ? 260 : 76);
+    void window.cueai?.fitHeight?.(menuOpen ? 300 : 104);
   }, [menuOpen, boardOpen, expanded]);
 
   useEffect(() => {
@@ -652,89 +649,88 @@ export default function App() {
   return (
     <div
       ref={rootRef}
-      className={cn("ov-root", boardOpen && "is-open", menuOpen && "is-menu", narrow && "is-narrow")}
+      className={cn(
+        "ov-root",
+        boardOpen && "is-open",
+        menuOpen && "is-menu",
+        narrow && "is-narrow",
+        transparency.value > 0 && "is-see-through",
+      )}
+      style={transparency.style}
       onMouseMove={bumpActivity}
       onFocus={bumpActivity}
     >
       {boardOpen && <ResizeHandles />}
 
       <div className="ov-bar header-drag">
-        {!narrow && <span className="ov-brand">CueAI</span>}
-        <form className="ov-ask no-drag" onSubmit={(e) => void onAsk(e)}>
-          <input
-            ref={askRef}
-            value={ask}
-            onChange={(e) => setAsk(e.target.value)}
-            placeholder={narrow ? "Ask…" : "Ask a question"}
-          />
-        </form>
-        <button
-          type="button"
-          className={cn("ov-btn no-drag", streaming && "is-on")}
-          onClick={() => void generateAnswer()}
-          aria-label="Answer"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          <span className="ov-btn-label">Answer</span>
-        </button>
-        <button
-          type="button"
-          className="ov-btn no-drag"
-          onClick={() => void analyzeScreen()}
-          aria-label={shotBusy ? "Capture" : "Screen"}
-        >
-          <Camera className="h-3.5 w-3.5" />
-          <span className="ov-btn-label">{shotBusy ? "Capture" : "Screen"}</span>
-        </button>
-        <span className="ov-timer">{formatElapsed(elapsedMs)}</span>
-        <button
-          type="button"
-          className={cn("ov-icon no-drag", privacyOn && "is-on")}
-          aria-label={privacyOn ? "Privacy on" : "Privacy off"}
-          aria-pressed={privacyOn}
-          title={privacyOn ? "Privacy on — hidden from screen share" : "Privacy off — visible on screen share"}
-          onClick={() => void togglePrivacy()}
-        >
-          {privacyOn ? <Shield className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
-        </button>
-        <div className="ov-more no-drag">
+        <div className="ov-bar-row">
+          {!narrow && <span className="ov-brand">CueAI</span>}
+          <form className="ov-ask no-drag" onSubmit={(e) => void onAsk(e)}>
+            <input
+              ref={askRef}
+              value={ask}
+              onChange={(e) => setAsk(e.target.value)}
+              placeholder={narrow ? "Ask…" : "Ask a question"}
+            />
+          </form>
           <button
             type="button"
-            className="ov-icon"
-            aria-label="More"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
+            className={cn("ov-btn no-drag", streaming && "is-on")}
+            onClick={() => void generateAnswer()}
+            aria-label="Answer"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <Sparkles className="h-3.5 w-3.5" />
+            <span className="ov-btn-label">Answer</span>
           </button>
-          {menuOpen && (
-            <div className="ov-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => void toggleListen("mic")}>
-                {listen.mic ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
-                Mic {listen.mic ? "on" : "off"}
-              </button>
-              <button type="button" role="menuitem" onClick={() => void toggleListen("systemAudio")}>
-                {listen.systemAudio ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-                System {listen.systemAudio ? "on" : "off"}
-              </button>
-              <button type="button" role="menuitem" onClick={() => { setPinned(!pinned); setMenuOpen(false); }}>
-                Pin {pinned ? "on" : "off"}
-              </button>
-              <label>
-                <input type="checkbox" checked={autoAnswer} onChange={(e) => setAutoAnswer(e.target.checked)} />
-                Auto-answer
-              </label>
-              <button type="button" role="menuitem" className="is-danger" onClick={() => void onEndSession()}>
-                <Square className="h-3 w-3 fill-current" />
-                {ending ? "Ending…" : "End"}
-              </button>
-            </div>
-          )}
+          <button
+            type="button"
+            className="ov-btn no-drag"
+            onClick={() => void analyzeScreen()}
+            aria-label={shotBusy ? "Capture" : "Screen"}
+          >
+            <Camera className="h-3.5 w-3.5" />
+            <span className="ov-btn-label">{shotBusy ? "Capture" : "Screen"}</span>
+          </button>
+          <span className="ov-timer">{formatElapsed(elapsedMs)}</span>
+          <div className="ov-more no-drag">
+            <button
+              type="button"
+              className="ov-icon"
+              aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <OverlayMenu
+                listen={listen}
+                pinned={pinned}
+                autoAnswer={autoAnswer}
+                privacyOn={privacyOn}
+                ending={ending}
+                onToggleMic={() => void toggleListen("mic")}
+                onToggleSystemAudio={() => void toggleListen("systemAudio")}
+                onTogglePin={() => { setPinned(!pinned); setMenuOpen(false); }}
+                onAutoAnswerChange={setAutoAnswer}
+                onTogglePrivacy={() => { void togglePrivacy(); setMenuOpen(false); }}
+                onEndSession={() => void onEndSession()}
+              />
+            )}
+          </div>
+          <button type="button" className="ov-icon no-drag" aria-label="Hide" onClick={() => void window.cueai?.hide()}>
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <button type="button" className="ov-icon no-drag" aria-label="Hide" onClick={() => void window.cueai?.hide()}>
-          <X className="h-4 w-4" />
-        </button>
+        <TransparencyControl
+          value={transparency.value}
+          error={transparency.error}
+          onChange={(v) => {
+            bumpActivity();
+            transparency.change(v);
+          }}
+        />
       </div>
 
       {boardOpen && (
@@ -765,12 +761,14 @@ export default function App() {
           )}
           {statusMsg && <p className="ov-error">{statusMsg}</p>}
           {captureNotice && !statusMsg && <p className="ov-muted">{captureNotice}</p>}
-          {streaming && !hasAnswer ? (
+          {pendingQuestion && !streaming ? (
+            <p className="ov-muted">Listening for the complete question…</p>
+          ) : streaming && !hasAnswer ? (
             <p className="ov-muted">Thinking…</p>
           ) : (
             <div className="ov-answer">
-              {answerLines(answer || "Waiting for a question.").map((line) => (
-                <p key={line}>{line}</p>
+              {answerLines(answer || "Waiting for a question.").map((line, index) => (
+                <p key={index}>{line}</p>
               ))}
             </div>
           )}

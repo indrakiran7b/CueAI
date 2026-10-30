@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-const { cleanPrompt, filterWhisperSegments, isPromptEcho } = await import("../src/whisper-filter");
+const {
+  INTERVIEW_RETRY_MESSAGE,
+  assessInterviewEnglish,
+  cleanPrompt,
+  filterWhisperSegments,
+  isPromptEcho,
+} = await import("../src/whisper-filter");
 
 describe("whisper segment filter", () => {
   it("keeps confident speech verbatim", () => {
@@ -43,5 +49,33 @@ describe("whisper prompt", () => {
   it("detects Whisper echoing its prompt on near-silence", () => {
     assert.equal(isPromptEcho("Kubernetes, Docker", "Vocabulary: Kubernetes, Docker, Terraform"), true);
     assert.equal(isPromptEcho("How do pods restart?", "Vocabulary: Kubernetes, Docker"), false);
+  });
+});
+
+describe("English-only interview gate", () => {
+  it("accepts English questions and preserves SAP/ABAP vocabulary", () => {
+    const text = "How do SAP ABAP, BAPI, BADI, RFC, IDoc, OData, CDS views, and AMDP differ?";
+    assert.deepEqual(assessInterviewEnglish(text, { detectedLanguage: "en" }), { accepted: true });
+  });
+
+  it("accepts English programming vocabulary even when confidence is low", () => {
+    const text = "Compare REST APIs in FastAPI, React, Python, Java, C++, MongoDB, PostgreSQL, and SQL.";
+    assert.deepEqual(assessInterviewEnglish(text, { uncertain: true }), { accepted: true });
+  });
+
+  it("rejects provider-detected non-English speech without translating it", () => {
+    assert.deepEqual(assessInterviewEnglish("Bonjour, comment allez-vous?", { detectedLanguage: "fr" }), {
+      accepted: false,
+      reason: "non_english",
+    });
+  });
+
+  it("rejects non-Latin speech and unclear generic output", () => {
+    assert.equal(assessInterviewEnglish("नमस्ते, आप कैसे हैं?").accepted, false);
+    assert.deepEqual(assessInterviewEnglish("could be something", { uncertain: true }), {
+      accepted: false,
+      reason: "uncertain",
+    });
+    assert.equal(INTERVIEW_RETRY_MESSAGE, "Please ask the question in English or repeat it clearly.");
   });
 });

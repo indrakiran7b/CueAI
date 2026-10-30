@@ -9,12 +9,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { extractText, getDocumentProxy } from "unpdf";
-import { applyRewrites } from "../src/lib/resume/rewrites";
-import { scoreResume } from "../src/lib/resume/ats";
 import { buildResumePdf } from "../src/lib/resume/pdf";
 import { coerceResume } from "../src/lib/resume/normalize";
 import { TEMPLATES } from "../src/lib/resume/templates";
-import type { AtsReport, ResumeRewrite, SkillGap, SkillSuggestion, StructuredResume } from "../src/lib/resume/types";
+import type {
+  AtsReport,
+  JobProfile,
+  MatchReport,
+  ResumeRewrite,
+  SkillGap,
+  SkillSuggestion,
+  StructuredResume,
+} from "../src/lib/resume/types";
 
 const BASE = process.env.RESUME_E2E_BASE || "http://127.0.0.1:3000";
 const EMAIL = process.env.RESUME_E2E_EMAIL || "";
@@ -62,6 +68,9 @@ type Analysis = {
   resume: StructuredResume;
   jobKeywords: string[];
   ats: AtsReport;
+  job: JobProfile;
+  match: MatchReport;
+  tailored: { resume: StructuredResume; match: MatchReport; validation: { factualIntegrity: string; scoreRegression: string } };
   rewriteSet: ResumeRewrite[];
   missingSkills: SkillGap[];
   skillSuggestions: SkillSuggestion[];
@@ -176,7 +185,7 @@ async function main() {
   ok(`repeat analysis served from cache in ${second.ms} ms`);
 
   // 3. Accept all rewrites: dates, employers, education and certifications are untouched.
-  const accepted = applyRewrites(a.resume, a.rewriteSet);
+  const accepted = a.tailored.resume;
   for (const [i, e] of a.resume.experience.entries()) {
     assert.equal(accepted.experience[i]?.organization, e.organization);
     assert.equal(accepted.experience[i]?.dates, e.dates);
@@ -187,17 +196,19 @@ async function main() {
   for (const rw of a.rewriteSet.filter((r) => r.valid)) {
     for (const n of rw.after.match(/\d+(?:\.\d+)?/g) ?? []) assert.ok(RESUME_TXT.includes(n), `rewrite introduced number ${n}`);
   }
-  const before = a.ats.overall;
-  const after = scoreResume(accepted, a.jobKeywords, true).overall;
+  const before = a.match.score;
+  const after = a.tailored.match.score;
   const server = (await (
     await call("/api/resume/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resume: accepted, jobDescription: JD, jobKeywords: a.jobKeywords }),
+      body: JSON.stringify({ resume: accepted, jobDescription: JD, jobKeywords: a.jobKeywords, job: a.job }),
     })
-  ).json()) as { ats: AtsReport };
-  assert.equal(server.ats.overall, after, "server rescore matches the in-browser score");
-  ok(`accept-all keeps employers/dates/education; ATS estimate ${before} -> ${after} (server rescore agrees)`);
+  ).json()) as { match: MatchReport };
+  assert.equal(server.match.score, after, "server rescore uses the same match algorithm");
+  assert.ok(after != null && before != null && after >= before, `validated match must not regress: ${before} -> ${after}`);
+  assert.deepEqual(a.tailored.validation, { factualIntegrity: "passed", scoreRegression: "passed" });
+  ok(`validated tailoring keeps source facts; CueAI match ${before} -> ${after} (same scoring version)`);
 
   // 4. Every template renders the accepted resume as a real PDF with all facts.
   const want = facts(accepted);

@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   LogOut,
   User,
+  type LucideIcon,
 } from "lucide-react";
 import { BrandMark, Logo } from "@/components/ui/logo";
 import { Avatar } from "@/components/ui/misc";
@@ -24,33 +25,34 @@ import { cn } from "@/lib/utils";
 import { useRef, useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getDesktop, isDesktopApp } from "@/lib/desktop";
-import { isAdminUser, isCueAiUserNavHref } from "@/lib/app-access";
+import { CUEAI_NAV, isAdminUser } from "@/lib/app-access";
 import { isMacDesktopApp } from "@/lib/desktop";
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 import { withDesktopParam } from "@/lib/desktop-query";
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/meetings", label: "Meetings", icon: Video },
-  { href: "/meetings/live", label: "Live Session", icon: Sparkles },
-  { href: "/meetings/live?mode=mock", label: "Mock Interview", icon: GraduationCap },
-  { href: "/resume", label: "Resume Tailor", icon: FileText },
-  { href: "/knowledge", label: "Knowledge Base", icon: Library, adminOnly: true as const },
-  { href: "/translation", label: "Translation", icon: Languages, adminExtra: true as const },
-  { href: "/screen-context", label: "Screen Context", icon: Monitor, adminExtra: true as const },
-  { href: "/admin", label: "Admin Portal", icon: Shield, adminOnly: true as const },
-];
+const ICONS: Record<string, LucideIcon> = {
+  "/dashboard": LayoutDashboard,
+  "/resume": FileText,
+  "/mock-interview": GraduationCap,
+  "/meetings/live": Sparkles,
+  "/meetings": Video,
+  "/knowledge": Library,
+  "/screen-context": Monitor,
+  "/translation": Languages,
+  "/admin": Shield,
+  "/settings": Settings,
+};
 
-const settingsNav = { href: "/settings", label: "Settings", icon: Settings };
+const nav = CUEAI_NAV.map((item) => ({ ...item, icon: ICONS[item.href] ?? LayoutDashboard }));
 
 const MAC_SECTIONS = [
   {
     title: "CUE AI",
-    hrefs: ["/dashboard", "/meetings", "/meetings/live", "/meetings/live?mode=mock", "/resume"],
+    hrefs: ["/dashboard", "/resume", "/mock-interview", "/meetings/live", "/meetings"],
   },
   {
     title: "Workspace",
-    hrefs: ["/knowledge", "/translation", "/screen-context", "/admin"],
+    hrefs: ["/knowledge", "/screen-context", "/translation", "/admin"],
   },
   {
     title: "Settings",
@@ -95,11 +97,7 @@ export function Sidebar() {
   const { session, logout } = useAuth();
   const admin = isAdminUser(session?.role);
 
-  const items = nav.filter((item) => {
-    if ("adminOnly" in item && item.adminOnly) return admin;
-    if ("adminExtra" in item && item.adminExtra) return admin;
-    return isCueAiUserNavHref(item.href);
-  });
+  const items = nav.filter((item) => !item.adminOnly || admin);
 
   function navHref(href: string) {
     if (href.startsWith("/meetings/live")) {
@@ -193,7 +191,7 @@ export function Sidebar() {
       <nav className="cue-scroll flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         <div className="mac-only">
           {MAC_SECTIONS.map((section) => {
-            const sectionItems = [...items, settingsNav].filter((item) =>
+            const sectionItems = items.filter((item) =>
               (section.hrefs as readonly string[]).includes(item.href)
             );
             if (sectionItems.length === 0) return null;

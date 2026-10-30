@@ -34,7 +34,7 @@ type NavGroup = {
 
 const PRIMARY: NavItem[] = [
   { id: "profile", label: "Profile", icon: User },
-  { id: "models", label: "AI Models", icon: Sparkles },
+  { id: "models", label: "AI Providers & Models", icon: Sparkles },
   { id: "privacy", label: "Privacy", icon: Shield },
 ];
 

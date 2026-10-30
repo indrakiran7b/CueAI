@@ -34,6 +34,8 @@ export const IpcChannels = {
   COMPANION_TRANSCRIBE: "companion:transcribe",
   COMPANION_BEGIN_RESIZE: "companion:begin-resize",
   COMPANION_END_RESIZE: "companion:end-resize",
+  COMPANION_GET_TRANSPARENCY: "companion:get-transparency",
+  COMPANION_SET_TRANSPARENCY: "companion:set-transparency",
 
   // Meeting / screen-share session
   MEETING_SET_SESSION: "meeting:set-session",
@@ -64,6 +66,19 @@ export const IpcChannels = {
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
 
+/** Overlay transparency, in percent. Keep in sync with src/lib/overlay-transparency.ts. */
+export const OVERLAY_TRANSPARENCY_MIN = 0;
+export const OVERLAY_TRANSPARENCY_MAX = 80;
+
+export function isValidTransparency(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= OVERLAY_TRANSPARENCY_MIN &&
+    value <= OVERLAY_TRANSPARENCY_MAX
+  );
+}
+
 export type CompanionMode = "full" | "mini" | "collapsed" | "presenter";
 
 export type DesktopStatus = {
@@ -87,6 +102,8 @@ export type CueStoreSchema = {
   companionMode: CompanionMode;
   companionModeBeforeShare: CompanionMode | null;
   companionOpacity: number;
+  /** How see-through the overlay's panels are, in percent (0–80). Text stays opaque. */
+  companionTransparency: number;
   companionPinned: boolean;
   companionExpanded: boolean;
   companionNormalBounds: { x: number; y: number; width: number; height: number } | null;

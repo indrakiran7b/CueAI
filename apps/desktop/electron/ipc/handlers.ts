@@ -6,7 +6,12 @@ import {
   Notification,
   shell,
 } from "electron";
-import { IpcChannels, type CompanionMode } from "./channels";
+import {
+  IpcChannels,
+  OVERLAY_TRANSPARENCY_MIN,
+  isValidTransparency,
+  type CompanionMode,
+} from "./channels";
 import { getAllStore, getStoreValue, setStoreValue } from "../services/store";
 import {
   getCompanionWindow,
@@ -151,6 +156,15 @@ export function registerIpcHandlers() {
   ipcMain.handle(IpcChannels.COMPANION_SET_OPACITY, (_e, opacity: number) => {
     setCompanionOpacity(Number(opacity));
   });
+  ipcMain.handle(IpcChannels.COMPANION_GET_TRANSPARENCY, () => {
+    const saved = getStoreValue("companionTransparency");
+    return isValidTransparency(saved) ? saved : OVERLAY_TRANSPARENCY_MIN;
+  });
+  ipcMain.handle(IpcChannels.COMPANION_SET_TRANSPARENCY, (_e, value: unknown) => {
+    if (!isValidTransparency(value)) throw new Error("Transparency must be a whole number from 0 to 80.");
+    setStoreValue("companionTransparency", value);
+    return value;
+  });
   ipcMain.handle(IpcChannels.COMPANION_EXPAND, () => expandCompanion());
   ipcMain.handle(IpcChannels.COMPANION_RESTORE, () => restoreCompanion());
   ipcMain.handle(IpcChannels.COMPANION_RESET_SIZE, () => resetCompanionSize());
@@ -166,7 +180,13 @@ export function registerIpcHandlers() {
     endOverlayResize();
     return true;
   });
-  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => {
+  ipcMain.handle(IpcChannels.COMPANION_TRANSCRIBE, async (_e, payload: {
+    data: ArrayBuffer;
+    mime: string;
+    label: string;
+    prompt?: string;
+    workflow?: "interview";
+  }) => {
     const origin = getWebOrigin().replace(/\/$/, "");
     const body = new FormData();
     const mime = payload.mime || "audio/wav";
@@ -180,6 +200,7 @@ export function registerIpcHandlers() {
     const blob = new Blob([Buffer.from(payload.data)], { type: mime });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
+    if (payload.workflow === "interview") body.append("workflow", "interview");
     if (typeof payload.prompt === "string" && payload.prompt.trim()) {
       body.append("prompt", payload.prompt.trim().slice(0, 400));
     }

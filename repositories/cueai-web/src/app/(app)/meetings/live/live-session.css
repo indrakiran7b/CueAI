@@ -195,14 +195,6 @@
   background: var(--ls-primary);
 }
 
-[data-live] .ls-bookmark-mark {
-  position: absolute;
-  top: -0.25rem;
-  height: 1rem;
-  width: 2px;
-  background: var(--cue-warning);
-}
-
 [data-live] .ls-ask-input {
   height: 2.75rem;
   flex: 1;

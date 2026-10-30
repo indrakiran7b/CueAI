@@ -9,7 +9,7 @@ export const COMPANION_MIN_HEIGHT = 64;
 
 /** Idle size: compact command bar. Expands only when a question needs an answer. */
 export const COMPANION_DEFAULT_WIDTH = 752;
-export const COMPANION_DEFAULT_HEIGHT = 76;
+export const COMPANION_DEFAULT_HEIGHT = 104;
 
 /** Room for the more-menu under the compact bar. */
 export const COMPANION_MENU_HEIGHT = 340;

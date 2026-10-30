@@ -12,23 +12,24 @@ INTRODUCTION = re.compile(
     I,
 )
 BEHAVIORAL = re.compile(
-    r"\b(tell me about a time|describe a (time|situation)|give (me )?an example of a time|a time when you|how do you (handle|deal with) (conflict|pressure|stress|criticism|failure|deadlines)|(biggest|greatest) (weakness|strength)|why should we hire|why do you want (to work|this (job|role))|where do you see yourself|disagree(d)? with (your|a) (manager|teammate|colleague))\b",
+    r"\b(tell me about a time|describe a (time|situation)|give (me )?an example of a time|a time when you|tell me about a difficult bug|how do you (handle|deal with) (conflict|pressure|stress|criticism|failure|deadlines)|(biggest|greatest) (weakness|strength)|why should we hire|why do you want (to work|this (job|role))|where do you see yourself|disagree(d)? with (your|a) (manager|teammate|colleague))\b",
     I,
 )
 CODING = re.compile(
-    r"\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution)\b"
-    r"|\bwrite (a|an|the) (sql |python |java |javascript )?(query|program|function)\b"
+    r"\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution|report)\b"
+    r"|\bimplement\b[^?.]{0,70}\b(rate limiter|cache|queue|stack|tree|graph|service)\b"
+    r"|\bwrite (a|an|the) (sql |python |java |javascript |abap )?(query|program|function|report)\b"
     r"|\b(a |the )?program (to|that|for)\b"
-    r"|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+)\b"
-    r"|^(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?)\b",
+    r"|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers|intervals)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+|abap)\b"
+    r"|^(given\b[^?.]{0,40}\b)?(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?|intervals?)\b",
     I,
 )
 DEBUGGING = re.compile(
-    r"\b(debug|troubleshoot|flaky|root cause)\b|\b(fix|investigate)\b[^?.]{0,40}\b(bug|issue|failure|error|exception|leak)\b|\b(fails|failing|crash(es|ing)?)\b[^?.]{0,40}\b(how|why|what)\b|\b(how|what) would you do if\b[^?.]{0,40}\b(fails|breaks|is slow|crash)",
+    r"\b(debug|troubleshoot|flaky|root cause)\b|\b(fix|investigate)\b[^?.]{0,60}\b(bug|issue|failure|error|exception|leak|bottleneck|slow)\b|\b(slow|latency|timeout)\b[^?.]{0,50}\b(concurrent|under load|production)\b|\b(fails|failing|crash(es|ing)?)\b[^?.]{0,40}\b(how|why|what)\b|\b(how|what) would you do if\b[^?.]{0,40}\b(fails|breaks|is slow|crash)",
     I,
 )
 PROJECT = re.compile(
-    r"\b(your|the) (last |current |final[- ]year |recent )?project\b|\bin your (project|experience|last (role|job|company)|current (role|job|company))\b|\bhow (have|did) you (use|used|implement|implemented|apply|applied|build|built)\b|\byou (have )?(used|built|implemented|worked on)\b[^?.]{0,30}\bproject\b",
+    r"\b(your|the|one) (last |current |final[- ]year |recent )?project\b|\bproject from your resume\b|\btechnical decision in a project\b|\btechnologies in your project\b|\bin your (project|experience|last (role|job|company)|current (role|job|company))\b|\bhow (have|did) you (use|used|implement|implemented|apply|applied|build|built)\b|\byou (have )?(used|built|implemented|worked on)\b[^?.]{0,30}\bproject\b",
     I,
 )
 PERSONAL_PAST = re.compile(
@@ -83,6 +84,10 @@ DATABASE = re.compile(
     r"\b(sql|mysql|postgres\w*|mongodb|nosql|database|db|query|queries|join|index(es|ing)?|normali[sz]ation|primary key|foreign key|transaction|orm|sqlalchemy|redis)\b",
     I,
 )
+SAP_ABAP = re.compile(
+    r"\b(sap|abap|bapi|badi|rfc|idoc|odata|cds views?|amdp|open sql|internal tables?|user exits?|customer exits?|enhancement points?|se38|st05|sat|sm37|we0[25]|bd87)\b",
+    I,
+)
 FRAMEWORKS = re.compile(
     r"\b(flask|fastapi|django|express|spring( boot)?|react(js)?|angular|vue|next\.?js|node(\.js)?|laravel|rails|pytorch|tensorflow|pandas|numpy|selenium|playwright|cypress|pytest|junit)\b",
     I,
@@ -94,6 +99,7 @@ LANGUAGE_ONLY = re.compile(
 NO_BUILTINS = re.compile(r"\bwithout (using )?(any )?(built[- ]?in|inbuilt|library|libraries)\b", I)
 RATIONALE = re.compile(r"\bwhy (did|do|would|have) you\b|\bwhy (choose|chose|pick|use|go with)\b", I)
 LANGUAGES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\babap\b", I), "ABAP"),
     (re.compile(r"\bpython\b", I), "Python"),
     (re.compile(r"\btype ?script\b", I), "TypeScript"),
     (re.compile(r"\bjava ?script\b|\bnode(\.js| js)?\b", I), "JavaScript"),
@@ -101,6 +107,8 @@ LANGUAGES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bc\+\+|\bcpp\b", I), "C++"),
     (re.compile(r"\bsql\b|\bmysql\b|\bpostgres", I), "SQL"),
     (re.compile(r"\bgolang\b", I), "Go"),
+    (re.compile(r"\bphp\b", I), "PHP"),
+    (re.compile(r"\bc language\b|\busing c\b|\bin c\b|\binc,?\s+(?=(?:write|implement|code|program|function)\b)", I), "C"),
 ]
 
 BUDGETS: dict[str, tuple[int, int]] = {
@@ -121,6 +129,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
 
 TOPIC_HINTS: list[tuple[re.Pattern[str], str]] = [
     (
+        re.compile(r"\brate limiter|token bucket|sliding window|leaky bucket\b", I),
+        "A thread-safe limiter needs one atomic decision for refill/check/decrement. In one process use a mutex or an atomic/serialized critical section; across processes use a shared store with an atomic script or transaction. Polling loops and independent timers do not guarantee FIFO fairness. Use a monotonic clock, bound bursts, define rejection or waiting behavior, and cover clock jumps, cancellation, shutdown and distributed contention.",
+    ),
+    (
         re.compile(r"\b(event[- ]?loop|asyncio|async ?io|starv\w*|blocking call|coroutines?)\b", I),
         "asyncio runs all coroutines on one thread, so any blocking call or long CPU loop stalls every task. Offload blocking I/O with asyncio.to_thread or loop.run_in_executor. CPU-bound pure-Python code in a thread still contends for the GIL (except free-threaded builds), so chunk it and await asyncio.sleep(0) between chunks, or move it to a process pool if allowed. Awaiting something that is already complete may not yield. Debug mode (PYTHONASYNCIODEBUG=1, loop.slow_callback_duration) reports slow callbacks.",
     ),
@@ -139,8 +151,8 @@ TOPIC_HINTS: list[tuple[re.Pattern[str], str]] = [
 
 TYPE_DIRECTIVES: dict[str, str] = {
     "introduction": "Self-introduction: a ready-to-say first-person intro of about 45-75 seconds: name and current status (degree/role) from the briefing, core skills that overlap the job, one or two real projects or internships with what the candidate actually did, and one closing line on why this role fits. Use only resume facts; job requirements the resume lacks may only be mentioned as interest or learning. Omit any detail the resume doesn't give (such as the college name) — never fill it with an invented or placeholder name.",
-    "behavioral": "Behavioral: use STAR briefly (situation, task, action, result) in first person. Only use a real story from the briefing; otherwise give an honest, clearly generic approach the candidate can adapt.",
-    "coding": 'Coding: default to Python unless another language is named. Give the simplest correct beginner-friendly solution first in one fenced code block with the language tag; if the question says "program", write a complete runnable script that reads input with input() and prints the result, and if it says "function", write the function plus a short usage line. Handle edge cases (empty input, 0, 1, negatives, duplicates) explicitly. After the code: the logic in 2-3 short sentences, an Example: line showing sample input and its exact output, and Time/Space complexity. Simplest means a plain loop a beginner can explain (e.g., trial division up to the square root), not a micro-optimised variant; mention a faster alternative in at most one sentence instead of replacing the simple one. Never hardcode a single sample value as the only input of a program.',
+    "behavioral": "Behavioral: use STAR briefly only when the briefing explicitly documents that event, the candidate's action, and the result. Project technologies or generic responsibilities are not evidence that a particular bug, conflict, outage, deadline, or decision happened. If no real story is documented, say that the supplied background does not include a specific example and give a clearly labeled STAR framework the candidate must personalize; never synthesize an incident from nearby project facts.",
+    "coding": "Coding: use the selected language from evidence-based routing; never silently default to Python. State the selected language briefly unless code-only was requested. Give correct version-appropriate code in one fenced block, explain the algorithm and important lines, handle edge cases, and include time/space complexity. Never claim unexecuted code was tested.",
     "debugging": "Debugging: lead with the most likely causes, then the concrete steps you would take to isolate and fix it, in order.",
     "scenario": "Scenario: state the recommended approach first, then the key steps and one trade-off.",
     "project": 'Project question: answer from the briefing\'s project facts only, in first person. For a full project explanation use: what it does and for whom (as the resume describes it), architecture and flow (input -> processing -> output), technologies with the role each played, your contribution, how it was tested exactly as stated, and the result as stated. Mention a challenge only if the resume names one; otherwise you may name one honest limitation or next improvement, framed as such. Attribute each tool to the project or internship it is listed under — never move tools between them. For a narrow question ("how did you…", "which… did you use") answer exactly that step with the actual library/service/flow from the briefing. If a detail is not in the briefing, say it plainly or describe how you would do it, clearly marked as such. Never invent metrics, users, team size, deployment, or rationale.',
@@ -174,6 +186,7 @@ class QuestionAnalysis:
     max_tokens: int
     low_confidence: bool = False
     language: str | None = None
+    language_source: str | None = None
     ambiguous_task: str | None = None
     topic_text: str = ""
     hints: list[str] = field(default_factory=list)
@@ -188,10 +201,10 @@ def _classify(q: str) -> str:
         return "coding"
     if DEBUGGING.search(q):
         return "debugging"
-    if PERSONAL_PAST.search(q) and PERSONAL_CHOICE.search(q):
-        return "comparison"
     if PROJECT.search(q) or PERSONAL_PAST.search(q) or re.search(r"\b(explain|describe|walk me through) (your|the|my) project\b", q, I):
         return "project"
+    if PERSONAL_PAST.search(q) and PERSONAL_CHOICE.search(q):
+        return "comparison"
     if COMPARISON.search(q):
         return "comparison"
     if SCENARIO.search(q) or SYSTEM_DESIGN.search(q):
@@ -210,6 +223,8 @@ def _classify(q: str) -> str:
 
 
 def _categorize(q: str, kind: str, follow_up: bool, malformed: bool) -> str:
+    if SAP_ABAP.search(q):
+        return "sap_abap"
     direct = {
         "introduction": "self_introduction",
         "behavioral": "behavioral_hr",
@@ -258,6 +273,8 @@ def analyze_question(
     history: list[dict[str, str]] | None = None,
     transcript: list[dict[str, str]] | None = None,
     uncertain: bool = False,
+    verified_context: str = "",
+    target_role: str = "",
 ) -> QuestionAnalysis:
     q = re.sub(r"\s+", " ", question.strip())
     has_prior = bool(history) or any(
@@ -265,6 +282,29 @@ def analyze_question(
     )
     kind = _classify(q)
     language = next((name for rx, name in LANGUAGES if rx.search(q)), None)
+    language_source = "explicit" if language else None
+    if kind == "coding" and not language:
+        if SAP_ABAP.search(q):
+            language, language_source = "ABAP", "question_context"
+        elif DATABASE.search(q) and re.search(r"\b(query|sql|database)\b", q, I):
+            language, language_source = "SQL", "question_context"
+        else:
+            conversation = "\n".join(
+                [
+                    *(str(h.get("question", "")) + "\n" + str(h.get("answer", "")) for h in (history or [])[-4:]),
+                    *(str(t.get("text", "")) for t in (transcript or [])[-6:]),
+                ]
+            )
+            language = next((name for rx, name in LANGUAGES if rx.search(conversation)), None)
+            language_source = "conversation" if language else None
+            if not language:
+                language = next((name for rx, name in LANGUAGES if rx.search(verified_context)), None)
+                language_source = "resume" if language else None
+            if not language:
+                language = next((name for rx, name in LANGUAGES if rx.search(target_role)), None)
+                language_source = "target_role" if language else None
+            if not language:
+                language, language_source = "JavaScript", "system_default"
     words = len(q.split())
     terse = has_prior and words <= 4 and bool(TERSE_FOLLOW_UP.search(q))
     follow_up = (
@@ -325,6 +365,7 @@ def analyze_question(
         max_tokens=max_tokens,
         low_confidence=uncertain,
         language=language,
+        language_source=language_source,
         ambiguous_task=_ambiguous_task(q) if kind == "coding" else None,
         topic_text=q,
     )
@@ -342,6 +383,10 @@ def describe_analysis(a: QuestionAnalysis, history: list[dict[str, str]] | None 
     if a.category == "system_design":
         lines.append(
             "System design: clarify the core requirements in one line, then cover API, data model, high-level components, the key scaling choice, and one trade-off. Keep it spoken, not a document."
+        )
+    if a.category == "sap_abap":
+        lines.append(
+            "SAP/ABAP: identify the exact SAP area, distinguish related concepts precisely, and include a practical example or diagnostic sequence. State version or system assumptions when behavior varies. Never claim SAP project experience unless verified context explicitly supports it."
         )
     if a.malformed:
         lines.append(
@@ -375,7 +420,9 @@ def describe_analysis(a: QuestionAnalysis, history: list[dict[str, str]] | None 
     if a.code_only:
         lines.append("The interviewer asked for code only: return just the code block.")
     if a.language:
-        lines.append(f"Language/stack: {a.language}.")
+        lines.append(
+            f"Selected language: {a.language} (source: {a.language_source or 'question context'}). Use it consistently and do not switch languages unless the interviewer explicitly asks."
+        )
     if a.low_confidence:
         lines.append(
             "The transcript is low-confidence (speech-to-text was unsure). If the intended question is still clear, answer it. If a key word is ambiguous enough that you could answer the wrong question, give one short clarifying question instead of guessing."

@@ -5,8 +5,9 @@ process.env.OPENAI_API_KEY = "test-openai";
 process.env.GROQ_API_KEY = "test-groq";
 process.env.GROQ_STREAM_MODEL = "openai/gpt-oss-20b";
 
-const { analyzeQuestion, describeAnalysis, detectAsrHints } = await import("../src/lib/live-question");
-const { buildSystemInstruction, buildUserPrompt, formatConversationMemory, INTERVIEW_SYSTEM_PROMPT } =
+const { analyzeQuestion, describeAnalysis, detectAsrHints, selectProgrammingLanguage } =
+  await import("../src/lib/live-question");
+const { buildSystemInstruction, buildUserPrompt, formatConversationMemory, INTERVIEW_SYSTEM_PROMPT, validateQuestionSpecificAnswer } =
   await import("../src/lib/live-answer");
 const { streamLiveAnswer, LiveAnswerStreamError } = await import("../src/lib/server/live-answer-providers");
 const { resetOpenAiCooldown, openAiAvailable } = await import("../src/lib/server/openai");
@@ -93,6 +94,53 @@ describe("question analysis", () => {
     assert.equal(analyzeQuestion("Tell me about yourself").needsPersonalContext, true);
     assert.equal(analyzeQuestion("What is a hash map?").needsPersonalContext, false);
   });
+
+  it("classifies SAP/ABAP questions without an extra model call", () => {
+    const a = analyzeQuestion("Explain the difference between BAPI, RFC, and IDoc.");
+    assert.equal(a.category, "sap_abap");
+    assert.match(describeAnalysis(a), /SAP\/ABAP/);
+  });
+
+  it("selects code language by explicit, conversation, resume, role, then non-Python fallback", () => {
+    assert.deepEqual(
+      selectProgrammingLanguage({ question: "Implement interval merging in Java." }),
+      { language: "Java", source: "explicit" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({
+        question: "Now find duplicates in an array.",
+        history: [{ question: "Use C++ for this round.", answer: "Okay." }],
+      }),
+      { language: "C++", source: "conversation" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({
+        question: "Write a program to find duplicates.",
+        verifiedContext: "Projects: inventory API built with Java and Spring Boot.",
+      }),
+      { language: "Java", source: "resume" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({
+        question: "Write a program to find duplicates.",
+        targetRole: "ABAP developer working with SAP.",
+      }),
+      { language: "ABAP", source: "target_role" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({ question: "Write a program to find duplicates." }),
+      { language: "JavaScript", source: "system_default" },
+    );
+  });
+
+  it("routes SQL and SAP coding from the question context", () => {
+    assert.equal(analyzeQuestion("Write a query to find duplicate customer rows.").language, "SQL");
+    assert.equal(analyzeQuestion("Write a report to read an internal table in SAP.").language, "ABAP");
+    assert.equal(
+      analyzeQuestion("Inc, write a safe function to reverse a linked list.").language,
+      "C",
+    );
+  });
 });
 
 describe("speech-to-text hints", () => {
@@ -166,6 +214,31 @@ describe("answer grounding contract", () => {
     assert.match(INTERVIEW_SYSTEM_PROMPT, /Answer the actual question\. Identify it/);
     assert.match(INTERVIEW_SYSTEM_PROMPT, /Match length to the question/);
     assert.match(INTERVIEW_SYSTEM_PROMPT, /never evidence that the candidate has those skills/);
+  });
+
+  it("requires correct async client reuse and cancellation semantics", () => {
+    assert.match(INTERVIEW_SYSTEM_PROMPT, /reuse clients and connection pools outside per-call tasks/);
+    assert.match(INTERVIEW_SYSTEM_PROMPT, /Never claim that creating one client per call reuses a shared pool/);
+    const prompt = buildUserPrompt({
+      prompt:
+        "Using Python and FastAPI, call three upstream services concurrently with TaskGroup, partial failures, cancellation, connection reuse, and cleanup.",
+      mode: "answer",
+    });
+    assert.match(prompt, /TaskGroup has no public \.tasks attribute/);
+    assert.match(prompt, /re-raising asyncio\.CancelledError/);
+    assert.match(prompt, /asyncio\.timeout for the overall deadline/);
+    const failures = validateQuestionSpecificAnswer(
+      "Using Python and FastAPI, call three upstream services concurrently with TaskGroup.",
+      '@app.on_event("startup")\nasync with asyncio.TaskGroup() as tg:\n  return tg.tasks',
+    );
+    assert.ok(failures.length >= 4);
+    assert.deepEqual(
+      validateQuestionSpecificAnswer(
+        "Using Python and FastAPI, call three upstream services concurrently with TaskGroup.",
+        "@asynccontextmanager\nasync def lifespan(app): ...\napp = FastAPI(lifespan=lifespan)\nasync with asyncio.timeout(3):\n  async with asyncio.TaskGroup() as tg:\n    tasks = [tg.create_task(fetch())]\nCancellation is not caught and propagates. Unexpected failures may raise an ExceptionGroup.",
+      ),
+      [],
+    );
   });
 
   it("marks project questions as needing verified personal context", () => {

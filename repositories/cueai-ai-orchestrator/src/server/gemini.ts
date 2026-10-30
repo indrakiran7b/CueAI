@@ -296,6 +296,7 @@ export async function generateGeminiText(req: GeminiRequest): Promise<GeminiResu
 export async function transcribeAudioWithGemini(
   buffer: Buffer,
   mime: string,
+  opts: { englishOnly?: boolean; vocabulary?: string } = {},
 ): Promise<string> {
   const credentials = await resolveGeminiCredentials();
   if (!credentials) {
@@ -332,7 +333,15 @@ export async function transcribeAudioWithGemini(
               role: "user",
               parts: [
                 {
-                  text: "Transcribe this audio. Return only the spoken words. No timestamps, labels, or commentary. If there is no speech, return an empty string.",
+                  text: opts.englishOnly
+                    ? [
+                        "Transcribe only clearly spoken English speech verbatim.",
+                        "Do not translate non-English speech into English.",
+                        'If the speech is non-English or too unclear to transcribe confidently, return exactly "[NON_ENGLISH_OR_UNCLEAR]".',
+                        "Return only the spoken words with no timestamps, labels, paraphrasing, or commentary.",
+                        opts.vocabulary ? `Preserve these terms exactly when spoken: ${opts.vocabulary.slice(0, 400)}` : "",
+                      ].filter(Boolean).join(" ")
+                    : "Transcribe this audio. Return only the spoken words. No timestamps, labels, or commentary. If there is no speech, return an empty string.",
                 },
                 { inlineData: { mimeType: audioMime, data } },
               ],

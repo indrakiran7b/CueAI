@@ -280,11 +280,12 @@ export function ensureOverlayWindow(): BrowserWindow {
     minHeight: COMPANION_MIN_HEIGHT,
     show: false,
     frame: false,
-    // Transparent + resizable windows on Windows can stop repainting after setBounds, leaving
-    // only the frame visible mid-answer. The panels are opaque, so an opaque window is safe.
-    transparent: process.platform !== "win32",
-    thickFrame: process.platform === "win32",
-    backgroundColor: process.platform === "win32" ? "#0b0b0d" : "#00000000",
+    // Per-pixel transparency lets the screen show through the panels (the transparency slider)
+    // while text stays opaque; window opacity would fade the text as well.
+    transparent: true,
+    // WS_THICKFRAME on a transparent window can leave it blank after hide/show on Windows.
+    thickFrame: false,
+    backgroundColor: "#00000000",
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,

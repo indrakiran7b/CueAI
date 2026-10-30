@@ -49,15 +49,32 @@ button {
   gap: 8px;
   container-type: inline-size;
   container-name: overlay;
+  color: #e8e8ea;
 }
 
+/* Transparency sets --ov-alpha on .ov-root; the fallbacks are fully opaque. Windows can't blur
+   what is behind the window, so a see-through panel shows the screen behind it as-is. */
 .ov-bar,
 .ov-ask,
-.ov-menu,
 .ov-card {
-  /* Solid: Windows can't blur what is behind a transparent window, so any alpha lets page text bleed through. */
-  background: #141416;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgb(20 20 22 / var(--ov-alpha, 1));
+  border: 1px solid var(--ov-line, rgba(255, 255, 255, 0.12));
+}
+
+.ov-menu {
+  background: rgb(20 20 22 / var(--ov-menu-alpha, 1));
+  border: 1px solid var(--ov-line, rgba(255, 255, 255, 0.12));
+}
+
+/* Text and icons stay opaque; a dark halo keeps them legible over light content behind the overlay. */
+.ov-root.is-see-through {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.95),
+    0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.ov-root.is-see-through svg {
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 
 .ov-bar {
@@ -65,14 +82,72 @@ button {
   z-index: 30;
   display: flex;
   flex: none;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 6px 6px 10px;
+  border-radius: 8px;
+  overflow: visible;
+}
+
+.ov-bar-row {
+  display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  height: 44px;
-  padding: 0 6px 0 10px;
-  border-radius: 8px;
-  overflow: visible;
+  height: 40px;
+}
+
+.ov-tp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 24px;
+  font-size: 11px;
+  color: #d4d4d8;
+}
+
+.ov-tp-label {
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.ov-root.is-narrow .ov-tp-label {
+  display: none;
+}
+
+.ov-tp .ov-icon {
+  height: 22px;
+  width: 22px;
+}
+
+.ov-tp input[type="range"] {
+  width: 160px;
+  min-width: 60px;
+  flex: 0 1 160px;
+  accent-color: #f4f4f5;
+}
+
+.ov-tp output {
+  width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #f4f4f5;
+}
+
+.ov-tp .ov-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ov-tp-error {
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d4d4d8;
 }
 
 .ov-brand {

@@ -565,6 +565,114 @@ export async function queryKnowledge(input: {
   };
 }
 
+const KB_STOPWORDS = new Set(
+  "the and for are was were what when where which who whom whose why how does did done can could would should will shall may might must have has had having this that these those there their them they then than with from into onto over under about above below your yours you our ours its not but any all some each more most such only own same very just also tell explain describe give list please much many other here been being per via".split(
+    " ",
+  ),
+);
+
+/** Query terms that carry meaning (stopwords and very short tokens removed). */
+export function knowledgeQueryTerms(query: string): string[] {
+  return [...new Set(tokenize(query).map((t) => t.replace(/^[.-]+|[.-]+$/g, "")).filter((t) => t.length > 2 && !KB_STOPWORDS.has(t)))];
+}
+
+/** Share of query terms that must appear in a chunk for keyword matches in Knowledge Base mode. */
+const KB_KEYWORD_MIN_COVERAGE = 0.34;
+
+export type KnowledgeBaseDocCounts = {
+  total: number;
+  indexed: number;
+  processing: number;
+  failed: number;
+};
+
+/** Documents a member may query in Knowledge Base mode: workspace docs, plus their own active meeting's docs. */
+function kbVisibleDocs(docs: DbKnowledge[], workspaceId: string, ownMeetingId?: string | null) {
+  return docs.filter((d) => {
+    if (d.workspaceId !== workspaceId || d.status === "deleting") return false;
+    if (docScope(d) === "workspace") return !d.meetingId;
+    return Boolean(ownMeetingId) && d.meetingId === ownMeetingId;
+  });
+}
+
+/**
+ * Retrieval for the overlay's Knowledge Base mode. Never falls back to general knowledge:
+ * returns only indexed chunks from documents the caller is authorized to read, above a relevance floor.
+ */
+export async function retrieveKnowledgeBaseOnly(input: {
+  workspaceId: string;
+  query: string;
+  ownMeetingId?: string | null;
+  topK?: number;
+}): Promise<{ chunks: RetrievedChunk[]; mode: "vector" | "keyword"; counts: KnowledgeBaseDocCounts; terms: string[] }> {
+  const cfg = ragConfig();
+  const topK = input.topK ?? Math.min(cfg.topK, 6);
+  const store = await readStore();
+  const visible = kbVisibleDocs(store.knowledge, input.workspaceId, input.ownMeetingId);
+  const counts: KnowledgeBaseDocCounts = {
+    total: visible.length,
+    indexed: visible.filter((d) => d.status === "indexed").length,
+    processing: visible.filter((d) => d.status === "processing" || d.status === "uploaded").length,
+    failed: visible.filter((d) => d.status === "failed").length,
+  };
+  const terms = knowledgeQueryTerms(input.query);
+  if (!counts.indexed || !terms.length) return { chunks: [], mode: "keyword", counts, terms };
+
+  const allowed = new Set(visible.filter((d) => d.status === "indexed").map((d) => d.id));
+  const semanticReady = isSemanticRagAvailable() && embeddingAvailable() && isQdrantConfigured();
+  if (semanticReady) {
+    try {
+      const vector = await embedText(input.query);
+      const scopes: Array<{ knowledgeScope: "workspace" | "meeting"; meetingId?: string }> = [{ knowledgeScope: "workspace" }];
+      if (input.ownMeetingId) scopes.push({ knowledgeScope: "meeting", meetingId: input.ownMeetingId });
+      const hits = (
+        await Promise.all(
+          scopes.map((s) =>
+            searchVectors({ workspaceId: input.workspaceId, vector, topK, scoreThreshold: cfg.scoreThreshold, ...s }),
+          ),
+        )
+      ).flat();
+      const chunks = mapVectorHits(hits, input.workspaceId)
+        .filter((c) => allowed.has(c.documentId) && c.score >= cfg.scoreThreshold)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
+      return { chunks, mode: "vector", counts, terms };
+    } catch (err) {
+      logRag("kb_only.vector_fallback", { error: err instanceof Error ? err.name : "vector failed" });
+    }
+  }
+
+  const scored: RetrievedChunk[] = [];
+  for (const doc of visible) {
+    if (doc.status !== "indexed") continue;
+    const chunks = doc.chunks?.length
+      ? doc.chunks
+      : doc.content
+        ? [{ id: `${doc.id}_full`, index: 0, text: doc.content.slice(0, 4000) }]
+        : [];
+    for (const chunk of chunks) {
+      const hay = ` ${tokenize(`${doc.title} ${chunk.text}`).join(" ")} `;
+      const matched = terms.filter((t) => hay.includes(` ${t}`)).length;
+      const coverage = matched / terms.length;
+      if (!matched || coverage < KB_KEYWORD_MIN_COVERAGE) continue;
+      scored.push({
+        chunkId: chunk.id,
+        documentId: doc.id,
+        filename: doc.originalFilename || doc.title,
+        text: chunk.text,
+        score: Number(coverage.toFixed(4)),
+        page: chunk.pageNumber ?? null,
+        section: chunk.sectionTitle ?? null,
+        chunkIndex: chunk.index,
+        knowledgeScope: docScope(doc),
+        meetingId: doc.meetingId || null,
+        category: doc.category ?? null,
+      });
+    }
+  }
+  return { chunks: scored.sort((a, b) => b.score - a.score).slice(0, topK), mode: "keyword", counts, terms };
+}
+
 /** Compact context string for live meeting answers (meeting-first RAG). */
 export async function retrieveKnowledgeContextForLive(
   question: string,

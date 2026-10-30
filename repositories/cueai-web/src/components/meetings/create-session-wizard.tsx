@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   DEFAULT_LIVE_SESSION_CONFIG,
-  type LiveGuidanceLevel,
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import {
@@ -21,11 +20,7 @@ import {
   loadSavedResumes,
   resumeHasText,
 } from "@/lib/resume-store";
-import { ONBOARDING_QUESTIONS } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
-
-const GUIDANCE_CHOICES =
-  ONBOARDING_QUESTIONS.find((q) => q.id === "assistLevel")?.choices ?? [];
 
 type WizardStep = 1 | 2;
 
@@ -57,9 +52,11 @@ function companyHintFromUrl(url: string): string {
 export function CreateSessionWizard({
   onCancel,
   onComplete,
+  starting = false,
 }: {
   onCancel?: () => void;
   onComplete: (config: LiveSessionConfig) => void;
+  starting?: boolean;
 }) {
   const [step, setStep] = useState<WizardStep>(1);
   const [config, setConfig] = useState<LiveSessionConfig>({
@@ -179,9 +176,10 @@ export function CreateSessionWizard({
 
   async function onRemoveMeetingDoc(id: string) {
     try {
-      await fetch(`/api/meetings/knowledge?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/meetings/knowledge?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+      if (!res.ok) throw new Error("remove failed");
       patch({
         pendingKnowledgeIds: (config.pendingKnowledgeIds || []).filter((x) => x !== id),
       });
@@ -426,34 +424,8 @@ export function CreateSessionWizard({
             <div className="ls-wizard-body space-y-6">
               <div>
                 <h2 className="text-base font-medium tracking-tight">Session preferences</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Tune how CueAI behaves during this call. You can change these later in Settings.
-                </p>
+                <p className="mt-1 text-sm text-muted">Choose how the CueAI overlay opens for this call.</p>
               </div>
-
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium text-foreground/90">
-                  How much live guidance do you want?
-                </legend>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {GUIDANCE_CHOICES.map((choice) => (
-                    <button
-                      key={choice.id}
-                      type="button"
-                      aria-pressed={config.guidance === choice.id}
-                      className={cn(
-                        "rounded-xl border px-3 py-2.5 text-left text-sm transition-colors",
-                        config.guidance === choice.id
-                          ? "border-[var(--primary)] bg-[var(--primary-muted)] text-foreground"
-                          : "border-[var(--border-strong)] text-muted hover:border-[var(--border-glow)] hover:text-foreground",
-                      )}
-                      onClick={() => patch({ guidance: choice.id as LiveGuidanceLevel })}
-                    >
-                      {choice.label}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-foreground/90">
@@ -484,22 +456,9 @@ export function CreateSessionWizard({
                 </div>
               </fieldset>
 
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border-strong)] px-4 py-3">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-[var(--border-strong)]"
-                  checked={config.autoAnswer}
-                  onChange={(e) => patch({ autoAnswer: e.target.checked })}
-                />
-                <span>
-                  <span className="block text-sm font-medium text-foreground/90">
-                    Auto-answer when new speech is transcribed
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted">
-                    CueAI generates a short reply in the overlay after each transcribed line.
-                  </span>
-                </span>
-              </label>
+              <p className="text-xs text-muted">
+                Auto-answer is turned on or off from the overlay&apos;s menu during the call.
+              </p>
             </div>
           )}
 
@@ -510,7 +469,8 @@ export function CreateSessionWizard({
             <Button
               type="button"
               variant="primary"
-              disabled={step === 1 && !canContinueStep1()}
+              disabled={(step === 1 && !canContinueStep1()) || starting}
+              loading={step === 2 && starting}
               onClick={onNext}
             >
               {step === 2 ? "Start session" : "Next"}

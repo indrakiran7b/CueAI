@@ -26,13 +26,17 @@ export function AdminDevicesPanel() {
 
   async function load() {
     setError(null);
-    const res = await fetch("/api/admin/devices", { cache: "no-store" });
-    const data = (await res.json().catch(() => ({}))) as { devices?: AdminDevice[]; error?: string };
-    if (!res.ok) {
-      setError(data.error || "Could not load devices.");
-      return;
+    try {
+      const res = await fetch("/api/admin/devices", { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as { devices?: AdminDevice[]; error?: string };
+      if (!res.ok) {
+        setError(data.error || "Could not load devices.");
+        return;
+      }
+      setDevices(data.devices || []);
+    } catch {
+      setError("Could not load devices.");
     }
-    setDevices(data.devices || []);
   }
 
   useEffect(() => {
@@ -40,6 +44,9 @@ export function AdminDevicesPanel() {
   }, []);
 
   async function act(id: string, action: "activate" | "block" | "revoke" | "delete", userId?: string) {
+    if ((action === "revoke" || action === "delete") && !window.confirm(`${action === "delete" ? "Remove" : "Revoke"} this device?`)) {
+      return;
+    }
     setBusy(`${action}-${id}`);
     setError(null);
     try {
@@ -54,6 +61,8 @@ export function AdminDevicesPanel() {
         return;
       }
       await load();
+    } catch {
+      setError("Action failed. Check your connection and try again.");
     } finally {
       setBusy(null);
     }
@@ -73,6 +82,8 @@ export function AdminDevicesPanel() {
         return;
       }
       await load();
+    } catch {
+      setError("Could not allow a replacement device.");
     } finally {
       setBusy(null);
     }

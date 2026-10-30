@@ -272,6 +272,18 @@ export function WebCompanionOverlay() {
     await runAsk(prompt);
   }
 
+  /** Answer button: the typed question, else the current one. Never a default prompt. */
+  async function answerNow() {
+    const typed = ask.trim();
+    const q = typed || question.trim();
+    if (!q) {
+      askRef.current?.focus();
+      return;
+    }
+    if (typed) setAsk("");
+    await runAsk(q);
+  }
+
   async function copyAnswer() {
     if (!answer) return;
     try {
@@ -363,12 +375,7 @@ export function WebCompanionOverlay() {
           type="button"
           className={cn("ov-btn no-drag", streaming && "is-on")}
           aria-label="Answer"
-          onClick={() =>
-            void runAsk(
-              question ||
-                "Give me a ready-to-say self-introduction from my resume and the job briefing.",
-            )
-          }
+          onClick={() => void answerNow()}
         >
           <Sparkles className="h-3.5 w-3.5" />
           <span className="ov-btn-label">Answer</span>

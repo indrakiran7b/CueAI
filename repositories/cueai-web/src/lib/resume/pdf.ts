@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
-import { layoutResume, type FontStyle, type Measurer, type ResumeLayout } from "./layout";
+import { fitResume, type FitResult } from "./fit";
+import type { FontStyle, Measurer, ResumeLayout } from "./layout";
 import type { Family } from "./templates";
 import type { StructuredResume } from "./types";
 
@@ -132,14 +133,24 @@ export function resumeFileName(name: string, ext: "pdf" | "docx" = "pdf") {
   return `${base ? `${base}_` : ""}ATS_Resume.${ext}`;
 }
 
-export type BuiltPdf = { bytes: Uint8Array; layout: ResumeLayout; unsupported: string[] };
+export type BuiltPdf = {
+  bytes: Uint8Array;
+  layout: ResumeLayout;
+  unsupported: string[];
+  fit: Omit<FitResult, "layout">;
+  /** Page count read back from the saved file. */
+  pageCount: number;
+};
 
-/** Lay out and write the resume as a PDF with real, selectable text (standard fonts). */
+/**
+ * Lay out (with adaptive page fitting) and write the resume as a PDF with real, selectable
+ * text, then re-open the saved file to confirm its page count matches the layout.
+ */
 export async function buildResumePdf(resume: StructuredResume, templateId: string): Promise<BuiltPdf> {
   const doc = await PDFDocument.create();
   const fonts = await embedFonts(doc);
   const measurer = makeMeasurer(fonts);
-  const layout = layoutResume(resume, templateId, measurer);
+  const { layout, ...fit } = fitResume(resume, templateId, measurer);
 
   for (const p of layout.pages) {
     const page = doc.addPage([layout.width, layout.height]);
@@ -170,5 +181,6 @@ export async function buildResumePdf(resume: StructuredResume, templateId: strin
   doc.setCreator("CueAI Resume Tailor");
   doc.setProducer("CueAI Resume Tailor");
   const bytes = await doc.save();
-  return { bytes, layout, unsupported: [...measurer.unsupported] };
+  const pageCount = (await PDFDocument.load(bytes)).getPageCount();
+  return { bytes, layout, unsupported: [...measurer.unsupported], fit, pageCount };
 }

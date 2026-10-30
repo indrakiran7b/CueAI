@@ -9,11 +9,36 @@ import { deviceAuthHeaders } from "../../../shared/device-auth-headers";
 
 export type LiveTranscriptLine = { who: string; text: string };
 
+export type AnswerSource = "general" | "knowledge_base";
+
+export type KnowledgeBaseSource = {
+  ref: number;
+  documentId: string;
+  filename: string;
+  page: number | null;
+  section: string | null;
+  excerpt: string;
+};
+
+export type KnowledgeBaseStatus =
+  | "answered"
+  | "partial"
+  | "not_found"
+  | "no_documents"
+  | "not_ready"
+  | "indexing_failed";
+
 export type LiveAnswer = {
   answer: string;
   confidence: number;
   model: string;
+  /** Set only for Knowledge Base mode answers. */
+  kbStatus?: KnowledgeBaseStatus;
+  sources?: KnowledgeBaseSource[];
+  notice?: string | null;
 };
+
+const KB_UNSUPPORTED = "This CueAI server does not support Knowledge Base mode yet. Update the web app.";
 
 let apiBase = "http://127.0.0.1:3002";
 let cachedSessionContext = "";
@@ -160,7 +185,18 @@ export type StreamLiveAnswerHandlers = {
   history?: { question: string; answer: string }[];
   /** The transcript was flagged low-confidence by STT. */
   uncertain?: boolean;
+  /** "knowledge_base" answers only from the workspace's uploaded documents. */
+  source?: AnswerSource;
 };
+
+/** Accept both token deltas and providers that emit the full text-so-far. */
+export function mergeStreamChunk(current: string, incoming: string): string {
+  if (!incoming) return current;
+  if (!current) return incoming;
+  if (incoming === current || current.endsWith(incoming)) return current;
+  if (incoming.startsWith(current)) return incoming;
+  return current + incoming;
+}
 
 function needsLiveKnowledge(question: string) {
   const q = question.toLowerCase();
@@ -194,6 +230,7 @@ export async function requestLiveAnswerStream(
         stream: true,
         mode: "answer",
         skipKnowledge: !needsLiveKnowledge(prompt),
+        ...(handlers.source === "knowledge_base" ? { source: "knowledge_base" } : {}),
       }),
     });
   } catch (err) {
@@ -213,8 +250,22 @@ export async function requestLiveAnswerStream(
       answer?: string;
       confidence?: number;
       model?: string;
+      kbStatus?: KnowledgeBaseStatus;
+      sources?: KnowledgeBaseSource[];
+      notice?: string | null;
     };
     if (!data.answer) throw new LiveAnswerUnavailable("Could not generate an answer.");
+    if (handlers.source === "knowledge_base") {
+      if (!data.kbStatus) throw new LiveAnswerUnavailable(KB_UNSUPPORTED);
+      return {
+        answer: data.answer,
+        confidence: 0.7,
+        model: data.model || "unknown",
+        kbStatus: data.kbStatus,
+        sources: Array.isArray(data.sources) ? data.sources : [],
+        notice: data.notice ?? null,
+      };
+    }
     handlers.onToken?.(data.answer, data.answer);
     return {
       answer: data.answer,
@@ -229,6 +280,7 @@ export async function requestLiveAnswerStream(
   let full = "";
   let confidence = 0.7;
   let model = "groq";
+  let kb: Pick<LiveAnswer, "kbStatus" | "sources" | "notice"> = {};
 
   while (true) {
     const { done, value } = await reader.read();
@@ -249,16 +301,26 @@ export async function requestLiveAnswerStream(
           confidence?: number;
           model?: string;
           error?: string;
+          kbStatus?: KnowledgeBaseStatus;
+          sources?: KnowledgeBaseSource[];
+          notice?: string | null;
         };
         if (evt.type === "error") throw new LiveAnswerUnavailable(evt.error || "Stream failed.");
         if (evt.type === "token" && evt.text) {
-          full += evt.text;
+          full = mergeStreamChunk(full, evt.text);
           handlers.onToken?.(evt.text, full);
         }
         if (evt.type === "done") {
           if (evt.answer) full = evt.answer;
           if (typeof evt.confidence === "number") confidence = evt.confidence;
           if (evt.model) model = evt.model;
+          if (evt.kbStatus) {
+            kb = {
+              kbStatus: evt.kbStatus,
+              sources: Array.isArray(evt.sources) ? evt.sources : [],
+              notice: evt.notice ?? null,
+            };
+          }
         }
       } catch (err) {
         if (err instanceof LiveAnswerUnavailable) throw err;
@@ -267,5 +329,6 @@ export async function requestLiveAnswerStream(
   }
 
   if (!full.trim()) throw new LiveAnswerUnavailable("Could not generate an answer.");
-  return { answer: full, confidence, model };
+  if (handlers.source === "knowledge_base" && !kb.kbStatus) throw new LiveAnswerUnavailable(KB_UNSUPPORTED);
+  return { answer: full, confidence, model, ...kb };
 }

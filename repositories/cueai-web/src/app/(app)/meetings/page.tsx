@@ -115,9 +115,11 @@ export default function MeetingsPage() {
       const res = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}`, {
         method: "DELETE",
       });
-      if (res.ok) {
-        setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
-      }
+      if (!res.ok) throw new Error("delete failed");
+      setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
+      setError(null);
+    } catch {
+      setError("Could not delete the meeting.");
     } finally {
       setDeletingId(null);
     }
@@ -128,7 +130,7 @@ export default function MeetingsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Meetings
+            Meetings Summary
           </h1>
           <p className="mt-1 text-sm text-muted">
             {workspaceView
@@ -243,7 +245,7 @@ export default function MeetingsPage() {
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
                     {m.kind === "mock_interview" ? <GraduationCap className="h-5 w-5" /> : <Video className="h-5 w-5" />}
                   </div>
-                  {m.kind === "mock_interview" ? mockStatusBadge(m) : <Badge>Summary ready</Badge>}
+                  {m.kind === "mock_interview" ? mockStatusBadge(m) : <Badge>{m.summary ? "Summary ready" : "No summary"}</Badge>}
                 </div>
                 <h3 className="mt-4 font-semibold tracking-tight">{m.title}</h3>
                 {m.kind === "mock_interview" && m.mockSummary ? (

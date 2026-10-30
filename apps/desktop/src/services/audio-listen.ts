@@ -171,6 +171,8 @@ async function transcribeJob(job: TranscribeJob, signal: AbortSignal) {
       prompt: job.prompt,
       signal,
     });
+    if (res?.retryMessage) liveConfig?.onCaptureNotice?.(res.retryMessage);
+    else if (res?.text && job.kind !== "partial") liveConfig?.onCaptureNotice?.(null);
     return { text: res?.text || "", uncertain: res?.uncertain };
   } finally {
     const stream = lane === "mic" ? micStream : systemStream;
@@ -633,7 +635,7 @@ export async function transcribeAudioBlob(
   who: string,
   apiBase = "http://127.0.0.1:3000",
   opts: { prompt?: string; signal?: AbortSignal } = {},
-): Promise<{ who: string; text: string; uncertain?: boolean } | null> {
+): Promise<{ who: string; text: string; uncertain?: boolean; retryMessage?: string } | null> {
   if (!blob || blob.size < MIN_WAV_BYTES) return null;
   const mime = blob.type || "audio/wav";
 
@@ -647,11 +649,21 @@ export async function transcribeAudioBlob(
       else signal.addEventListener("abort", fail, { once: true });
     });
     const data = await Promise.race([
-      window.cueai.transcribe({ data: buffer, mime, label: who, prompt: opts.prompt }),
+      window.cueai.transcribe({
+        data: buffer,
+        mime,
+        label: who,
+        prompt: opts.prompt,
+        workflow: "interview",
+      }),
       aborted,
     ]);
     if (data.error) throw new TranscribeError(data.error, data.status || 0, data.retryAfterMs || 0);
-    if (!data.text?.trim()) return null;
+    if (!data.text?.trim()) {
+      return data.retry && data.message
+        ? { who: data.who || who, text: "", uncertain: true, retryMessage: data.message }
+        : null;
+    }
     return { who: data.who || who, text: data.text.trim(), uncertain: data.uncertain };
   }
 
@@ -659,6 +671,7 @@ export async function transcribeAudioBlob(
   const ext = mime.includes("wav") ? "wav" : mime.includes("ogg") ? "ogg" : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  body.append("workflow", "interview");
   if (opts.prompt) body.append("prompt", opts.prompt.slice(0, 400));
   const { deviceAuthHeaders } = await import("./device-auth-headers");
   const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/transcribe`, {
@@ -672,12 +685,18 @@ export async function transcribeAudioBlob(
     who?: string;
     error?: string;
     uncertain?: boolean;
+    retry?: boolean;
+    message?: string;
   };
   if (!res.ok) {
     const retryAfter = Number(res.headers.get("retry-after") || 0) * 1000;
     throw new TranscribeError(data.error || "Unable to transcribe audio.", res.status, retryAfter);
   }
-  if (!data.text?.trim()) return null;
+  if (!data.text?.trim()) {
+    return data.retry && data.message
+      ? { who: data.who || who, text: "", uncertain: true, retryMessage: data.message }
+      : null;
+  }
   return { who: data.who || who, text: data.text.trim(), uncertain: data.uncertain };
 }
 

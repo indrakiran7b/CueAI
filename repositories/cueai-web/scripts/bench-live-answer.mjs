@@ -135,6 +135,143 @@ const CASES = [
     must: [/re[-\u2010\u2011]?render/i, /diff|reconcil/i, /react/i],
     maxWords: 130,
   },
+  {
+    id: "critical-01-rest-soap",
+    question: "Explain the difference between REST and SOAP. When would you choose one over the other?",
+    must: [/REST/i, /SOAP/i, /(choose|use).*?(REST|SOAP)|(REST|SOAP).*?(choose|use)/i],
+    maxWords: 180,
+  },
+  {
+    id: "critical-02-concurrent-api",
+    question: "An API becomes slow only under concurrent load. Explain how you would investigate the bottleneck and validate the fix.",
+    must: [/profil|trace|metric/i, /concurr|pool|lock|queue/i, /load test|benchmark/i],
+    maxWords: 240,
+  },
+  {
+    id: "critical-03-prod-query",
+    question: "A query is fast in development but slow in production. Explain your investigation process, including query plans, indexes, locking, and data volume.",
+    must: [/query plan|explain/i, /index/i, /lock/i, /data (volume|distribution)|cardinality/i],
+    maxWords: 250,
+  },
+  {
+    id: "critical-04-tenant-rag",
+    question: "Design a reliable document-question-answering service that prevents one workspace from accessing another workspace's documents.",
+    must: [/workspace|tenant/i, /authori[sz]|access control/i, /retriev|vector/i, /filter|partition|namespace/i],
+    maxWords: 280,
+  },
+  {
+    id: "critical-05-http-500",
+    question: "A backend endpoint returns HTTP 500 intermittently. What evidence would you collect before changing the code?",
+    must: [/log/i, /trace|request id|correlation/i, /metric/i],
+    maxWords: 180,
+  },
+  {
+    id: "critical-06-bapi-rfc-idoc",
+    question: "Explain the difference between BAPI, RFC, and IDoc, and when each is appropriate.",
+    must: [/BAPI/i, /RFC/i, /IDoc/i, /asynchronous|synchronous/i],
+    maxWords: 220,
+  },
+  {
+    id: "critical-07-idoc-error",
+    question: "An IDoc remains in an error status in a production integration. Describe your troubleshooting sequence and how you would prevent duplicate processing.",
+    must: [/status|WE02|WE05/i, /BD87|reprocess/i, /duplicate|idempoten/i],
+    maxWords: 260,
+  },
+  {
+    id: "critical-08-slow-abap",
+    question: "Explain how you would investigate a slow ABAP report using internal tables, Open SQL, and runtime analysis.",
+    must: [/internal table/i, /Open SQL/i, /SAT|ST05|runtime analysis/i],
+    maxWords: 250,
+  },
+  {
+    id: "critical-09-enhancements",
+    question: "Explain the difference between user exits, customer exits, BAdIs, and enhancement points. Be clear about version-dependent details.",
+    must: [/user exit/i, /customer exit/i, /BAdI/i, /enhancement point/i, /version|classic|new/i],
+    maxWords: 250,
+  },
+  {
+    id: "critical-10-cds",
+    question: "A CDS view returns unexpected results or performs poorly. Explain how you would investigate associations, filters, joins, and database execution.",
+    must: [/association/i, /filter/i, /join/i, /execution|plan|ST05/i],
+    maxWords: 260,
+  },
+  {
+    id: "critical-11-project",
+    question: "Explain one project from your resume, including the problem, architecture, your contribution, challenges, and result.",
+    must: [/\b(I|my)\b/i],
+    mustNot: [/\b\d{2,3}% (improvement|increase|reduction)\b/i],
+    maxWords: 260,
+  },
+  {
+    id: "critical-12-change-decision",
+    question: "Describe a technical decision in a project that you would change today. Explain the trade-offs and your improved approach.",
+    must: [/trade-?off/i, /(would|I'd) (change|improve|choose)/i],
+    mustNot: [/\b\d{2,3}% (improvement|increase|reduction)\b/i],
+    maxWords: 240,
+  },
+  {
+    id: "critical-13-difficult-bug",
+    question: "Tell me about a difficult bug you fixed. Explain how you diagnosed the root cause and verified the solution.",
+    must: [/\b(I|my)\b/i, /root cause|diagnos/i, /verif|test/i],
+    mustNot: [/\b\d{2,3}% (improvement|increase|reduction)\b/i],
+    maxWords: 230,
+  },
+  {
+    id: "critical-14-deploy-failure",
+    question: "The project is working locally but fails after deployment. Explain how you would investigate environment configuration, dependencies, networking, and logs.",
+    must: [/environment|config/i, /dependenc/i, /network/i, /log/i],
+    maxWords: 240,
+  },
+  {
+    id: "critical-15-tech-choice",
+    question: "Why did you choose the technologies in your project instead of the alternatives?",
+    must: [/trade-?off|alternative/i],
+    mustNot: [/\b\d{2,3}% (improvement|increase|reduction)\b/i],
+    maxWords: 200,
+  },
+  {
+    id: "critical-16-duplicates",
+    question: "Write a program to find duplicate elements in an array.",
+    must: [/```/i, /complexity|O\(/i],
+    mustNot: [/```python/i],
+    maxWords: 260,
+  },
+  {
+    id: "critical-17-intervals",
+    question: "Given a list of intervals, merge all overlapping intervals and explain the time complexity.",
+    must: [/sort/i, /O\(n\s*log\s*n\)/i],
+    maxWords: 300,
+  },
+  {
+    id: "critical-18-rate-limiter",
+    question: "Implement a thread-safe rate limiter or explain a suitable algorithm, including concurrency and edge cases.",
+    must: [/token bucket|sliding window|leaky bucket/i, /lock|atomic|synchron/i, /edge case|clock/i],
+    maxWords: 320,
+  },
+  {
+    id: "critical-19-voice-complete",
+    question: "What is the difference between optimistic and pessimistic locking?",
+    must: [/optimistic/i, /pessimistic/i, /conflict|lock/i],
+    maxWords: 160,
+  },
+  {
+    id: "critical-20-multisentence",
+    question: "Our API is timing out under load. Explain how you would isolate the cause. Then describe how you would validate the fix without risking production.",
+    must: [/isolate|trace|profil|metric/i, /load test|staging|canary/i, /production/i],
+    maxWords: 260,
+  },
+  ...["Java", "Python", "C", "C++", "JavaScript", "SQL", "ABAP"].map((language) => ({
+    id: `language-${language.toLowerCase().replace(/[^a-z]+/g, "-")}`,
+    question:
+      language === "SQL"
+        ? "Using SQL, find duplicate email addresses in a users table."
+        : language === "ABAP"
+          ? "Using ABAP, find duplicate values in an internal table."
+          : `Using ${language}, write a program to find duplicate elements in an array.`,
+    must: [new RegExp(language.replace("+", "\\+"), "i")],
+    expectedLanguage: language,
+    maxWords: 280,
+  })),
 ];
 
 const PREAMBLE = /^(sure|certainly|great question|that's a great question|as an ai|let me explain|of course|absolutely)\b/i;
@@ -143,11 +280,14 @@ function words(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function score(c, answer) {
+function score(c, answer, route = {}) {
   const failures = [];
   for (const re of c.must || []) if (!re.test(answer)) failures.push(`missing ${re}`);
   for (const re of c.mustNot || []) if (re.test(answer)) failures.push(`forbidden ${re}`);
   if (PREAMBLE.test(answer.trim())) failures.push("preamble");
+  if (c.expectedLanguage && route.selectedLanguage !== c.expectedLanguage) {
+    failures.push(`selected ${route.selectedLanguage || "none"}, expected ${c.expectedLanguage}`);
+  }
   const w = words(answer);
   if (c.maxWords && w > c.maxWords) failures.push(`too long (${w}w > ${c.maxWords})`);
   return { pass: failures.length === 0, failures, words: w };
@@ -196,6 +336,7 @@ async function runOnce(cookie, c) {
   let ttft = null;
   let full = "";
   let done = null;
+  let meta = null;
   let error = null;
   while (true) {
     const { value, done: end } = await reader.read();
@@ -215,6 +356,8 @@ async function runOnce(cookie, c) {
       if (evt.type === "token" && evt.text) {
         if (ttft == null) ttft = performance.now() - started;
         full += evt.text;
+      } else if (evt.type === "meta") {
+        meta = evt;
       } else if (evt.type === "done") {
         done = evt;
       } else if (evt.type === "error") {
@@ -231,6 +374,9 @@ async function runOnce(cookie, c) {
     totalMs: total,
     provider: done?.provider || "unknown",
     model: done?.model || "unknown",
+    category: done?.category || meta?.category || "unknown",
+    selectedLanguage: done?.selectedLanguage || meta?.selectedLanguage || null,
+    languageSource: done?.languageSource || meta?.languageSource || null,
     answer,
   };
 }
@@ -245,7 +391,7 @@ async function main() {
   for (let rep = 0; rep < REPS; rep++) {
     for (const c of cases) {
       const r = await runOnce(cookie, c);
-      const q = r.ok ? score(c, r.answer) : { pass: false, failures: [r.error], words: 0 };
+      const q = r.ok ? score(c, r.answer, r) : { pass: false, failures: [r.error], words: 0 };
       rows.push({ id: c.id, rep, ...r, quality: q });
       const tag = r.ok ? `${Math.round(r.ttftMs)}ms/${Math.round(r.totalMs)}ms ${r.provider}` : "ERROR";
       console.log(`[${rep + 1}/${REPS}] ${c.id.padEnd(22)} ${tag.padEnd(28)} ${q.pass ? "PASS" : "FAIL " + q.failures.join("; ")}`);
@@ -291,7 +437,7 @@ async function rescore(label) {
   const failures = {};
   for (const row of saved.rows) {
     const c = byId.get(row.id);
-    const q = row.ok && c ? score(c, row.answer) : { pass: false, failures: [row.error || "error"] };
+    const q = row.ok && c ? score(c, row.answer, row) : { pass: false, failures: [row.error || "error"] };
     if (q.pass) pass++;
     else failures[row.id] = [...(failures[row.id] || []), q.failures.join("; ")];
   }

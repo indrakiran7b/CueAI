@@ -222,16 +222,22 @@ export const knowledgeApi = {
   },
 };
 
+/** Status shown to users. A document processed again after its first version is "Re-indexing". */
+export function documentStatusLabel(doc: Pick<KnowledgeDocument, "status" | "documentVersion">): string {
+  if (doc.status === "processing" && (doc.documentVersion || 1) > 1) return "Re-indexing";
+  return statusLabel(doc.status);
+}
+
 export function statusLabel(status: KnowledgeDocumentStatus | string): string {
   switch (status) {
     case "uploaded":
-      return "Uploaded";
+      return "Processing";
     case "processing":
       return "Processing";
     case "indexed":
       return "Ready";
     case "failed":
-      return "Failed";
+      return "Indexing failed";
     case "deleting":
       return "Deleting";
     default:

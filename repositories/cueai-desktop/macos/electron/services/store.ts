@@ -11,6 +11,7 @@ const defaults: CueStoreSchema = {
   companionMode: "full",
   companionModeBeforeShare: null,
   companionOpacity: 1,
+  companionTransparency: 0,
   companionPinned: true,
   companionExpanded: false,
   companionNormalBounds: null,

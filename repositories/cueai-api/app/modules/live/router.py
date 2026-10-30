@@ -94,6 +94,9 @@ async def live_answer(request: Request, body: dict[str, Any]):
                             "confidence": payload.get("confidence", 0.78),
                             "model": payload.get("model"),
                             "provider": payload.get("provider"),
+                            "category": payload.get("category"),
+                            "selectedLanguage": payload.get("selectedLanguage"),
+                            "languageSource": payload.get("languageSource"),
                             "requestId": request_id,
                         })
                         return
@@ -102,7 +105,12 @@ async def live_answer(request: Request, body: dict[str, Any]):
                     model = ""
                     first_token_ms: int | None = None
                     try:
-                        async for delta, used in iter_groq_tokens(plan.system, plan.user_prompt, plan.max_tokens):
+                        async for delta, used in iter_groq_tokens(
+                            plan.system,
+                            plan.user_prompt,
+                            plan.max_tokens,
+                            plan.analysis.complexity,
+                        ):
                             if first_token_ms is None:
                                 first_token_ms = _ms(started)
                             parts.append(delta)
@@ -141,6 +149,9 @@ async def live_answer(request: Request, body: dict[str, Any]):
                                 "confidence": payload.get("confidence", 0.78),
                                 "model": payload.get("model"),
                                 "provider": payload.get("provider"),
+                                "category": payload.get("category"),
+                                "selectedLanguage": payload.get("selectedLanguage"),
+                                "languageSource": payload.get("languageSource"),
                                 "requestId": request_id,
                             })
                             append_exchange(
@@ -179,6 +190,9 @@ async def live_answer(request: Request, body: dict[str, Any]):
                         "confidence": 0.78,
                         "model": model,
                         "provider": "groq",
+                        "category": plan.analysis.category,
+                        "selectedLanguage": plan.analysis.language,
+                        "languageSource": plan.analysis.language_source,
                         "requestId": request_id,
                     })
                     append_exchange(

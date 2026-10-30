@@ -59,6 +59,8 @@ export type CompanionAPI = {
   setMode: (mode: CompanionMode) => Promise<void>;
   pin: (pinned: boolean) => Promise<void>;
   setOpacity: (opacity: number) => Promise<void>;
+  getTransparency?: () => Promise<number>;
+  setTransparency?: (value: number) => Promise<number>;
   openDashboard: () => Promise<void>;
   endSession: () => Promise<MeetingSession>;
   toggle: () => Promise<void>;
@@ -84,13 +86,21 @@ export type CompanionAPI = {
   beginResize: (dir: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw") => Promise<boolean>;
   endResize: () => Promise<boolean>;
   getWindowState: () => Promise<CompanionWindowState | null>;
-  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => Promise<{
+  transcribe: (payload: {
+    data: ArrayBuffer;
+    mime: string;
+    label: string;
+    prompt?: string;
+    workflow?: "interview";
+  }) => Promise<{
     text?: string;
     who?: string;
     error?: string;
     uncertain?: boolean;
     status?: number;
     retryAfter?: number;
+    retry?: boolean;
+    message?: string;
   }>;
   getSession: () => Promise<MeetingSession>;
   onMode: (cb: (mode: CompanionMode) => void) => () => void;

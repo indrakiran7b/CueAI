@@ -198,7 +198,13 @@ export function registerIpcHandlers() {
   });
   ipcMain.handle(
     IpcChannels.COMPANION_TRANSCRIBE,
-    async (_e, payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) => {
+    async (_e, payload: {
+      data: ArrayBuffer;
+      mime: string;
+      label: string;
+      prompt?: string;
+      workflow?: "interview";
+    }) => {
     const origin = getWebOrigin().replace(/\/$/, "");
     const body = new FormData();
     const mime = payload.mime || "audio/wav";
@@ -212,6 +218,7 @@ export function registerIpcHandlers() {
     const blob = new Blob([Buffer.from(payload.data)], { type: mime });
     body.append("audio", blob, `listen.${ext}`);
     body.append("label", payload.label || "You");
+    if (payload.workflow === "interview") body.append("workflow", "interview");
     if (payload.prompt?.trim()) body.append("prompt", payload.prompt.trim().slice(-400));
     const auth = await ensureDeviceAuthHeaders();
     console.log("[TRANSCRIBE] request sent", {

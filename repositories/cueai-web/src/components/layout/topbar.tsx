@@ -13,6 +13,7 @@ import {
   User,
   Shield,
   Palette,
+  GraduationCap,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/misc";
 import { useTheme } from "@/components/providers/theme-provider";
@@ -36,9 +37,10 @@ type AppNotification = {
 };
 
 const COMMAND_LINKS = [
-  { label: "Start live meeting", href: "/meetings/live", icon: Video },
-  { label: "Meetings", href: "/meetings", icon: FileText },
   { label: "Resume Tailor", href: "/resume", icon: FileText },
+  { label: "Mock Interview", href: "/mock-interview", icon: GraduationCap },
+  { label: "Start live meeting", href: "/meetings/live", icon: Video },
+  { label: "Meetings Summary", href: "/meetings", icon: FileText },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -223,7 +225,7 @@ export function Topbar() {
         style={macDesktop ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
       >
         <Search className="h-4 w-4" />
-        <span className="min-w-0 flex-1 truncate text-left">Search meetings, docs, answers…</span>
+        <span className="min-w-0 flex-1 truncate text-left">Search meetings and pages…</span>
         <kbd className="hidden shrink-0 items-center gap-0.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-[10px] font-medium text-subtle md:inline-flex">
           {searchShortcut}
         </kbd>
@@ -325,6 +327,8 @@ export function Topbar() {
             }}
             className="flex items-center rounded-xl p-0.5 transition hover:bg-[var(--surface-hover)]"
             aria-label="Account menu"
+            aria-haspopup="menu"
+            aria-expanded={profileOpen}
           >
             <Avatar name={displayName} size="sm" />
           </button>
@@ -368,12 +372,12 @@ export function Topbar() {
                     {theme === "dark" ? "Switch to light" : "Switch to dark"}
                   </button>
                   <Link
-                    href="/settings"
+                    href="/settings#privacy"
                     className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-[var(--surface-hover)] hover:text-foreground"
                     onClick={() => setProfileOpen(false)}
                   >
                     <Shield className="h-3.5 w-3.5" />
-                    Device & Security
+                    Privacy
                   </Link>
                   <button
                     type="button"
@@ -427,7 +431,8 @@ export function Topbar() {
                   ref={commandInputRef}
                   value={commandQuery}
                   onChange={(e) => setCommandQuery(e.target.value)}
-                  placeholder="Search meetings, docs, answers…"
+                  placeholder="Search meetings and pages…"
+                  aria-label="Search meetings and pages"
                   className={macDesktop ? "" : "h-12 flex-1 bg-transparent text-sm outline-none"}
                 />
                 <kbd className="rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-subtle">

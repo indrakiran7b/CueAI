@@ -30,6 +30,9 @@ export type QuestionCategory =
   | "coding"
   | "backend_api"
   | "database"
+  | "sap_abap"
+  | "work_experience"
+  | "resume_jd_specific"
   | "system_design"
   | "debugging"
   | "scenario"
@@ -65,6 +68,7 @@ export type QuestionAnalysis = {
   wantsExample: boolean;
   brevity: "brief" | "normal" | "detailed";
   language?: string;
+  languageSource?: "explicit" | "question_context" | "conversation" | "resume" | "target_role" | "system_default";
   needsPersonalContext: boolean;
   complexity: "simple" | "complex";
   /** Likely speech-to-text mishearings of technical terms: [heard, meant]. */
@@ -79,10 +83,10 @@ const INTRODUCTION =
   /\b(tell me about yourself|introduce yourself|walk me through your (resume|background|profile)|about your background|self[- ]?introduction|self[- ]intro|introduce (me|myself)|my introduction)\b/i;
 
 const BEHAVIORAL =
-  /\b(tell me about a time|describe a (time|situation)|give (me )?an example of a time|a time when you|how do you (handle|deal with) (conflict|pressure|stress|criticism|failure|deadlines)|(biggest|greatest) (weakness|strength)|why should we hire|why do you want (to work|this (job|role))|where do you see yourself|disagree(d)? with (your|a) (manager|teammate|colleague))\b/i;
+  /\b(tell me about a time|describe a (time|situation)|give (me )?an example of a time|a time when you|tell me about a difficult bug|how do you (handle|deal with) (conflict|pressure|stress|criticism|failure|deadlines)|(biggest|greatest) (weakness|strength)|why should we hire|why do you want (to work|this (job|role))|where do you see yourself|disagree(d)? with (your|a) (manager|teammate|colleague))\b/i;
 
 const CODING =
-  /\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution)\b|\bwrite (a|an|the) (sql |python |java |javascript )?(query|program|function)\b|\b(a |the )?program (to|that|for)\b|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+)\b|^(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?)\b/i;
+  /\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution|report)\b|\bimplement\b[^?.]{0,70}\b(rate limiter|cache|queue|stack|tree|graph|service)\b|\bwrite (a|an|the) (sql |python |java |javascript |abap )?(query|program|function|report)\b|\b(a |the )?program (to|that|for)\b|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers|intervals)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+|abap)\b|^(given\b[^?.]{0,40}\b)?(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?|intervals?)\b/i;
 
 /** Past-tense personal questions are about the candidate's own work, so they need the resume. */
 const PERSONAL_PAST =
@@ -103,19 +107,21 @@ const BACKEND_API =
   /\b(rest(ful)?|api|endpoint|http|flask|fastapi|django|express|spring|middleware|jwt|oauth|auth(entication|orization)?|cors|status codes?|graphql|websocket|asgi|wsgi)\b/i;
 const DATABASE =
   /\b(sql|mysql|postgres\w*|mongodb|nosql|database|db|query|queries|join|index(es|ing)?|normali[sz]ation|primary key|foreign key|transaction|orm|sqlalchemy|redis)\b/i;
+const SAP_ABAP =
+  /\b(sap|abap|bapi|badi|rfc|idoc|odata|cds views?|amdp|open sql|internal tables?|user exits?|customer exits?|enhancement points?|se38|st05|sat|sm37|we0[25]|bd87)\b/i;
 const FRAMEWORKS =
   /\b(flask|fastapi|django|express|spring( boot)?|react(js)?|angular|vue|next\.?js|node(\.js)?|laravel|rails|pytorch|tensorflow|pandas|numpy|selenium|playwright|cypress|pytest|junit)\b/gi;
 const LANGUAGE_ONLY =
   /^(and |so )?(what is|what's|explain|define)\s+(python|java|javascript|typescript|php|c\+\+|c#|go|golang|ruby|rust|kotlin|swift|sql|html|css)\s*\??$/i;
 
 const DEBUGGING =
-  /\b(debug|troubleshoot|flaky|root cause)\b|\b(fix|investigate)\b[^?.]{0,40}\b(bug|issue|failure|error|exception|leak)\b|\b(fails|failing|crash(es|ing)?)\b[^?.]{0,40}\b(how|why|what)\b|\b(how|what) would you do if\b[^?.]{0,40}\b(fails|breaks|is slow|crash)/i;
+  /\b(debug|troubleshoot|flaky|root cause)\b|\b(fix|investigate)\b[^?.]{0,60}\b(bug|issue|failure|error|exception|leak|bottleneck|slow)\b|\b(slow|latency|timeout)\b[^?.]{0,50}\b(concurrent|under load|production)\b|\b(fails|failing|crash(es|ing)?)\b[^?.]{0,40}\b(how|why|what)\b|\b(how|what) would you do if\b[^?.]{0,40}\b(fails|breaks|is slow|crash)/i;
 
 const SCENARIO =
   /^(suppose|imagine|let'?s say|say you|assume|if you (had|were|need)|what would you do|how would you (handle|approach|design|scale|test|prioriti[sz]e|deal))\b|\bhow would you (design|architect|scale)\b/i;
 
 const PROJECT =
-  /\b(your|the) (last |current |final[- ]year |recent )?project\b|\bin your (project|experience|last (role|job|company)|current (role|job|company))\b|\bhow (have|did) you (use|used|implement|implemented|apply|applied|build|built)\b|\byou (have )?(used|built|implemented|worked on)\b[^?.]{0,30}\bproject\b/i;
+  /\b(your|the|one) (last |current |final[- ]year |recent )?project\b|\bproject from your resume\b|\btechnical decision in a project\b|\btechnologies in your project\b|\bin your (project|experience|last (role|job|company)|current (role|job|company))\b|\bhow (have|did) you (use|used|implement|implemented|apply|applied|build|built)\b|\byou (have )?(used|built|implemented|worked on)\b[^?.]{0,30}\bproject\b/i;
 
 const EXPERIENCE =
   /\b(have you (ever )?(used|worked (with|on)|done|tested|written|automated|learned|learnt)|do you have (any )?experience|how (much|many years of) experience|are you (familiar|comfortable|good|experienced) (with|at|in)|do you know|do you use|can you work (with|in))\b/i;
@@ -142,6 +148,7 @@ const DETAILED = /\b(in detail|in depth|deep dive|elaborate|thoroughly|step by s
 const EXAMPLE = /\b(example|for instance|show me|demonstrate|real[- ]world)\b/i;
 
 const LANGUAGES: [RegExp, string][] = [
+  [/\babap\b/i, "ABAP"],
   [/\bpython\b/i, "Python"],
   [/\btype ?script\b/i, "TypeScript"],
   [/\bjava ?script\b|\bnode(\.js| js)?\b/i, "JavaScript"],
@@ -153,10 +160,56 @@ const LANGUAGES: [RegExp, string][] = [
   [/\bkotlin\b/i, "Kotlin"],
   [/\bswift\b/i, "Swift"],
   [/\brust\b/i, "Rust"],
+  [/\bphp\b/i, "PHP"],
+  [/\bc language\b|\busing c\b|\bin c\b|\binc,?\s+(?=(?:write|implement|code|program|function)\b)/i, "C"],
 ];
+
+export type LanguageSelection = {
+  language?: string;
+  source?: QuestionAnalysis["languageSource"];
+};
+
+function languageIn(text: string): string | undefined {
+  return LANGUAGES.find(([re]) => re.test(text))?.[1];
+}
+
+/**
+ * Select code language without a model call. Explicit wording wins, followed by
+ * the current question/code context, active conversation, verified resume and
+ * target role. JavaScript is only a transparent last resort when no evidence
+ * exists; Python is never an implicit default.
+ */
+export function selectProgrammingLanguage(input: {
+  question: string;
+  history?: QuestionExchange[];
+  transcript?: { who: string; text: string }[];
+  verifiedContext?: string;
+  targetRole?: string;
+}): LanguageSelection {
+  const explicit = languageIn(input.question);
+  if (explicit) return { language: explicit, source: "explicit" };
+  if (SAP_ABAP.test(input.question) && /\b(code|program|implement|write|class|report)\b/i.test(input.question)) {
+    return { language: "ABAP", source: "question_context" };
+  }
+  if (DATABASE.test(input.question) && /\b(query|sql|database)\b/i.test(input.question)) {
+    return { language: "SQL", source: "question_context" };
+  }
+  const conversation = [
+    ...(input.history || []).slice(-4).flatMap((h) => [h.question, h.answer]),
+    ...(input.transcript || []).slice(-6).map((l) => l.text),
+  ].join("\n");
+  const established = languageIn(conversation);
+  if (established) return { language: established, source: "conversation" };
+  const resumeLanguage = languageIn(input.verifiedContext || "");
+  if (resumeLanguage) return { language: resumeLanguage, source: "resume" };
+  const roleLanguage = languageIn(input.targetRole || "");
+  if (roleLanguage) return { language: roleLanguage, source: "target_role" };
+  return { language: "JavaScript", source: "system_default" };
+}
 
 /** Common Whisper mishearings in technical interviews. Hints only — never rewrite the question. */
 const ASR_TERMS: { heard: RegExp; meant: string; when?: RegExp }[] = [
+  { heard: /\binc\b/i, meant: "in C", when: /\b(write|implement|code|program|function|linked list|pointer)\b/i },
   { heard: /\b(two|too) ?pulls?\b|\bto pulls\b/i, meant: "tuple" },
   { heard: /\bto pull\b/i, meant: "tuple", when: /\b(list|python|immutable|mutable|dictionary|set)\b/i },
   { heard: /\bmy ?sequel\b/i, meant: "MySQL" },
@@ -201,8 +254,8 @@ function classify(q: string): ResponseType {
   if (BEHAVIORAL.test(q)) return "behavioral";
   if (CODING.test(q)) return "coding";
   if (DEBUGGING.test(q)) return "debugging";
-  if (PERSONAL_PAST.test(q) && PERSONAL_CHOICE.test(q)) return "comparison";
   if (PROJECT.test(q) || PERSONAL_PAST.test(q) || /\b(explain|describe|walk me through) (your|the|my) project\b/i.test(q)) return "project";
+  if (PERSONAL_PAST.test(q) && PERSONAL_CHOICE.test(q)) return "comparison";
   if (COMPARISON.test(q)) return "comparison";
   if (SCENARIO.test(q) || SYSTEM_DESIGN.test(q)) return "scenario";
   if (EXPERIENCE.test(q)) return "experience";
@@ -216,6 +269,7 @@ function classify(q: string): ResponseType {
 function categorize(q: string, type: ResponseType, isFollowUp: boolean, malformed: boolean): QuestionCategory {
   if (type === "introduction") return "self_introduction";
   if (type === "behavioral") return "behavioral_hr";
+  if (SAP_ABAP.test(q)) return "sap_abap";
   if (type === "coding") return "coding";
   if (type === "debugging") return "debugging";
   if (type === "project") return "project";
@@ -270,6 +324,8 @@ export function analyzeQuestion(
     history?: QuestionExchange[];
     transcript?: { who: string; text: string }[];
     uncertain?: boolean;
+    verifiedContext?: string;
+    targetRole?: string;
   } = {},
 ): QuestionAnalysis {
   const q = question.trim().replace(/\s+/g, " ");
@@ -279,7 +335,17 @@ export function analyzeQuestion(
 
   let responseType = classify(q);
   const asrHints = detectAsrHints(q);
-  const language = LANGUAGES.find(([re]) => re.test(q))?.[1];
+  const selectedLanguage =
+    responseType === "coding"
+      ? selectProgrammingLanguage({
+          question: q,
+          history: context.history,
+          transcript: context.transcript,
+          verifiedContext: context.verifiedContext,
+          targetRole: context.targetRole,
+        })
+      : { language: languageIn(q), source: languageIn(q) ? ("explicit" as const) : undefined };
+  const language = selectedLanguage.language;
 
   const words = q.split(" ").length;
   const explicitFollowUp = EXPLICIT_FOLLOW_UP.test(q);
@@ -350,6 +416,7 @@ export function analyzeQuestion(
     wantsExample,
     brevity,
     language,
+    languageSource: selectedLanguage.source,
     needsPersonalContext,
     complexity,
     asrHints,
@@ -361,6 +428,10 @@ export function analyzeQuestion(
 
 /** Facts interviewers probe on topics where models commonly slip; injected only when the topic matches. */
 const TOPIC_HINTS: [RegExp, string][] = [
+  [
+    /\brate limiter|token bucket|sliding window|leaky bucket\b/i,
+    "A thread-safe limiter needs one atomic decision for refill/check/decrement. In one process use a mutex or an atomic/serialized critical section; across processes use a shared store with an atomic script or transaction. Polling loops and independent timers do not guarantee FIFO fairness. Use a monotonic clock, bound bursts, define rejection or waiting behavior, and cover clock jumps, cancellation, shutdown and distributed contention.",
+  ],
   [
     /\b(event[- ]?loop|asyncio|async ?io|starv\w*|blocking call|coroutines?)\b/i,
     "asyncio runs all coroutines on one thread, so any blocking call or long CPU loop stalls every task. Offload blocking I/O with asyncio.to_thread or loop.run_in_executor. CPU-bound pure-Python code in a thread still contends for the GIL (except free-threaded builds), so chunk it and await asyncio.sleep(0) between chunks, or move it to a process pool if allowed. Awaiting something that is already complete may not yield. Debug mode (PYTHONASYNCIODEBUG=1, loop.slow_callback_duration) reports slow callbacks.",
@@ -379,9 +450,9 @@ const TYPE_DIRECTIVES: Record<ResponseType, string> = {
   introduction:
     "Self-introduction: a ready-to-say first-person intro of about 45-75 seconds: name and current status (degree/role) from the briefing, core skills that overlap the job, one or two real projects or internships with what the candidate actually did, and one closing line on why this role fits. Use only resume facts; job requirements the resume lacks may only be mentioned as interest or learning. Omit any detail the resume doesn't give (such as the college name) — never fill it with an invented or placeholder name.",
   behavioral:
-    "Behavioral: use STAR briefly (situation, task, action, result) in first person. Only use a real story from the briefing; otherwise give an honest, clearly generic approach the candidate can adapt.",
+    "Behavioral: use STAR briefly only when the briefing explicitly documents that event, the candidate's action, and the result. Project technologies or generic responsibilities are not evidence that a particular bug, conflict, outage, deadline, or decision happened. If no real story is documented, say that the supplied background does not include a specific example and give a clearly labeled STAR framework the candidate must personalize; never synthesize an incident from nearby project facts.",
   coding:
-    "Coding: default to Python unless another language is named. Give the simplest correct beginner-friendly solution first in one fenced code block with the language tag; if the question says \"program\", write a complete runnable script that reads input with input() and prints the result, and if it says \"function\", write the function plus a short usage line. Handle edge cases (empty input, 0, 1, negatives, duplicates) explicitly. After the code: the logic in 2-3 short sentences, an Example: line showing sample input and its exact output, and Time/Space complexity. Simplest means a plain loop a beginner can explain (e.g., trial division up to the square root), not a micro-optimised variant; mention a faster alternative in at most one sentence instead of replacing the simple one. Never hardcode a single sample value as the only input of a program.",
+    "Coding: use the selected language from the evidence-based language routing below; never silently default to Python. State the selected language briefly unless the interviewer requested code only. Give correct code in one fenced block with the matching language tag and version-appropriate APIs. Handle important edge cases. After the code, explain the algorithm and important lines, give a real sample when useful, and include time/space complexity. Never claim the code was executed unless diagnostics confirm that it was.",
   debugging:
     "Debugging: lead with the most likely causes, then the concrete steps you would take to isolate and fix it, in order.",
   scenario:
@@ -421,6 +492,11 @@ export function describeAnalysis(a: QuestionAnalysis, history: QuestionExchange[
       "System design: clarify the core requirements in one line, then cover API, data model, high-level components, the key scaling choice, and one trade-off. Keep it spoken, not a document.",
     );
   }
+  if (a.category === "sap_abap") {
+    lines.push(
+      "SAP/ABAP: identify the exact SAP area, distinguish related concepts precisely, and include a practical example or diagnostic sequence. State version or system assumptions when behavior varies. Never claim SAP project experience unless verified context explicitly supports it.",
+    );
+  }
   if (a.malformed) {
     lines.push(
       "The question is a run-on transcript. Infer the most likely technical question, restate it in a few words at the start (e.g., \"So, on what happens to tasks when the client disconnects:\"), then answer every part.",
@@ -455,7 +531,11 @@ export function describeAnalysis(a: QuestionAnalysis, history: QuestionExchange[
   if (a.multiPart) lines.push("Multi-part: answer every part, in the order asked.");
   if (a.codeOnly) lines.push("The interviewer asked for code only: return just the code block.");
   if (a.wantsExample && a.responseType !== "coding") lines.push("Include one short concrete example.");
-  if (a.language) lines.push(`Language/stack: ${a.language}.`);
+  if (a.language) {
+    lines.push(
+      `Selected language: ${a.language} (source: ${a.languageSource || "question context"}). Use it consistently and do not switch languages unless the interviewer explicitly asks.`,
+    );
+  }
   if (a.asrHints.length) {
     lines.push(
       `Speech-to-text likely misheard: ${a.asrHints.map(([heard, meant]) => `"${heard}" = ${meant}`).join("; ")}. Answer the intended term without mentioning the mishearing.`,

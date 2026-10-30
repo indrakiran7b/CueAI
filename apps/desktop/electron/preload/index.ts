@@ -112,6 +112,9 @@ const cueai = {
   setMode: (mode: CompanionMode) => ipcRenderer.invoke(IpcChannels.COMPANION_SET_MODE, mode),
   pin: (pinned: boolean) => ipcRenderer.invoke(IpcChannels.COMPANION_PIN, pinned),
   setOpacity: (opacity: number) => ipcRenderer.invoke(IpcChannels.COMPANION_SET_OPACITY, opacity),
+  getTransparency: () => ipcRenderer.invoke(IpcChannels.COMPANION_GET_TRANSPARENCY) as Promise<number>,
+  setTransparency: (value: number) =>
+    ipcRenderer.invoke(IpcChannels.COMPANION_SET_TRANSPARENCY, value) as Promise<number>,
   openDashboard: () => ipcRenderer.invoke(IpcChannels.COMPANION_OPEN_DASHBOARD),
   endSession: () => ipcRenderer.invoke(IpcChannels.COMPANION_END_SESSION),
   toggle: () => ipcRenderer.invoke(IpcChannels.COMPANION_TOGGLE),
@@ -157,7 +160,13 @@ const cueai = {
       expanded: boolean;
       mode: CompanionMode;
     } | null>,
-  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) =>
+  transcribe: (payload: {
+    data: ArrayBuffer;
+    mime: string;
+    label: string;
+    prompt?: string;
+    workflow?: "interview";
+  }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_TRANSCRIBE, payload) as Promise<{
       text?: string;
       who?: string;
@@ -165,6 +174,8 @@ const cueai = {
       status?: number;
       retryAfterMs?: number;
       uncertain?: boolean;
+      retry?: boolean;
+      message?: string;
     }>,
   getDeviceAuthHeaders: () =>
     ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,

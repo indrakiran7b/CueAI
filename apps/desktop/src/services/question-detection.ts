@@ -28,6 +28,14 @@ const WH =
 const INTERVIEW =
   /\b(tell me|walk me through|explain|describe|share (your|an?)|talk about|give me an example|how (did|do|would) you|what (is|are|was|were|do|does|did|would)|why (did|do|would|is|are)|can you|could you|please explain|introduce yourself|about yourself|your (project|experience|background))\b/i;
 
+/** Spoken requests without a question form ("Write a function that…", "Okay, design a cache"). */
+const REQUEST =
+  /^(?:(?:so|okay|ok|now|alright|right|please|next|great)[,.]?\s+)*(write|implement|design|solve|code|build|create|list|compare|define|summari[sz]e|give (me|us)|show (me|us)|walk us through|tell us)\b/i;
+
+/** Requests often follow a language/topic prefix or an earlier setup sentence. */
+const EMBEDDED_REQUEST =
+  /(?:^|[.!?]\s+|,\s+)(?:please\s+)?(?:explain|describe|compare|show|write|implement|design|investigate|cover|include|walk\s*through|give (?:a|an|one|me|us))\b/i;
+
 const FILLER_ONLY =
   /^(um+|uh+|hmm+|mm+|yeah|yep|yup|ok|okay|right|sure|thanks|thank you|hello|hi|hey|bye|let'?s move on|next question)\.?$/i;
 
@@ -52,8 +60,19 @@ function normalize(text: string) {
 
 /** Light cleanup only — never rewrite or shorten the spoken question. */
 export function cleanQuestionText(text: string): string {
-  const t = text.trim().replace(/\s+/g, " ");
+  let t = text.trim().replace(/\s+/g, " ");
   if (!t) return t;
+  if (/\b(write|implement|function|linked list|pointer)\b/i.test(t)) {
+    t = t.replace(/^inc,?\s+(?=(?:write|implement|code|program|function)\b)/i, "In C, ");
+    t = t.replace(/\bwrite a save function\b/gi, "write a safe function");
+  }
+  if (/\b(SAP|ABAP|BAPI|RFC|IDoc|I document)\b/i.test(t)) {
+    t = t
+      .replace(/\bSAP A BAP\b/gi, "SAP ABAP")
+      .replace(/\bABAPI\b/gi, "BAPI")
+      .replace(/\bI document\b/gi, "IDoc")
+      .replace(/\bIDocument\b/gi, "IDoc");
+  }
   return t.replace(/^[a-z]/, (ch) => ch.toUpperCase());
 }
 
@@ -68,6 +87,8 @@ function looksLikeQuestion(text: string): boolean {
   if (t.endsWith("?")) return true;
   if (WH.test(t)) return true;
   if (INTERVIEW.test(t)) return true;
+  if (REQUEST.test(t)) return true;
+  if (EMBEDDED_REQUEST.test(t)) return true;
   return false;
 }
 

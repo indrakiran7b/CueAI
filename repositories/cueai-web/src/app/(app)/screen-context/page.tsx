@@ -5,7 +5,6 @@ import {
   Eye,
   EyeOff,
   Monitor,
-  RefreshCw,
   ScanText,
   Shield,
 } from "lucide-react";
@@ -208,18 +207,7 @@ export default function ScreenContextPage() {
     }
   }
 
-  const monitorOptions =
-    displays.length > 0
-      ? displays
-      : ([
-          {
-            id: -1,
-            label: "Built-in Display",
-            bounds: { x: 0, y: 0, width: 0, height: 0 },
-            scaleFactor: 1,
-            primary: true,
-          },
-        ] as CaptureDisplay[]);
+  const monitorOptions = displays;
 
   return (
     <RequireAdmin>
@@ -230,7 +218,7 @@ export default function ScreenContextPage() {
             Screen Context AI
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Opt-in visual context with OCR — never without your permission.
+            Opt-in screen analysis. A screenshot is taken only when you press Analyze Screen.
           </p>
         </div>
         <Button
@@ -253,9 +241,8 @@ export default function ScreenContextPage() {
             <div className="flex-1">
               <h3 className="font-semibold">Allow screen capture?</h3>
               <p className="mt-1 text-sm text-muted">
-                CueAI will analyze visible content to answer questions about what&apos;s
-                on your screen. You can exclude apps and disable anytime. Data is not
-                stored unless you pin an answer.
+                Each time you press Analyze Screen, CueAI captures the selected display and sends the image to
+                its AI provider to answer what&apos;s on screen. You can disable this anytime.
               </p>
               <div className="mt-4 flex gap-2">
                 <Button
@@ -299,8 +286,8 @@ export default function ScreenContextPage() {
                   : aiAnswer
                     ? "Screen analyzed"
                     : enabled
-                      ? "OCR ready"
-                      : "OCR off"}
+                      ? "Vision ready"
+                      : "Vision off"}
               </Badge>
             </div>
           </div>
@@ -349,18 +336,10 @@ export default function ScreenContextPage() {
             <Button
               variant="ghost"
               size="sm"
-              disabled={!enabled || busy}
-              onClick={() => void captureAndAnalyze()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
               className="ml-auto"
+              aria-pressed={privacy}
               onClick={() => setPrivacy((p) => !p)}
-              title="Privacy excludes CueAI from capture — your screen content stays readable for analysis"
+              title="On: CueAI windows are kept out of the capture and the screenshot preview is hidden here. Off: the preview is shown; the overlay's own privacy setting is left unchanged. Your screen is analyzed either way."
             >
               {privacy ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               Privacy {privacy ? "on" : "off"}

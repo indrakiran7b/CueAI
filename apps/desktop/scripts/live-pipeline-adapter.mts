@@ -67,7 +67,6 @@ export function createAdapter(opts: { base: string; sampleRate: number }): Pipel
         allowSelfQuestions: true,
         finalized: true,
         turnFinalized: true,
-        forceSystem: true,
       });
       if (!decision.accept) {
         ev.skipped({ text: u.text, reason: decision.reason, at: performance.now() });

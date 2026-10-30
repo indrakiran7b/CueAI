@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FileText, RefreshCw, Search, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +15,8 @@ import {
 } from "@/lib/knowledge-categories";
 import {
   formatRelativeTime,
+  documentStatusLabel,
   knowledgeApi,
-  statusLabel,
   type KnowledgeDocument,
   type KnowledgeQueryResponse,
 } from "@/lib/knowledge-store";
@@ -39,7 +38,6 @@ function statusVariant(
 export default function KnowledgePage() {
   const { session } = useAuth();
   const canWrite = can(session?.role, "knowledge.write");
-  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [docs, setDocs] = useState<KnowledgeDocument[]>([]);
@@ -47,6 +45,7 @@ export default function KnowledgePage() {
   const [filter, setFilter] = useState("");
   const [uploadCategory, setUploadCategory] = useState<KnowledgeCategory>("engineering");
   const [busy, setBusy] = useState(false);
+  const [retrying, setRetrying] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [vectorConfigured, setVectorConfigured] = useState(false);
@@ -103,7 +102,13 @@ export default function KnowledgePage() {
   }, [docs, refresh]);
 
   async function onUpload(files: FileList | null) {
-    if (!files?.length || !canWrite) return;
+    if (!files?.length || !canWrite || busy) return;
+    const unsupported = Array.from(files).find((f) => !/\.(pdf|docx|txt|md|markdown|csv)$/i.test(f.name));
+    if (unsupported) {
+      setError(`${unsupported.name} is not supported. Upload PDF, DOCX, TXT, Markdown or CSV files.`);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -145,9 +150,25 @@ export default function KnowledgePage() {
     }
   }
 
+  async function onRetry(id: string) {
+    if (!canWrite || retrying) return;
+    setRetrying(id);
+    setError(null);
+    setMessage(null);
+    try {
+      await knowledgeApi.reindexDocument(id);
+      await refresh();
+      setMessage("Indexing restarted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Re-index failed.");
+    } finally {
+      setRetrying(null);
+    }
+  }
+
   async function onAsk() {
     const q = searchQuery.trim();
-    if (!q) return;
+    if (!q || searchBusy) return;
     setSearchBusy(true);
     setError(null);
     try {
@@ -283,33 +304,50 @@ export default function KnowledgePage() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         {docs.map((doc) => (
-          <button
+          <div
             key={doc.id}
-            type="button"
-            onClick={() => router.push(`/knowledge/documents/${doc.id}`)}
-            className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-left transition hover:border-[var(--primary)]/40 hover:bg-[var(--surface-hover)]"
+            className="relative rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-left transition hover:border-[var(--primary)]/40 hover:bg-[var(--surface-hover)]"
           >
             <div className="flex items-start gap-3">
               <FileText className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate font-medium">
+                <Link
+                  href={`/knowledge/documents/${doc.id}`}
+                  className="block truncate font-medium after:absolute after:inset-0 after:content-['']"
+                >
                   {doc.originalFilename || doc.title}
-                </p>
+                </Link>
                 <p className="text-xs text-muted">{categoryLabel(doc.category)}</p>
                 <p className="text-xs text-subtle">
                   {doc.type.toUpperCase()} · {doc.sizeLabel}
                 </p>
-                <div className="pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Badge variant={statusVariant(doc.status)}>
-                    {statusLabel(doc.status)}
+                    {documentStatusLabel(doc)}
                   </Badge>
+                  {doc.status === "failed" && canWrite && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="relative z-10 h-7 px-2 text-xs"
+                      loading={retrying === doc.id}
+                      disabled={busy || Boolean(retrying)}
+                      onClick={() => void onRetry(doc.id)}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Retry indexing
+                    </Button>
+                  )}
                 </div>
+                {doc.status === "failed" && doc.processingError && (
+                  <p className="text-xs text-[var(--danger-fg)]">{doc.processingError}</p>
+                )}
                 <p className="text-xs text-subtle">
                   Updated {formatRelativeTime(doc.updatedAt)}
                 </p>
               </div>
             </div>
-          </button>
+          </div>
         ))}
       </div>
 

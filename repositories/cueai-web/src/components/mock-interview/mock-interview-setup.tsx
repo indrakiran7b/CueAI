@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 export { apiErrorMessage };
 
 const MAX_JD_CHARS = 8000;
+/** Matches the 5 MB limit enforced by /api/resume/extract. */
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export type ResumeRoleValue = { resumeId: string; jobTitle: string; jobDescription: string };
 
@@ -88,6 +90,10 @@ export function ResumeRoleFields({
       setError("Upload a PDF or DOCX resume.");
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("The resume must be 5 MB or smaller.");
+      return;
+    }
     setUploadBusy(true);
     setError(null);
     try {
@@ -106,7 +112,11 @@ export function ResumeRoleFields({
     const file = files?.[0];
     if (!file) return;
     if (!/\.(pdf|docx|txt|md)$/i.test(file.name)) {
-      setError("Upload the job description as PDF, DOCX, or TXT.");
+      setError("Upload the job description as PDF, DOCX, TXT or Markdown.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("The job description file must be 5 MB or smaller.");
       return;
     }
     setJdBusy(true);

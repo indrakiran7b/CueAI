@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { mockInterviewRedirect } from "@/lib/mock-interview-route";
 import {
   Bookmark,
   Mic,
@@ -13,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LiveAnswerCard, useLiveAnswers } from "@/components/live/live-answers";
 import { TestCueAi } from "@/components/live/test-cueai";
-import { MockInterviewMode } from "@/components/mock-interview/mock-interview-mode";
 import { cn } from "@/lib/utils";
 import {
   hideCompanionOverlay,
@@ -29,12 +30,11 @@ import {
   type LiveSessionConfig,
 } from "@/lib/live-session-config";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { persistDesktopQuery, withDesktopParam } from "@/lib/desktop-query";
 import { formatShortcut } from "@/lib/shortcuts";
 import "./live-session.css";
 
-type InterviewMode = "regular" | "mock" | "test";
+type InterviewMode = "regular" | "test";
 
 /** Modes shown in the Live Session pill (Mock Interview lives in the sidebar). */
 const LIVE_SESSION_MODES: { id: InterviewMode; label: string }[] = [
@@ -42,25 +42,18 @@ const LIVE_SESSION_MODES: { id: InterviewMode; label: string }[] = [
   { id: "test", label: "Test CueAI" },
 ];
 
-const PAGE_TITLES: Record<InterviewMode, string> = {
-  regular: "Live Session",
-  mock: "Mock Interview",
-  test: "Live Session",
-};
-
 const MODE_DESCRIPTIONS: Record<InterviewMode, string> = {
   regular: "Start a live session to open Create Session. Cancel returns here without creating a meeting.",
-  mock: "Practice with an AI interviewer. Questions come from your resume and target role; results are saved to Meetings.",
   test: "Ask CueAI an interview question by voice or text and see the answer it would give in a Regular Interview.",
 };
 
-function modeFromSearchParams(params: URLSearchParams): InterviewMode {
-  const requested = params.get("mode");
-  const session = params.get("session") || params.get("mock");
-  const practice = params.get("practice");
-  if (requested === "test") return "test";
-  if (requested === "mock" || session || practice) return "mock";
-  return "regular";
+function setLiveQuery(params: Record<string, string | null>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  window.history.replaceState(null, "", url.toString());
 }
 
 type TranscriptLine = {
@@ -73,9 +66,6 @@ type TranscriptLine = {
 };
 
 export default function LiveMeetingPage() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [session, setSession] = useState<LiveSessionConfig | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [meetingId, setMeetingId] = useState<string | null>(null);
@@ -83,80 +73,40 @@ export default function LiveMeetingPage() {
   meetingIdRef.current = meetingId;
   const [hydrated, setHydrated] = useState(false);
   const setupAbortRef = useRef(false);
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<InterviewMode>("regular");
   /** Modes stay mounted once opened, so switching tabs never drops a running interview or test answers. */
   const [opened, setOpened] = useState<InterviewMode[]>(["regular"]);
-  const [mockSessionId, setMockSessionId] = useState<string | null>(null);
-  const [practiceId, setPracticeId] = useState<string | null>(null);
-
-  const replaceLiveQuery = useCallback(
-    (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      for (const [key, value] of Object.entries(updates)) {
-        if (value) params.set(key, value);
-        else params.delete(key);
-      }
-      if (params.get("mock")) {
-        const legacySession = params.get("mock");
-        if (legacySession) {
-          params.delete("mock");
-          if (!params.get("session")) params.set("session", legacySession);
-        }
-      }
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
+  const router = useRouter();
 
   useEffect(() => {
+    const mock = mockInterviewRedirect(window.location.search);
+    if (mock) {
+      router.replace(mock);
+      return;
+    }
     setHydrated(true);
     persistDesktopQuery();
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const params = new URLSearchParams(searchParams.toString());
-    const nextMode = modeFromSearchParams(params);
-    const sessionParam = params.get("session") || params.get("mock");
-    const practice = params.get("practice");
-
-    setMode(nextMode);
-    setOpened((list) => (list.includes(nextMode) ? list : [...list, nextMode]));
-    setMockSessionId(sessionParam);
-    setPracticeId(practice);
-
-    if (params.get("mock") && sessionParam) {
-      replaceLiveQuery({ mock: null, session: sessionParam, mode: "mock" });
-    } else if (practice && params.has("practice")) {
-      replaceLiveQuery({ practice: null, mode: "mock" });
-    }
-  }, [hydrated, searchParams, replaceLiveQuery]);
+    if (new URLSearchParams(window.location.search).get("mode") !== "test") return;
+    queueMicrotask(() => {
+      setMode("test");
+      setOpened((list) => (list.includes("test") ? list : [...list, "test"]));
+    });
+  }, [router]);
 
   function changeMode(next: InterviewMode) {
     setMode(next);
     setOpened((list) => (list.includes(next) ? list : [...list, next]));
-    if (next === "regular") {
-      replaceLiveQuery({ mode: null, session: null, practice: null, mock: null });
-      return;
-    }
-    if (next === "mock") {
-      replaceLiveQuery({ mode: "mock", practice: null });
-      return;
-    }
-    replaceLiveQuery({ mode: "test", session: null, practice: null, mock: null });
+    setLiveQuery({ mode: next === "regular" ? null : next });
   }
-
-  const onMockSessionChange = useCallback(
-    (id: string | null) => {
-      replaceLiveQuery({ session: id, mode: "mock" });
-    },
-    [replaceLiveQuery],
-  );
 
   useEffect(() => {
     function onEndFromOverlay() {
-      endSession();
+      void endSession().then((saved) => {
+        if (!saved) closeSession();
+      });
     }
     window.addEventListener("cueai:end-session", onEndFromOverlay);
     return () => window.removeEventListener("cueai:end-session", onEndFromOverlay);
@@ -178,7 +128,20 @@ export default function LiveMeetingPage() {
   }
 
   async function beginSession(config: LiveSessionConfig) {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
+    try {
+      await createSession(config);
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
+    }
+  }
+
+  async function createSession(config: LiveSessionConfig) {
     setupAbortRef.current = false;
+    setSaveNotice(null);
     const title = sessionTitle(config);
     saveLiveSessionConfig(config);
     let createdId: string | null = null;
@@ -219,9 +182,12 @@ export default function LiveMeetingPage() {
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { meeting?: { id?: string } };
-      createdId = data.meeting?.id || null;
+      createdId = res.ok ? data.meeting?.id || null : null;
     } catch {
-      // Overlay still works if persistence fails.
+      createdId = null;
+    }
+    if (!createdId) {
+      setSaveNotice("This session could not be saved, so it will not appear in Meetings Summary. The overlay still works.");
     }
     if (setupAbortRef.current) {
       if (createdId) {
@@ -250,10 +216,11 @@ export default function LiveMeetingPage() {
     setSession(next);
   }
 
-  function endSession(durationSec = 0, spoken: { who: string; text: string }[] = []) {
+  /** Saves the session end; returns false when the meeting could not be saved. */
+  async function endSession(durationSec = 0, spoken: { who: string; text: string }[] = []): Promise<boolean> {
     const id = meetingIdRef.current || meetingId;
     if (id) {
-      void fetch(`/api/meetings/${id}`, {
+      const saved = await fetch(`/api/meetings/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -261,8 +228,16 @@ export default function LiveMeetingPage() {
           durationSec,
           transcript: spoken.map((l) => ({ who: l.who, text: l.text })),
         }),
-      }).catch(() => undefined);
+      })
+        .then((res) => res.ok)
+        .catch(() => false);
+      if (!saved) return false;
     }
+    closeSession();
+    return true;
+  }
+
+  function closeSession() {
     clearLiveSessionConfig();
     setMeetingId(null);
     setSession(null);
@@ -290,34 +265,31 @@ export default function LiveMeetingPage() {
       <div
         data-live
         className={cn(
-          "w-full min-w-0 animate-fade-up",
-          mode === "mock" ? "max-w-6xl space-y-6 text-left" : "mx-auto max-w-2xl space-y-6 py-4 text-center",
+          "mx-auto w-full min-w-0 max-w-2xl space-y-6 py-4 text-center animate-fade-up",
         )}
       >
-        <div className={cn(mode === "mock" && "text-center sm:text-left")}>
-          <h1 className="ls-hero-title">{PAGE_TITLES[mode]}</h1>
-          <p className="ls-hero-sub mx-auto mt-2 sm:mx-0">{MODE_DESCRIPTIONS[mode]}</p>
+        <div>
+          <h1 className="ls-hero-title">Live Session</h1>
+          <p className="ls-hero-sub mx-auto mt-2">{MODE_DESCRIPTIONS[mode]}</p>
         </div>
-        {mode !== "mock" && (
-          <div className="flex justify-center">
-            <div className="ls-mode-group">
-              <span className="text-xs font-medium text-muted">Mode</span>
-              <div className="ls-mode-toggle" role="group" aria-label="Live Session mode">
-                {LIVE_SESSION_MODES.map(({ id, label }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={mode === id}
-                    onClick={() => changeMode(id)}
-                    className="ls-mode-btn"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+        <div className="flex justify-center">
+          <div className="ls-mode-group">
+            <span className="text-xs font-medium text-muted">Mode</span>
+            <div className="ls-mode-toggle" role="group" aria-label="Live Session mode">
+              {LIVE_SESSION_MODES.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={mode === id}
+                  onClick={() => changeMode(id)}
+                  className="ls-mode-btn"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+        </div>
         {mode === "regular" && (
           <Button
             variant="gradient"
@@ -329,16 +301,12 @@ export default function LiveMeetingPage() {
             Start Live Session
           </Button>
         )}
-        {(opened.includes("mock") || mode === "mock") && (
-          <div hidden={mode !== "mock"}>
-            <MockInterviewMode
-              active={mode === "mock"}
-              sessionId={mockSessionId}
-              practiceId={practiceId}
-              onSessionChange={onMockSessionChange}
-            />
-          </div>
-        )}
+        <p className="text-xs text-subtle">
+          Want to practise instead?{" "}
+          <Link href={withDesktopParam("/mock-interview")} className="text-primary hover:underline">
+            Open Mock Interview
+          </Link>
+        </p>
         {opened.includes("test") && (
           <div hidden={mode !== "test"}>
             <TestCueAi active={mode === "test"} />
@@ -354,6 +322,7 @@ export default function LiveMeetingPage() {
         <CreateSessionWizard
           onCancel={cancelSetup}
           onComplete={(config) => void beginSession(config)}
+          starting={starting}
         />
         <p className="mt-4 text-center text-xs text-subtle">
           Starting a session opens the CueAI desktop overlay (same as{" "}
@@ -365,7 +334,14 @@ export default function LiveMeetingPage() {
   }
 
   return (
-    <ActiveLiveSession config={session} meetingId={meetingId} onEnd={endSession} />
+    <>
+      {saveNotice && (
+        <p role="alert" className="mb-3 rounded-xl border border-amber-500/40 px-4 py-2 text-sm text-amber-400">
+          {saveNotice}
+        </p>
+      )}
+      <ActiveLiveSession config={session} meetingId={meetingId} onEnd={endSession} onDiscard={closeSession} />
+    </>
   );
 }
 
@@ -376,12 +352,17 @@ function ActiveLiveSession({
   config,
   meetingId,
   onEnd,
+  onDiscard,
 }: {
   config: LiveSessionConfig;
   meetingId: string | null;
-  onEnd: (durationSec?: number, spoken?: { who: string; text: string }[]) => void;
+  onEnd: (durationSec?: number, spoken?: { who: string; text: string }[]) => Promise<boolean>;
+  onDiscard: () => void;
 }) {
   const title = sessionTitle(config);
+  const router = useRouter();
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState(false);
   const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
@@ -400,10 +381,17 @@ function ActiveLiveSession({
   const [playheadPct, setPlayheadPct] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cueAiModeRef = useRef<CueAiMode>("private");
+  const timerStorageKey = meetingId ? `cueai-live-timer:${meetingId}` : null;
 
   useEffect(() => {
     setDesktopReady(isDesktopApp());
   }, []);
+
+  useEffect(() => {
+    if (!timerStorageKey) return;
+    const saved = Number.parseInt(sessionStorage.getItem(timerStorageKey) || "", 10);
+    if (Number.isFinite(saved) && saved > 0) setSeconds((current) => Math.max(current, saved));
+  }, [timerStorageKey]);
 
   useEffect(() => {
     cueAiModeRef.current = cueAiMode;
@@ -448,9 +436,17 @@ function ActiveLiveSession({
 
   useEffect(() => {
     if (paused) return;
-    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    const t = setInterval(
+      () =>
+        setSeconds((s) => {
+          const next = s + 1;
+          if (timerStorageKey) sessionStorage.setItem(timerStorageKey, String(next));
+          return next;
+        }),
+      1000,
+    );
     return () => clearInterval(t);
-  }, [paused]);
+  }, [paused, timerStorageKey]);
 
   // Real transcript comes from desktop live capture — no simulated lines.
   useEffect(() => {
@@ -506,8 +502,6 @@ function ActiveLiveSession({
   }
 
   const cueAiActive = cueAiMode !== "inactive";
-  const showLiveProcessing =
-    cueAiMode === "live" && cueAiProcessing === "listening" && !paused;
   const showInitializing = cueAiActive && cueAiProcessing === "initializing";
 
   return (
@@ -569,29 +563,46 @@ function ActiveLiveSession({
               {sharing ? "Sharing · Presenter mode" : "Mark screen sharing"}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
+          <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)} aria-pressed={paused}>
             {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-            {paused ? "Resume" : "Pause"}
+            {paused ? "Resume timer" : "Pause timer"}
           </Button>
-          <Link
-            href={
-              meetingId
+          <Button
+            variant="danger"
+            size="sm"
+            loading={ending}
+            disabled={ending}
+            onClick={async () => {
+              const href = meetingId
                 ? withDesktopParam(`/meetings/${meetingId}/summary`)
-                : withDesktopParam("/meetings")
-            }
-            onClick={() =>
-              onEnd(
+                : withDesktopParam("/meetings");
+              setEnding(true);
+              setEndError(false);
+              const saved = await onEnd(
                 seconds,
                 lines.map((l) => ({ who: l.speaker, text: l.text })),
-              )
-            }
+              );
+              setEnding(false);
+              if (saved) {
+                if (timerStorageKey) sessionStorage.removeItem(timerStorageKey);
+                router.push(href);
+              }
+              else setEndError(true);
+            }}
           >
-            <Button variant="danger" size="sm">
-              <Square className="h-3.5 w-3.5" />
-              End Session
-            </Button>
-          </Link>
+            <Square className="h-3.5 w-3.5" />
+            End Session
+          </Button>
         </div>
+        {endError && (
+          <p role="alert" className="w-full text-right text-xs text-red-400">
+            The session could not be saved. Try again, or{" "}
+            <button type="button" className="underline" onClick={onDiscard}>
+              end without saving
+            </button>
+            .
+          </p>
+        )}
       </div>
 
       <div className="ls-panel flex items-center gap-4 p-4">
@@ -599,25 +610,11 @@ function ActiveLiveSession({
           <Mic className={cn("h-4 w-4", !paused && "text-foreground")} />
           Mic
         </div>
-        <div className="flex h-10 flex-1 items-end gap-[3px]">
-          {Array.from({ length: 48 }).map((_, i) => (
-            <span
-              key={i}
-              className={cn(
-                "ls-wave-bar",
-                !paused && cueAiMode === "live" && "wave-bar is-active",
-                cueAiMode === "inactive" && "opacity-40"
-              )}
-              style={{
-                height:
-                  paused || cueAiMode === "inactive"
-                    ? "30%"
-                    : `${20 + ((i * 13) % 80)}%`,
-                animationDelay: `${(i % 12) * 0.07}s`,
-              }}
-            />
-          ))}
-        </div>
+        <p className="flex-1 text-xs text-muted">
+          {cueAiMode === "inactive"
+            ? "CueAI is off. No audio is captured."
+            : "Audio is captured only in the CueAI desktop overlay, which shows its own recording indicator."}
+        </p>
         <div className="flex items-center gap-2 text-sm text-muted">
           <Volume2
             className={cn("h-4 w-4", cueAiMode === "live" ? "text-foreground" : "text-subtle")}
@@ -643,7 +640,15 @@ function ActiveLiveSession({
               </Button>
             </div>
           </div>
-          <div ref={scrollRef} className="cue-scroll flex-1 space-y-3 overflow-y-auto p-4">
+          <div
+            ref={scrollRef}
+            className="cue-scroll flex-1 space-y-3 overflow-y-auto p-4"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              const range = el.scrollHeight - el.clientHeight;
+              setPlayheadPct(range > 0 ? Math.round((el.scrollTop / range) * 100) : 0);
+            }}
+          >
             {cueAiMode === "inactive" && (
               <div className="ls-empty">
                 <p className="text-sm font-medium">CueAI is off</p>
@@ -676,10 +681,10 @@ function ActiveLiveSession({
             )}
             {cueAiMode === "live" && lines.length === 0 && (
               <div className="ls-empty">
-                <p className="text-sm font-medium">Waiting for a question…</p>
+                <p className="text-sm font-medium">Transcript is in the desktop overlay</p>
                 <p className="max-w-sm text-xs text-muted">
-                  Live transcript appears here when CueAI&apos;s live audio assistance captures speech. CueAI does
-                  not invent meeting dialogue.
+                  The CueAI overlay transcribes and answers during the call. Its questions and answers are saved
+                  to this meeting&apos;s summary when the session ends.
                 </p>
               </div>
             )}
@@ -731,61 +736,21 @@ function ActiveLiveSession({
             {showInitializing && cueAiMode === "live" && (
               <p className="px-2 text-xs text-muted">Starting CueAI Live…</p>
             )}
-            {showLiveProcessing && (
-              <div className="flex items-center gap-1.5 px-2 text-subtle">
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground" />
-                <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground"
-                  style={{ animationDelay: "0.2s" }}
-                />
-                <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-foreground"
-                  style={{ animationDelay: "0.4s" }}
-                />
-                <span className="ml-2 text-xs">Listening…</span>
-              </div>
-            )}
           </div>
           <div className="border-t border-[var(--border)] px-4 py-3">
-            <div className="ls-playhead">
+            <div
+              className="ls-playhead"
+              role="progressbar"
+              aria-label="Transcript scroll position"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={playheadPct}
+            >
               <div
-                className={cn(
-                  "ls-playhead-fill",
-                  cueAiMode === "live" ? "opacity-100" : "w-[12%] opacity-40"
-                )}
-                style={cueAiMode === "live" ? { width: `${playheadPct}%` } : undefined}
+                className={cn("ls-playhead-fill", cueAiMode === "live" ? "opacity-100" : "opacity-40")}
+                style={{ width: `${playheadPct}%` }}
               />
-              {cueAiMode === "live" && (
-                <>
-                  <button
-                    type="button"
-                    className="ls-playhead-knob"
-                    style={{ left: `${playheadPct}%` }}
-                    aria-label="Scrub transcript playhead"
-                    onClick={() => {
-                      const next = playheadPct >= 85 ? 28 : playheadPct + 18;
-                      setPlayheadPct(next);
-                      scrollRef.current?.scrollTo({
-                        top: (scrollRef.current.scrollHeight * next) / 100,
-                        behavior: "smooth",
-                      });
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="ls-bookmark-mark"
-                    style={{ left: "28%" }}
-                    title="Jump to bookmark"
-                    aria-label="Jump to bookmark"
-                    onClick={() => {
-                      setPlayheadPct(28);
-                      const el = scrollRef.current;
-                      if (!el) return;
-                      el.scrollTo({ top: el.scrollHeight * 0.28, behavior: "smooth" });
-                    }}
-                  />
-                </>
-              )}
+              <span className="ls-playhead-knob" style={{ left: `${playheadPct}%` }} aria-hidden />
             </div>
           </div>
         </div>
@@ -795,7 +760,7 @@ function ActiveLiveSession({
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium tracking-tight">AI suggestions</p>
               {cueAiMode === "live" && cueAiProcessing === "listening" ? (
-                <Badge variant="default">Streaming</Badge>
+                <Badge variant="default">{answers.busy ? "Answering" : "Live"}</Badge>
               ) : cueAiMode === "private" ? (
                 <Badge variant="default">Private</Badge>
               ) : (

@@ -68,6 +68,7 @@ function TranslationContent() {
   const [bilingual, setBilingual] = useState(true);
   const [mode, setMode] = useState("live");
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [loading, setLoading] = useState(Boolean(meetingId));
   const [error, setError] = useState<string | null>(null);
@@ -253,12 +254,14 @@ function TranslationContent() {
   const summaryText = displayTranslated(rendered.summary, summaryOriginal, lang);
 
   async function copyTranslation() {
+    setCopyFailed(false);
     try {
       await navigator.clipboard.writeText(summaryText);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
+      setCopyFailed(true);
     }
   }
 
@@ -509,10 +512,16 @@ function TranslationContent() {
             className="mt-4"
             size="sm"
             variant="outline"
+            disabled={rendered.summary?.status === "loading"}
             onClick={() => void copyTranslation()}
           >
             {copied ? "Copied" : "Copy translation"}
           </Button>
+          {copyFailed && (
+            <p role="alert" className="mt-2 text-xs text-red-400">
+              Copy failed. Select the text and copy it manually.
+            </p>
+          )}
         </Card>
       )}
     </div>

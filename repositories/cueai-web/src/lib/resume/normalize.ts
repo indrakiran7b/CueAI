@@ -142,6 +142,7 @@ export function coerceResume(value: unknown): StructuredResume {
   resume.achievements = cleanList(o.achievements, LIMITS.items, LIMITS.bullet);
   resume.coursework = cleanList(o.coursework, LIMITS.items, LIMITS.short).flatMap(splitSkills);
   resume.extra = coerceExtra(o.extra);
+  if (o.projectsFirst === true) resume.projectsFirst = true;
   return resume;
 }
 

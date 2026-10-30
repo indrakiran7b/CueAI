@@ -30,9 +30,15 @@ function runXml(run: DocRun, size: number, color: string, font: string) {
 
 const TAB = "<w:r><w:tab/></w:r>";
 
+/** Confirms the generated Word XML contains every paragraph of the layout, so the DOCX matches the preview. */
+export function docxMatchesLayout(xml: string, layout: ResumeLayout): boolean {
+  if (!xml.includes("<w:body>") || !xml.includes("<w:sectPr>")) return false;
+  return layout.blocks.every((b) => b.runs.every((r) => !r.text.trim() || xml.includes(escapeXml(r.text))));
+}
+
 /** `word/document.xml` for the layout: one Word paragraph per resume paragraph, same order, spacing and page breaks. */
 export function resumeDocumentXml(layout: ResumeLayout): string {
-  const style = getTemplate(layout.templateId).style;
+  const style = layout.style ?? getTemplate(layout.templateId).style;
   const font = WORD_FONT[style.family];
   const contentWidth = PAGE.width - style.margin.left - style.margin.right;
   const body: string[] = [];

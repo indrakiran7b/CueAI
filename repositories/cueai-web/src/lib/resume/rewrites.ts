@@ -1,4 +1,5 @@
-import { isKnownSkill, mentions } from "./ats";
+import { canonicalSkill, display, evidences, isKnownSkill, mentions } from "./ats";
+import { isMeaningfulRewrite } from "./diff";
 import { cleanText, dedupe, splitSkills } from "./normalize";
 import type { ResumeRewrite, ResumeSkillGroup, StructuredResume } from "./types";
 
@@ -58,8 +59,11 @@ export function fabricationIssues(
         : `adds figures that are not in the original line (${dedupe(newNumbers).slice(0, 3).join(", ")})`,
     );
   }
-  const terms = dedupe([...skillVocabulary, ...candidateSkillTerms(after)]);
-  const newSkills = terms.filter((t) => mentions(after, t) && !mentions(sourceText, t));
+  // Keyed by canonical name so "REST APIs" is checked as "REST API"; labels keep the job's spelling.
+  const terms = new Map<string, string>();
+  for (const t of skillVocabulary) if (!terms.has(canonicalSkill(t))) terms.set(canonicalSkill(t), t);
+  for (const t of candidateSkillTerms(after)) if (!terms.has(canonicalSkill(t))) terms.set(canonicalSkill(t), display(canonicalSkill(t)));
+  const newSkills = [...terms].filter(([key]) => mentions(after, key) && !evidences(sourceText, key)).map(([, label]) => label);
   if (newSkills.length) issues.push(`claims ${newSkills.slice(0, 3).join(", ")}, which your resume does not show`);
   return issues;
 }
@@ -147,7 +151,8 @@ export function validateRewrites(
     }
 
     const after = cleanText(item.text ?? item.after ?? item.rewritten, target === "summary" ? 1500 : 700);
-    if (!after || after === current.text) continue;
+    // Identical, whitespace/punctuation-only or one-word synonym edits are not rewrites.
+    if (!after || (current.text && !isMeaningfulRewrite(current.text, after))) continue;
     if (current.text && after.length > Math.max(current.text.length * 3, current.text.length + 400)) continue;
     seen.add(target);
     const lineTarget = /\.bullets\.\d+$|^achievements\.\d+$/.test(target);

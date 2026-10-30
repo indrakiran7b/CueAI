@@ -18,6 +18,7 @@ import {
   type LlmGenerateRequest,
   type LlmGenerateResult,
 } from "@/lib/server/llm-generate";
+import { recordProviderFailure, recordProviderSuccess } from "@/lib/server/provider-health";
 
 export type AiFeature =
   | "live_answer"
@@ -248,9 +249,11 @@ export async function generateAi(input: AiGenerateInput): Promise<AiRouterResult
           ms: Date.now() - started,
         });
       }
+      recordProviderSuccess(cred.provider, result.model || cred.model, input.feature);
       return { ...result, latencyMs: Date.now() - started, notice };
     } catch (err) {
       last = classifyAiError(err, cred);
+      recordProviderFailure(cred.provider, cred.model, input.feature, last.code);
       console.warn("[AI_ROUTER] provider_failed", {
         feature: input.feature,
         provider: cred.provider,

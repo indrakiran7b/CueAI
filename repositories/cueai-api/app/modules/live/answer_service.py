@@ -125,8 +125,21 @@ def _ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-async def _groq_json(system: str, prompt: str, max_tokens: int = LIVE_ANSWER_MAX_TOKENS) -> dict[str, Any]:
-    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+def _groq_model(complexity: str = "simple") -> str:
+    if complexity == "complex":
+        return os.environ.get("GROQ_MODEL_COMPLEX", "").strip() or os.environ.get(
+            "GROQ_MODEL", "openai/gpt-oss-20b"
+        )
+    return os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+
+
+async def _groq_json(
+    system: str,
+    prompt: str,
+    max_tokens: int = LIVE_ANSWER_MAX_TOKENS,
+    complexity: str = "simple",
+) -> dict[str, Any]:
+    model = _groq_model(complexity)
     client = http_client()
     try:
         res = await client.post(
@@ -253,9 +266,14 @@ async def analyze_with_qwen(image: str, prompt: str, session_context: str) -> di
     }
 
 
-async def iter_groq_tokens(system: str, prompt: str, max_tokens: int = LIVE_ANSWER_MAX_TOKENS):
+async def iter_groq_tokens(
+    system: str,
+    prompt: str,
+    max_tokens: int = LIVE_ANSWER_MAX_TOKENS,
+    complexity: str = "simple",
+):
     """Yield incremental Groq SSE text deltas. Does not buffer the full answer first."""
-    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+    model = _groq_model(complexity)
     client = http_client()
     try:
         async with client.stream(
@@ -397,7 +415,15 @@ def plan_live_answer(body: dict[str, Any]) -> LivePlan:
             meeting_id=mid,
             document_ids=active_meeting_document_ids(),
         )
-    analysis = analyze_question(prompt, history=history, transcript=transcript, uncertain=body.get("uncertain") is True)
+    briefing = split_briefing(session_context)
+    analysis = analyze_question(
+        prompt,
+        history=history,
+        transcript=transcript,
+        uncertain=body.get("uncertain") is True,
+        verified_context=briefing.candidate,
+        target_role=briefing.job,
+    )
     answer_mode = mode == "answer" and not parse_inline_image(body.get("image"))
     system = build_system_instruction("", "CANDIDATE RESUME" in session_context or bool(session_context.strip()))
     user_prompt = build_user_prompt(
@@ -494,7 +520,12 @@ async def generate_live_answer(
         fallback_reason = "skip_primary" if skip_primary else "groq_unconfigured"
     else:
         try:
-            result = await _groq_json(system, user_prompt, plan.max_tokens)
+            result = await _groq_json(
+                system,
+                user_prompt,
+                plan.max_tokens,
+                plan.analysis.complexity,
+            )
             provider = "groq"
         except LiveAnswerError as exc:
             if not _can_fallback(exc, gemini):
@@ -537,6 +568,9 @@ async def generate_live_answer(
         "confidence": confidence,
         "model": result["model"],
         "provider": provider,
+        "category": plan.analysis.category,
+        "selectedLanguage": plan.analysis.language,
+        "languageSource": plan.analysis.language_source,
         "requestId": rid,
         "validationStatus": guarded.validation_status,
         "timings": {

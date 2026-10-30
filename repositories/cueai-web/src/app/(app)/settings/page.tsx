@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,14 @@ import { DesktopPreferencesPanel } from "@/components/desktop/desktop-preference
 import { PersonalizationCard } from "@/components/settings/personalization-card";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
+import { AiProvidersPanel } from "@/components/settings/ai-providers-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { SettingsNav } from "@/components/settings/settings-nav";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { deleteAccountLocal } from "@/lib/auth";
 import { isAdminUser } from "@/lib/app-access";
 import { CUEAI_SHORTCUTS, formatShortcut } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 
 const SECTION_IDS = [
   "profile",
@@ -39,23 +41,14 @@ export default function SettingsPage() {
   const { session, refresh, logout } = useAuth();
   const admin = isAdminUser(session?.role);
   const [workspace, setWorkspace] = useState(session?.workspace || "");
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [shortcutRows, setShortcutRows] = useState(() =>
     CUEAI_SHORTCUTS.map((row) => ({
       action: row.action,
       keys: formatShortcut(...row.parts),
     })),
   );
-  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const raw = localStorage.getItem("cueai-notif-prefs");
-      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    } catch {
-      return {};
-    }
-  });
-
   useEffect(() => {
     setShortcutRows(
       CUEAI_SHORTCUTS.map((row) => ({
@@ -98,9 +91,12 @@ export default function SettingsPage() {
   async function saveWorkspace() {
     const nextName = workspace.trim();
     if (!nextName) {
-      setSaveMsg("Workspace name is required.");
+      setSaveMsg({ ok: false, text: "Workspace name is required." });
       return;
     }
+    if (savingWorkspace) return;
+    setSavingWorkspace(true);
+    setSaveMsg(null);
     try {
       const res = await fetch("/api/admin/workspace", {
         method: "PATCH",
@@ -110,19 +106,21 @@ export default function SettingsPage() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string; workspace?: { name?: string } };
       if (!res.ok) {
-        setSaveMsg(data.error || "Unable to update workspace.");
+        setSaveMsg({ ok: false, text: data.error || "Unable to update workspace." });
         return;
       }
       await refresh();
       setWorkspace(data.workspace?.name || nextName);
-      setSaveMsg("Workspace updated.");
+      setSaveMsg({ ok: true, text: "Workspace updated." });
     } catch {
-      setSaveMsg("Unable to update workspace.");
+      setSaveMsg({ ok: false, text: "Unable to update workspace." });
+    } finally {
+      setSavingWorkspace(false);
     }
   }
 
   async function onDeleteAccount() {
-    if (!window.confirm("Delete this local CueAI account and session?")) return;
+    if (!window.confirm("Sign out and clear the CueAI account details cached in this browser? Your server account is not deleted.")) return;
     deleteAccountLocal();
     await logout();
     window.location.href = "/signup";
@@ -141,53 +139,39 @@ export default function SettingsPage() {
 
         {section === "profile" && <PersonalizationCard />}
 
-        {section === "models" && (
-          <Card className="space-y-4 p-6">
-            <CardTitle>AI Models</CardTitle>
-            {[
-              { name: "CueAI Fast", desc: "Lowest latency for live answers", tag: "Default" },
-              { name: "CueAI Reason", desc: "Deeper reasoning for summaries", tag: null },
-              { name: "Private endpoint", desc: "Enterprise VPC model", tag: "Enterprise" },
-            ].map((m) => (
-              <label
-                key={m.name}
-                className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border)] p-4 hover:bg-[var(--surface-hover)]"
-              >
-                <input
-                  type="radio"
-                  name="model"
-                  defaultChecked={m.tag === "Default"}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{m.name}</p>
-                    {m.tag && <Badge variant="info">{m.tag}</Badge>}
-                  </div>
-                  <p className="text-sm text-muted">{m.desc}</p>
-                </div>
-              </label>
-            ))}
-          </Card>
-        )}
+        {section === "models" && <AiProvidersPanel />}
 
         {section === "privacy" && (
           <Card className="space-y-4 p-6">
             <CardTitle>Privacy</CardTitle>
-            {[
-              "Store meeting recordings",
-              "Allow Screen Context by default",
-              "Share anonymized analytics",
-              "Index knowledge base for semantic search",
-            ].map((label, i) => (
-              <label
-                key={label}
-                className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
+            <div className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
+              <p className="font-medium">Data retention</p>
+              <p className="mt-1 text-muted">
+                Retention periods and automatic deletion are set per workspace by admins.
+              </p>
+              {admin && (
+                <Link href="/admin" className="mt-2 inline-block text-primary underline-offset-4 hover:underline">
+                  Open Admin Portal
+                </Link>
+              )}
+            </div>
+            <div className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm">
+              <p className="font-medium">Knowledge Base search</p>
+              <p className="mt-1 text-muted">
+                Whether documents are searched semantically or by keywords depends on the server configuration.
+              </p>
+              <button
+                type="button"
+                onClick={() => selectSection("models")}
+                className="mt-2 text-primary underline-offset-4 hover:underline"
               >
-                {label}
-                <input type="checkbox" defaultChecked={i !== 1} className="rounded" />
-              </label>
-            ))}
+                See AI Providers &amp; Models
+              </button>
+            </div>
+            <p className="text-xs text-muted">
+              Recording storage, Screen Context defaults and analytics sharing cannot be changed here yet, so no
+              switches are shown for them.
+            </p>
           </Card>
         )}
 
@@ -247,32 +231,9 @@ export default function SettingsPage() {
           <Card className="space-y-3 p-6">
             <CardTitle>Notifications</CardTitle>
             <CardDescription>
-              Preferences are stored on this device only. Push/email delivery is
-              not connected yet.
+              In-app notifications appear under the bell in the top bar. Email and push notifications are not
+              available yet, so there is nothing to configure here.
             </CardDescription>
-            {[
-              "Summary ready",
-              "Action item due",
-              "Knowledge re-index complete",
-              "Billing alerts",
-            ].map((l) => (
-              <label
-                key={l}
-                className="flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3 text-sm"
-              >
-                {l}
-                <input
-                  type="checkbox"
-                  className="rounded"
-                  checked={notifPrefs[l] ?? false}
-                  onChange={(e) => {
-                    const next = { ...notifPrefs, [l]: e.target.checked };
-                    setNotifPrefs(next);
-                    localStorage.setItem("cueai-notif-prefs", JSON.stringify(next));
-                  }}
-                />
-              </label>
-            ))}
           </Card>
         )}
 
@@ -284,19 +245,13 @@ export default function SettingsPage() {
               value={workspace}
               onChange={(e) => setWorkspace(e.target.value)}
             />
-            <Input
-              label="Slug"
-              value={workspace
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "-")
-                .replace(/^-|-$/g, "") || "workspace"}
-              readOnly
-            />
-            <Button variant="primary" onClick={() => void saveWorkspace()}>
+            <Button variant="primary" loading={savingWorkspace} disabled={savingWorkspace} onClick={() => void saveWorkspace()}>
               Update workspace
             </Button>
             {saveMsg && section === "workspace" && (
-              <p className="text-xs text-teal-300">{saveMsg}</p>
+              <p role={saveMsg.ok ? "status" : "alert"} className={cn("text-xs", saveMsg.ok ? "text-teal-300" : "text-red-400")}>
+                {saveMsg.text}
+              </p>
             )}
           </Card>
         )}
@@ -317,10 +272,14 @@ export default function SettingsPage() {
           <Card className="space-y-4 border-red-500/30 p-6">
             <CardTitle className="text-red-400">Delete Account</CardTitle>
             <p className="text-sm text-muted">
-              Permanently delete your CueAI account and associated data.
+              Accounts and their workspace data are deleted by a workspace admin in Admin Portal → Users. This page
+              cannot delete your server account.
+            </p>
+            <p className="text-sm text-muted">
+              You can sign out and remove the account details cached in this browser.
             </p>
             <Button variant="danger" onClick={() => void onDeleteAccount()}>
-              Delete Account
+              Sign out and clear this device
             </Button>
           </Card>
         )}

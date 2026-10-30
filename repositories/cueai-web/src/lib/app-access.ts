@@ -12,15 +12,16 @@ export type CueAiNavItem = {
 /** Paths that must not open inside Electron. Empty: Resume Tailor is available on desktop. */
 export const DESKTOP_WEB_ONLY_PREFIXES = [] as const;
 
+/** Sidebar order, labels and role gating. The sidebar renders exactly this list. */
 export const CUEAI_NAV: CueAiNavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/meetings", label: "Meetings" },
-  { href: "/meetings/live", label: "Live Session" },
-  { href: "/meetings/live?mode=mock", label: "Mock Interview" },
   { href: "/resume", label: "Resume Tailor" },
-  { href: "/translation", label: "Translation", adminOnly: true },
-  { href: "/screen-context", label: "Screen Context", adminOnly: true },
+  { href: "/mock-interview", label: "Mock Interview" },
+  { href: "/meetings/live", label: "Live Session" },
+  { href: "/meetings", label: "Meetings Summary" },
   { href: "/knowledge", label: "Knowledge Base", adminOnly: true },
+  { href: "/screen-context", label: "Screen Context", adminOnly: true },
+  { href: "/translation", label: "Translation", adminOnly: true },
   { href: "/admin", label: "Admin Portal", adminOnly: true },
   { href: "/settings", label: "Settings", pinBottom: true },
 ];

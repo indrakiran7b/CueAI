@@ -7,6 +7,8 @@ import {
   LIVE_ANSWER_MAX_TOKENS,
   LIVE_HISTORY_MAX,
   LIVE_TRANSCRIPT_WINDOW,
+  perQuestionAccuracyNotes,
+  validateQuestionSpecificAnswer,
   type LiveAnswerMode,
   type LiveExchange,
   type LiveTranscriptLine,
@@ -247,6 +249,64 @@ function errorCategory(result: LiveStreamResult | null, attempts: { provider: st
     .join(",");
 }
 
+type KnowledgeBaseRequest = { prompt: string; stream: boolean };
+
+function parseKnowledgeBaseRequest(raw: ArrayBuffer): KnowledgeBaseRequest | null {
+  try {
+    const body = JSON.parse(new TextDecoder().decode(raw)) as { source?: unknown; prompt?: unknown; stream?: unknown };
+    if (body?.source !== "knowledge_base") return null;
+    return { prompt: String(body.prompt || "").trim().slice(0, 2000), stream: body.stream === true };
+  } catch {
+    return null;
+  }
+}
+
+async function answerKnowledgeBase(
+  request: NextRequest,
+  session: NonNullable<Awaited<ReturnType<typeof requireAuthOrDevice>>["session"]>,
+  body: KnowledgeBaseRequest,
+  requestId: string,
+) {
+  if (!body.prompt) return json({ error: "prompt is required." }, 400);
+  const { answerFromKnowledgeBase } = await import("@/lib/server/rag/kb-answer");
+  const { getActiveMeetingForSession } = await import("@/lib/server/meetings");
+  const active = await getActiveMeetingForSession(session).catch(() => null);
+  // Workspace comes from the signed session, never from the request body.
+  const result = await answerFromKnowledgeBase({
+    workspaceId: session.workspaceId,
+    userId: session.userId,
+    question: body.prompt,
+    ownMeetingId: active && active.userId === session.userId ? active.id : null,
+    signal: request.signal,
+  });
+  console.info("live_answer_kb", { requestId, status: result.status });
+
+  if (result.status === "service_error") {
+    const payload = { error: result.message, code: result.code, retryable: result.retryable, requestId };
+    if (!body.stream) return json(payload, 503);
+    return new Response(`data: ${JSON.stringify({ type: "error", ...payload })}\n\n`, { headers: sseHeaders() });
+  }
+
+  const done = {
+    answer: "answer" in result ? result.answer : result.message,
+    kbStatus: result.status,
+    sourceType: "knowledge_base",
+    knowledgeUsed: result.status === "answered" || result.status === "partial",
+    sources: "sources" in result ? result.sources : [],
+    provider: "provider" in result ? result.provider : null,
+    model: "model" in result ? result.model : null,
+    notice: "notice" in result ? result.notice || null : null,
+    requestId,
+  };
+  if (!body.stream) return json(done);
+  const events = [
+    { type: "meta", requestId, sourceType: "knowledge_base" },
+    { type: "token", text: done.answer },
+    { type: "done", ...done },
+  ];
+  return new Response(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""), { headers: sseHeaders() });
+}
+
 export async function POST(request: NextRequest) {
   const { error, session } = await requireAuthOrDevice(request);
   if (error || !session) {
@@ -258,6 +318,11 @@ export async function POST(request: NextRequest) {
 
   const requestId = crypto.randomUUID().slice(0, 12);
   const rawBody = await request.arrayBuffer();
+
+  // Knowledge Base mode is answered here only, never by the general pipeline or the API service.
+  const kbBody = parseKnowledgeBaseRequest(rawBody);
+  if (kbBody) return answerKnowledgeBase(request, session, kbBody, requestId);
+
   const forceLocal = forceLiveAnswerLocal();
 
   if (!forceLocal) {
@@ -382,7 +447,7 @@ export async function POST(request: NextRequest) {
     let profileContext = "";
 
     const history = parseHistory(body?.history);
-    const analysis = analyzeQuestion(prompt, {
+    let analysis = analyzeQuestion(prompt, {
       history,
       transcript,
       uncertain: body?.uncertain === true,
@@ -400,6 +465,14 @@ export async function POST(request: NextRequest) {
         isTest,
       });
       const contextMs = Date.now() - contextStarted;
+      const briefing = splitBriefing(ctx.sessionContext, ctx.profileContext);
+      analysis = analyzeQuestion(prompt, {
+        history: ctx.history,
+        transcript,
+        uncertain: body?.uncertain === true,
+        verifiedContext: briefing.candidate,
+        targetRole: briefing.job,
+      });
 
       const system = buildSystemInstruction(
         ctx.profileContext,
@@ -427,6 +500,9 @@ export async function POST(request: NextRequest) {
             type: "meta",
             requestId,
             responseType: analysis.responseType,
+            category: analysis.category,
+            selectedLanguage: analysis.language,
+            languageSource: analysis.languageSource,
             isFollowUp: analysis.isFollowUp,
             contextMs,
           });
@@ -438,25 +514,26 @@ export async function POST(request: NextRequest) {
             send({ type: "token", text: token });
           };
           try {
-            if (userByok) {
-              // The user's saved key is used alone, with the provider, model and endpoint chosen in Settings.
-              const { streamWithCredential } = await import("@/lib/server/llm-generate");
-              const r = await streamWithCredential(
-                userByok,
-                {
-                  system,
-                  prompt: answerPrompt,
-                  temperature: 0.3,
-                  maxOutputTokens: analysis.maxTokens,
-                  signal: request.signal,
-                },
-                onToken,
-              );
-              result = { ...r, attempts: [] };
-            } else {
-              result = await streamLiveAnswer({
+            const runAnswer = async (requestPrompt: string, tokenHandler: (token: string) => void) => {
+              if (userByok) {
+                // The user's saved key is used alone, with the provider, model and endpoint chosen in Settings.
+                const { streamWithCredential } = await import("@/lib/server/llm-generate");
+                const r = await streamWithCredential(
+                  userByok,
+                  {
+                    system,
+                    prompt: requestPrompt,
+                    temperature: 0.3,
+                    maxOutputTokens: analysis.maxTokens,
+                    signal: request.signal,
+                  },
+                  tokenHandler,
+                );
+                return { ...r, attempts: [] };
+              }
+              return streamLiveAnswer({
                 system,
-                prompt: answerPrompt,
+                prompt: requestPrompt,
                 maxTokens: analysis.maxTokens,
                 complexity: analysis.complexity,
                 temperature: 0.3,
@@ -465,8 +542,25 @@ export async function POST(request: NextRequest) {
                 groqKey: effectiveGroqKey,
                 groqModel: byokGroqModel,
                 gemini: chainGemini,
-                onToken,
+                onToken: tokenHandler,
               });
+            };
+            const accuracyNotes = perQuestionAccuracyNotes(prompt);
+            result = await runAnswer(answerPrompt, accuracyNotes ? () => {} : onToken);
+            let accuracyFailures = validateQuestionSpecificAnswer(prompt, result.text);
+            if (accuracyFailures.length) {
+              result = await runAnswer(
+                `${answerPrompt}\n\nYour previous draft failed these deterministic accuracy checks:\n- ${accuracyFailures.join(
+                  "\n- ",
+                )}\nWrite a fresh, internally consistent answer that satisfies every check. Do not mention the correction.`,
+                onToken,
+              );
+              accuracyFailures = validateQuestionSpecificAnswer(prompt, result.text);
+            } else if (accuracyNotes) {
+              onToken(result.text);
+            }
+            if (accuracyFailures.length) {
+              console.warn("live_answer_accuracy_guard_failed", { requestId, failures: accuracyFailures });
             }
             const guarded = guardLiveAnswer(result.text, { analysis, context: evidence });
             console.info("live_answer_stream", {
@@ -607,6 +701,15 @@ export async function POST(request: NextRequest) {
     } catch {
       // Meeting briefing is optional.
     }
+
+    const briefing = splitBriefing(sessionContext, profileContext);
+    analysis = analyzeQuestion(prompt, {
+      history,
+      transcript,
+      uncertain: body?.uncertain === true,
+      verifiedContext: briefing.candidate,
+      targetRole: briefing.job,
+    });
 
     const system = buildSystemInstruction(profileContext, hasResume || Boolean(sessionContext));
 
@@ -810,6 +913,10 @@ export async function POST(request: NextRequest) {
     console.info("live_answer", {
       requestId,
       provider,
+      model: result.model,
+      category: analysis.category,
+      selectedLanguage: analysis.language,
+      languageSource: analysis.languageSource,
       totalMs: Date.now() - generateStarted,
     });
 
@@ -820,6 +927,9 @@ export async function POST(request: NextRequest) {
       model: result.model,
       provider,
       requestId,
+      category: analysis.category,
+      selectedLanguage: analysis.language,
+      languageSource: analysis.languageSource,
       validationStatus: guarded.validationStatus,
       knowledgeUsed: knowledgeMeta.knowledgeUsed,
       sourceType: knowledgeMeta.sourceType,

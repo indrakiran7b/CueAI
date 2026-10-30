@@ -48,7 +48,7 @@ html.mac-preview #root {
 
 html.mac-preview .cue-root {
   width: 520px;
-  height: 120px;
+  height: 152px;
   margin-top: 40px;
   flex: none;
 }
@@ -93,6 +93,8 @@ button {
   overflow: visible;
   container-type: inline-size;
   container-name: cue;
+  /* Transparency overrides the --hud-* variables on this element. */
+  color: var(--hud-ink);
 }
 
 .cue-hud {
@@ -100,7 +102,7 @@ button {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-rows: 40px 44px;
+  grid-template-rows: 40px 24px 44px;
   grid-template-columns: 1fr;
   row-gap: 8px;
   padding: 8px 10px 10px;
@@ -111,13 +113,13 @@ button {
   box-shadow:
     0 18px 48px rgba(0, 0, 0, 0.45),
     0 1px 0 rgba(255, 255, 255, 0.08) inset;
-  backdrop-filter: saturate(180%) blur(40px);
-  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  backdrop-filter: saturate(180%) blur(var(--hud-blur, 40px));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--hud-blur, 40px));
   animation: cue-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .cue-root.is-open .cue-hud {
-  grid-template-rows: 40px 44px minmax(0, 1fr);
+  grid-template-rows: 40px 24px 44px minmax(0, 1fr);
 }
 
 .cue-title {
@@ -273,6 +275,70 @@ button {
   color: var(--hud-accent);
 }
 
+.cue-tp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 24px;
+  font-size: 11px;
+  color: var(--hud-muted);
+}
+
+.cue-tp-label {
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.cue-tp .cue-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.cue-tp input[type="range"] {
+  width: 160px;
+  min-width: 60px;
+  flex: 0 1 160px;
+  accent-color: var(--hud-accent);
+}
+
+.cue-tp output {
+  width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-ink);
+}
+
+.cue-tp .cue-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cue-tp-error {
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container cue (max-width: 420px) {
+  .cue-tp-label {
+    display: none;
+  }
+}
+
+/* Text and icons stay opaque; a dark halo keeps them legible over light content behind the HUD. */
+.cue-root.is-see-through {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.95),
+    0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.cue-root.is-see-through svg {
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
+}
+
 .cue-composer {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto auto auto auto;
@@ -392,7 +458,7 @@ button {
 }
 
 .cue-root.has-hint .cue-hud {
-  grid-template-rows: 40px 44px auto;
+  grid-template-rows: 40px 24px 44px auto;
 }
 
 .cue-hint {
@@ -506,6 +572,43 @@ button {
 
 .cue-answer p + p {
   margin-top: 12px;
+}
+
+.cue-kb {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cue-answer .cue-kb-status,
+.cue-answer .cue-kb-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.cue-kb-sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.cue-kb-sources li {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  user-select: text;
+}
+
+.cue-kb-file {
+  font-weight: 600;
+}
+
+.cue-kb-excerpt {
+  opacity: 0.7;
+  line-height: 1.45;
 }
 
 .cue-answer pre {

@@ -75,8 +75,18 @@ export function DesktopPreferencesPanel() {
   }, []);
 
   async function update(partial: Partial<DesktopPrefs>) {
+    const previous = prefs;
     const next = { ...prefs, ...partial };
     setPrefs(next);
+    try {
+      await savePrefs(partial, next);
+    } catch {
+      setPrefs(previous);
+      setCaptureMsg("Could not save this preference in CueAI Desktop. Try again.");
+    }
+  }
+
+  async function savePrefs(partial: Partial<DesktopPrefs>, next: DesktopPrefs) {
     const api = getDesktop();
     if (!api) return;
 
@@ -198,8 +208,6 @@ export function DesktopPreferencesPanel() {
         ? "Hide overlay from common capture (NSWindowSharingNone; not guaranteed for every ScreenCaptureKit path)"
         : "Exclude overlay from screen capture (when OS allows)",
     },
-    { key: "autoPresentOnMeeting", label: "Prefer presenter layout when CueAI Private/Live is on" },
-    { key: "autoCollapse", label: "Auto-collapse overlay when idle" },
     { key: "autoHide", label: "Auto-hide overlay when idle" },
     ...(!mac
       ? ([{ key: "minimizeToTray", label: "Minimize to tray on close" }] as const)

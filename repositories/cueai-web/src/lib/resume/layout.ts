@@ -58,7 +58,42 @@ export type ResumeLayout = {
   pages: LayoutPage[];
   blocks: DocBlock[];
   templateId: string;
+  /** 0 = the template's own spacing; higher levels tighten spacing (and at 3, text size) to fit fewer pages. */
+  density: number;
+  /** The exact style used, so every export reproduces the same document. */
+  style: TemplateStyle;
 };
+
+export const MAX_DENSITY = 3;
+
+/**
+ * Template style at a density level. Spacing tightens first; only level 3 reduces text size,
+ * and body text never goes below 9.4 pt.
+ */
+export function densityStyle(base: TemplateStyle, level: number): TemplateStyle {
+  if (level <= 0) return base;
+  const s = JSON.parse(JSON.stringify(base)) as TemplateStyle;
+  s.heading.spaceBefore = +(base.heading.spaceBefore * 0.72).toFixed(2);
+  s.heading.spaceAfter = +(base.heading.spaceAfter * 0.8).toFixed(2);
+  s.entryGap = +(base.entryGap * 0.6).toFixed(2);
+  s.body.lineHeight = Math.max(1.2, +(base.body.lineHeight - 0.04).toFixed(3));
+  if (level >= 2) {
+    s.margin = {
+      top: Math.max(34, Math.round(base.margin.top * 0.82)),
+      right: Math.max(36, Math.round(base.margin.right * 0.85)),
+      bottom: Math.max(34, Math.round(base.margin.bottom * 0.82)),
+      left: Math.max(36, Math.round(base.margin.left * 0.85)),
+    };
+    s.name.size = base.name.size - 2;
+    s.body.lineHeight = Math.max(1.17, +(base.body.lineHeight - 0.07).toFixed(3));
+  }
+  if (level >= 3) {
+    s.body.size = Math.max(9.4, +(base.body.size - 0.5).toFixed(2));
+    s.heading.size = Math.max(9.5, +(base.heading.size - 0.5).toFixed(2));
+    s.contact.size = Math.max(8.8, +(base.contact.size - 0.3).toFixed(2));
+  }
+  return s;
+}
 
 export type Measurer = {
   width(text: string, family: Family, font: FontStyle, size: number): number;
@@ -467,9 +502,20 @@ function section(w: Writer, s: TemplateStyle, r: StructuredResume, key: SectionK
   }
 }
 
-export function layoutResume(resume: StructuredResume, templateId: string, m: Measurer): ResumeLayout {
+/** Template section order; tailoring's projects-first hint moves projects ahead of work history. */
+export function sectionOrder(s: TemplateStyle, resume: StructuredResume): SectionKey[] {
+  if (!resume.projectsFirst) return s.order;
+  const order: SectionKey[] = s.order.filter((k) => k !== "projects");
+  const first = order.findIndex((k) => k === "experience" || k === "internships");
+  if (first < 0 || s.order.indexOf("projects") < s.order.indexOf(order[first]!)) return s.order;
+  order.splice(first, 0, "projects");
+  return order;
+}
+
+export function layoutResume(resume: StructuredResume, templateId: string, m: Measurer, density = 0): ResumeLayout {
   const t = getTemplate(templateId);
-  const s = t.style;
+  const level = Math.max(0, Math.min(MAX_DENSITY, Math.round(density)));
+  const s = densityStyle(t.style, level);
   const w = new Writer(m, s);
 
   // Header
@@ -494,9 +540,9 @@ export function layoutResume(resume: StructuredResume, templateId: string, m: Me
     });
   }
 
-  for (const key of s.order) section(w, s, resume, key);
+  for (const key of sectionOrder(s, resume)) section(w, s, resume, key);
 
   if (!w.pages.length) w.ensure(0);
-  return { width: PAGE.width, height: PAGE.height, pages: w.pages, blocks: w.blocks, templateId: t.id };
+  return { width: PAGE.width, height: PAGE.height, pages: w.pages, blocks: w.blocks, templateId: t.id, density: level, style: s };
 }
 

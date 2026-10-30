@@ -157,7 +157,13 @@ const cueai = {
       expanded: boolean;
       mode: CompanionMode;
     } | null>,
-  transcribe: (payload: { data: ArrayBuffer; mime: string; label: string; prompt?: string }) =>
+  transcribe: (payload: {
+    data: ArrayBuffer;
+    mime: string;
+    label: string;
+    prompt?: string;
+    workflow?: "interview";
+  }) =>
     ipcRenderer.invoke(IpcChannels.COMPANION_TRANSCRIBE, payload) as Promise<{
       text?: string;
       who?: string;
@@ -165,6 +171,8 @@ const cueai = {
       uncertain?: boolean;
       status?: number;
       retryAfter?: number;
+      retry?: boolean;
+      message?: string;
     }>,
   getDeviceAuthHeaders: () =>
     ipcRenderer.invoke(IpcChannels.DEVICE_GET_AUTH_HEADERS) as Promise<Record<string, string>>,

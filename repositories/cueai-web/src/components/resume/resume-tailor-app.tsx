@@ -1,28 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Download, Eye, FileUp, Pencil, RotateCcw, Sparkles, Upload, X } from "lucide-react";
+import { Check, Download, Eye, FileText, Pencil, RefreshCw, Sparkles, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { docxBlob, downloadBlob } from "@cueai/export-service/exportDocument";
+import type { ResumeAnalysisResult, TailoredResult } from "@/app/api/resume/analyze/route";
 import { extractAndRememberResume, rememberResume } from "@/lib/resume-store";
-import { resumeDocumentXml } from "@/lib/resume/docx";
+import { formattingChecks, scoreResume } from "@/lib/resume/ats";
+import { docxMatchesLayout, resumeDocumentXml } from "@/lib/resume/docx";
+import { fitResume } from "@/lib/resume/fit";
+import {
+  JOB_DESCRIPTION_MAX_CHARS,
+  JOB_DESCRIPTION_REQUIRED_MESSAGE,
+  composeJobDescription,
+  normalizeJobDescription,
+} from "@/lib/resume/job-description";
 import { layoutResume } from "@/lib/resume/layout";
 import { getMeasurer, resumeFileName, type ResumeMeasurer } from "@/lib/resume/pdf";
-import { applyRewrites } from "@/lib/resume/rewrites";
 import { TEMPLATES } from "@/lib/resume/templates";
-import type { ResumeRewrite, StructuredResume, TemplateId } from "@/lib/resume/types";
+import type { MatchReport, Recommendation, StructuredResume, TemplateId } from "@/lib/resume/types";
+import { FullAnalysis, MatchSummary, type PanelBusy } from "./ats-analysis-panel";
 import { ResumeEditor } from "./resume-editor";
 import { ResumePageSvg } from "./resume-page-svg";
-
-type Analysis = {
-  resume: StructuredResume;
-  rewriteSet: ResumeRewrite[];
-};
+import { StepIndicator, TailorSteps, previewContent, tailorSteps, workflowSteps } from "./tailor-progress";
 
 type Status = { kind: "success" | "error"; text: string };
+type Keyed<T> = { key: string; data: T };
+type Rescore = { key: string; match: MatchReport; recommendations: Recommendation[]; at: string };
+type Stage = "analyze" | "rewrite";
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -30,29 +37,63 @@ const ACCEPTED_TYPES = [
   "text/plain",
 ];
 const MAX_BYTES = 5 * 1024 * 1024;
+const CARD = "rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6";
+const INPUT =
+  "w-full rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-[var(--primary-muted)]";
 
 function isAllowedFile(file: File) {
   return ACCEPTED_TYPES.includes(file.type) || /\.(pdf|docx|txt)$/i.test(file.name);
 }
 
+function fileKind(file: File) {
+  const ext = /\.([a-z0-9]+)$/i.exec(file.name)?.[1];
+  return ext ? ext.toUpperCase() : file.type || "File";
+}
+
+class StageError extends Error {
+  constructor(
+    readonly stage: Stage,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+async function readError(res: Response, fallback: string) {
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  return data.error || fallback;
+}
+
 export default function ResumeTailorApp() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const inFlight = useRef(false);
+  /** Increments per request; responses from an older request are ignored. */
+  const requestSeq = useRef(0);
+  const inputKeyRef = useRef("");
 
   const [file, setFile] = useState<File | null>(null);
   const [jd, setJd] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [company, setCompany] = useState("");
+  const [jdError, setJdError] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [analyzedKey, setAnalyzedKey] = useState("");
+  const [fileError, setFileError] = useState<string | null>(null);
   const [showInputs, setShowInputs] = useState(true);
 
+  // Separate state: the original (inside the analysis), the analysis, the tailored version,
+  // manual edits, a re-check of edited content, and the presentation template.
+  const [analysis, setAnalysis] = useState<Keyed<ResumeAnalysisResult> | null>(null);
+  const [tailored, setTailored] = useState<Keyed<TailoredResult> | null>(null);
   const [edited, setEdited] = useState<StructuredResume | null>(null);
+  const [rescore, setRescore] = useState<Rescore | null>(null);
+  const [busy, setBusy] = useState<PanelBusy>(null);
+  const [phase, setPhase] = useState<Stage | null>(null);
+  const [failedAt, setFailedAt] = useState<Stage | null>(null);
+  const [failure, setFailure] = useState<{ text: string; retry: () => void } | null>(null);
+
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editPending, setEditPending] = useState(false);
   const [template, setTemplate] = useState<TemplateId>(TEMPLATES[0]!.id);
-  const [browse, setBrowse] = useState(0);
 
   const [measurer, setMeasurer] = useState<ResumeMeasurer | null>(null);
   const [measurerFailed, setMeasurerFailed] = useState(false);
@@ -77,38 +118,52 @@ export default function ResumeTailorApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [previewOpen]);
 
-  const requestKey = file ? `${file.name}|${file.size}|${file.lastModified}|${jd.trim()}` : "";
-  const upToDate = Boolean(analysis && analyzedKey === requestKey);
+  const jobDescription = composeJobDescription(jd, jobTitle, company);
+  const inputKey = file ? `${file.name}|${file.size}|${file.lastModified}|${jobDescription ?? ""}` : "";
+  useEffect(() => {
+    inputKeyRef.current = inputKey;
+  }, [inputKey]);
 
-  /** Valid rewrites are applied automatically; lines that failed the fact checks keep their original text. */
-  const tailored = useMemo(() => (analysis ? applyRewrites(analysis.resume, analysis.rewriteSet) : null), [analysis]);
-  const appliedCount = analysis?.rewriteSet.filter((r) => r.valid).length ?? 0;
-  const finalResume = edited ?? tailored;
+  const stale = Boolean(analysis && analysis.key !== inputKey);
+  const tailoredCurrent = tailored && analysis && tailored.key === analysis.key ? tailored : null;
+  const { resume: current, kind: contentKind } = previewContent<StructuredResume>({
+    edited,
+    tailored: tailoredCurrent?.data.resume ?? null,
+    original: analysis?.data.resume ?? null,
+  });
+  const contentKey = `${analysis?.key ?? ""}|${tailoredCurrent?.data.tailoredAt ?? "original"}`;
 
-  const browsed = TEMPLATES[browse]!;
+  const rescoreCurrent = rescore && rescore.key === `${contentKey}|${edited ? JSON.stringify(edited) : ""}` ? rescore : null;
+  // After manual edits the last score stays visible (marked outdated) until it is re-checked.
+  const report: MatchReport | null = rescoreCurrent?.match ?? tailoredCurrent?.data.match ?? analysis?.data.match ?? null;
+  const recommendations = rescoreCurrent?.recommendations ?? tailoredCurrent?.data.recommendations ?? analysis?.data.recommendations ?? [];
+  const scoreSource = rescoreCurrent ? "reanalyzed" : tailoredCurrent ? "tailored" : "original";
+  const requirementWhy = useMemo(() => new Map((analysis?.data.job.requirements ?? []).map((r) => [r.id, r.why])), [analysis]);
+  const formatting = useMemo(() => (current ? { score: scoreResume(current, [], false).formatting, checks: formattingChecks(current) } : null), [current]);
+
   const selected = TEMPLATES.find((t) => t.id === template)!;
-
-  const layout = useMemo(
-    () => (measurer && finalResume ? layoutResume(finalResume, template, measurer) : null),
-    [measurer, finalResume, template],
-  );
-  const thumbLayout = useMemo(() => {
-    if (!measurer || !finalResume) return null;
-    return browsed.id === template ? layout : layoutResume(finalResume, browsed.id, measurer);
-  }, [measurer, finalResume, browsed.id, template, layout]);
+  const fit = useMemo(() => (measurer && current ? fitResume(current, template, measurer) : null), [measurer, current, template]);
+  const layout = fit?.layout ?? null;
+  const thumbs = useMemo(() => {
+    if (!measurer || !current) return null;
+    return new Map(TEMPLATES.map((t) => [t.id, t.id === template && layout ? layout : layoutResume(current, t.id, measurer)]));
+  }, [measurer, current, template, layout]);
 
   const unsupportedChars = layout && measurer ? [...measurer.unsupported] : [];
-  const exportReady = Boolean(layout && finalResume && !editPending && !exporting);
+  const exportReady = Boolean(layout && current && fit?.validation.ok && !editPending && !exporting);
+  const analyzedNow = Boolean(analysis && !stale);
+  const scorable = analysis?.data.match.status === "scored";
+  const tailoredValid = contentKind === "tailored" ? (fit ? fit.validation.ok : null) : null;
 
   function assignFile(next: File | null) {
-    setError(null);
+    setFileError(null);
     if (!next) return;
     if (!isAllowedFile(next)) {
-      setError("Please upload a PDF, DOCX, or TXT file.");
+      setFileError("Please upload a PDF, DOCX, or TXT file.");
       return;
     }
     if (next.size > MAX_BYTES) {
-      setError("File is larger than 5 MB.");
+      setFileError("File is larger than 5 MB.");
       return;
     }
     rememberResume(next.name);
@@ -127,63 +182,163 @@ export default function ResumeTailorApp() {
     assignFile(e.dataTransfer.files?.[0] ?? null);
   }
 
-  async function runAnalyze(e?: FormEvent) {
-    e?.preventDefault();
-    if (inFlight.current) return;
+  function viewUploaded() {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  /** Common checks before any request. The uploaded file is kept when validation fails. */
+  function ready(): boolean {
     if (!file) {
-      setError("Upload a resume to continue.");
-      return;
+      setFileError("Upload a resume to continue.");
+      return false;
     }
-    if (upToDate) {
-      setShowInputs(false);
-      return;
+    if (!jobDescription) {
+      setJdError(true);
+      setShowInputs(true);
+      return false;
     }
-    inFlight.current = true;
-    setAnalyzing(true);
-    setError(null);
-    try {
-      const body = new FormData();
-      body.append("resume", file);
-      if (jd.trim()) body.append("jobDescription", jd.trim());
-      const res = await fetch("/api/resume/analyze", { method: "POST", body, credentials: "include" });
-      const data = (await res.json().catch(() => ({}))) as Partial<Analysis> & { error?: string };
-      if (!res.ok || !data.resume) throw new Error(data.error || "We couldn't tailor your resume. Please try again.");
-      // Results are replaced only after a successful run, so a failed retry never clears a finished resume.
-      setAnalysis({ resume: data.resume, rewriteSet: data.rewriteSet ?? [] });
-      setAnalyzedKey(requestKey);
-      setEdited(null);
-      setEditing(false);
-      setStatus(null);
-      setShowInputs(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "We couldn't tailor your resume. Please try again.");
-    } finally {
-      inFlight.current = false;
-      setAnalyzing(false);
-    }
+    return true;
   }
 
-  function step(delta: number) {
-    setBrowse((i) => (i + delta + TEMPLATES.length) % TEMPLATES.length);
+  async function postAnalyze(mode: "analyze" | "tailor") {
+    const body = new FormData();
+    body.append("resume", file!);
+    body.append("jobDescription", jobDescription!);
+    body.append("mode", mode);
+    body.append("template", template);
+    return fetch("/api/resume/analyze", { method: "POST", body, credentials: "include" });
   }
 
-  function onCarouselKey(e: KeyboardEvent<HTMLElement>) {
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      step(1);
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      step(-1);
-    }
+  /** A new analysis replaces the old one (and anything derived from it) only after it succeeds. */
+  function adoptAnalysis(key: string, data: ResumeAnalysisResult) {
+    setAnalysis({ key, data });
+    setTailored(null);
+    setEdited(null);
+    setRescore(null);
+    setEditing(false);
+    setStatus(null);
+    setShowInputs(false);
   }
 
-  function selectBrowsed() {
-    setTemplate(browsed.id);
+  /** Analysis for the current inputs: reused when present, otherwise requested. */
+  async function ensureAnalysis(seq: number, key: string): Promise<ResumeAnalysisResult | null> {
+    if (analysis && analysis.key === key) return analysis.data;
+    setPhase("analyze");
+    const res = await postAnalyze("analyze");
+    if (!res.ok) throw new StageError("analyze", await readError(res, "We couldn't analyze your resume. Please try again."));
+    const data = (await res.json()) as ResumeAnalysisResult;
+    if (!data.match || !data.resume) throw new StageError("analyze", "The analysis came back incomplete. Please try again.");
+    if (seq !== requestSeq.current || key !== inputKeyRef.current) return null;
+    adoptAnalysis(key, data);
+    return data;
+  }
+
+  function begin(kind: PanelBusy) {
+    setBusy(kind);
+    setFailedAt(null);
+    setFailure(null);
     setStatus(null);
   }
 
+  function fail(seq: number, err: unknown, retry: () => void) {
+    if (seq !== requestSeq.current) return;
+    const stage = err instanceof StageError ? err.stage : "analyze";
+    setFailedAt(stage);
+    setFailure({ text: err instanceof Error ? err.message : "Something went wrong. Please try again.", retry });
+  }
+
+  function finish(seq: number) {
+    if (seq !== requestSeq.current) return;
+    setBusy(null);
+    setPhase(null);
+  }
+
+  async function runAnalyze(e?: FormEvent) {
+    e?.preventDefault();
+    if (busy || !ready()) return;
+    if (analysis && !stale) {
+      setShowInputs(false);
+      return;
+    }
+    const seq = ++requestSeq.current;
+    begin("analyze");
+    try {
+      await ensureAnalysis(seq, inputKey);
+    } catch (err) {
+      fail(seq, err, () => void runAnalyze());
+    } finally {
+      finish(seq);
+    }
+  }
+
+  /**
+   * Analyze (reused when current), then rewrite for this job. The server caches the analysis, so this
+   * never repeats an AI call. A failed attempt keeps the last valid tailored resume.
+   */
+  async function runTailor() {
+    if (busy || !ready()) return;
+    const seq = ++requestSeq.current;
+    const key = inputKey;
+    begin("tailor");
+    try {
+      const base = await ensureAnalysis(seq, key);
+      // A JD too thin to score is explained in the summary, where Tailor stays disabled.
+      if (!base || base.match.status !== "scored") return;
+      setPhase("rewrite");
+      const res = await postAnalyze("tailor");
+      if (!res.ok) throw new StageError("rewrite", await readError(res, "We couldn't tailor your resume. Please try again."));
+      const data = (await res.json()) as ResumeAnalysisResult & { tailored?: TailoredResult };
+      const next = data.tailored;
+      if (!next?.resume || !next.match || !next.changes?.length) {
+        throw new StageError("rewrite", "Tailoring came back incomplete. Your previous resume is unchanged.");
+      }
+      if (next.jdHash !== base.jdHash || !next.changeCounts?.improved) {
+        throw new StageError("rewrite", "Tailoring did not produce a validated result for this job description. Your previous resume is unchanged.");
+      }
+      if (seq !== requestSeq.current || key !== inputKeyRef.current) return;
+      setTailored({ key, data: next });
+      setEdited(null);
+      setRescore(null);
+      setEditing(false);
+      const made = next.changeCounts.rewritten + next.changeCounts.added;
+      setStatus({ kind: "success", text: `Resume updated: ${made} improvement${made === 1 ? "" : "s"} made.` });
+    } catch (err) {
+      fail(seq, err, () => void runTailor());
+    } finally {
+      finish(seq);
+    }
+  }
+
+  /** Same scoring on edited content against the same job profile (no AI call). */
+  async function runRecheck() {
+    if (busy || !analysis || !current || stale || !ready()) return;
+    const seq = ++requestSeq.current;
+    const key = `${contentKey}|${edited ? JSON.stringify(edited) : ""}`;
+    begin("rescore");
+    try {
+      const res = await fetch("/api/resume/score", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume: current, jobDescription, job: analysis.data.job }),
+      });
+      if (!res.ok) throw new StageError("analyze", await readError(res, "Re-checking the score failed. Please try again."));
+      const data = (await res.json()) as { match?: MatchReport; recommendations?: Recommendation[]; analyzedAt?: string };
+      if (!data.match) throw new StageError("analyze", "The score came back incomplete.");
+      if (seq !== requestSeq.current) return;
+      setRescore({ key, match: data.match, recommendations: data.recommendations ?? [], at: data.analyzedAt ?? new Date().toISOString() });
+    } catch (err) {
+      fail(seq, err, () => void runRecheck());
+    } finally {
+      finish(seq);
+    }
+  }
+
   async function downloadPdf() {
-    if (!finalResume || !exportReady) return;
+    if (!current || !fit || !exportReady) return;
     setExporting("pdf");
     setStatus(null);
     try {
@@ -191,18 +346,18 @@ export default function ResumeTailorApp() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume: finalResume, template }),
+        body: JSON.stringify({ resume: current, template }),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || "Could not generate the PDF.");
-      }
+      if (!res.ok) throw new Error(await readError(res, "Could not generate the PDF."));
       const blob = await res.blob();
       if (!blob.type.includes("pdf") || blob.size < 500) throw new Error("The server did not return a PDF.");
-      const filename =
-        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || resumeFileName(finalResume.name);
+      const pages = Number(res.headers.get("X-Resume-Pages"));
+      if (pages !== fit.pageCount) {
+        throw new Error(`The generated PDF has ${pages || "an unknown number of"} page(s) but the preview shows ${fit.pageCount}. Please try again.`);
+      }
+      const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || resumeFileName(current.name);
       downloadBlob(filename, blob);
-      setStatus({ kind: "success", text: `Downloaded ${filename}` });
+      setStatus({ kind: "success", text: `Downloaded ${filename} (${pages} page${pages === 1 ? "" : "s"}).` });
     } catch (err) {
       setStatus({ kind: "error", text: err instanceof Error ? err.message : "Could not generate the PDF." });
     } finally {
@@ -211,238 +366,334 @@ export default function ResumeTailorApp() {
   }
 
   function downloadDocx() {
-    if (!finalResume || !layout || !exportReady) return;
+    if (!current || !layout || !exportReady) return;
     setExporting("docx");
     setStatus(null);
     try {
-      const filename = resumeFileName(finalResume.name, "docx");
-      downloadBlob(filename, docxBlob(resumeDocumentXml(layout)));
+      const xml = resumeDocumentXml(layout);
+      if (!docxMatchesLayout(xml, layout)) throw new Error("mismatch");
+      const blob = docxBlob(xml);
+      if (blob.size < 500) throw new Error("empty");
+      const filename = resumeFileName(current.name, "docx");
+      downloadBlob(filename, blob);
       setStatus({ kind: "success", text: `Downloaded ${filename}` });
     } catch {
-      setStatus({ kind: "error", text: "Could not generate the Word document." });
+      setStatus({ kind: "error", text: "Could not generate a Word document that matches the preview." });
     } finally {
       setExporting(null);
     }
   }
 
-  const pagesLabel = layout ? `${layout.pages.length} page${layout.pages.length === 1 ? "" : "s"}` : "";
+  const steps = workflowSteps({ hasFile: Boolean(file), analyzed: analyzedNow, downloadReady: analyzedNow && contentKind !== "original" && exportReady });
+  const progress = tailorSteps({
+    phase,
+    failedAt,
+    analyzed: analyzedNow && scorable,
+    tailored: Boolean(tailoredCurrent) && !stale,
+    rescored: tailoredCurrent?.data.match.status === "scored",
+    documentValid: tailoredValid,
+  });
+  const showProgress = busy === "tailor" || failedAt !== null || (Boolean(tailoredCurrent) && tailoredValid !== true);
+  const pagesLabel = fit ? `${fit.pageCount} page${fit.pageCount === 1 ? "" : "s"}` : "";
+  const contentLabel = contentKind === "tailored" ? (tailoredValid ? "Tailored" : "Tailored · checking layout") : contentKind === "edited" ? "Edited" : "Original";
+  const improvements = scoreSource === "tailored" && tailoredCurrent ? tailoredCurrent.data.changeCounts.rewritten + tailoredCurrent.data.changeCounts.added : null;
+  const metricPrompts = tailoredCurrent?.data.metricPrompts ?? [];
+  const notices = [
+    ...(fit?.validation.warnings ?? []),
+    ...(unsupportedChars.length ? [`Some characters can't be shown in the PDF fonts and appear as “?”: ${unsupportedChars.join(" ")}. The DOCX keeps them.`] : []),
+  ];
+
+  const tailorAction = (
+    <Button variant="gradient" onClick={() => void runTailor()} loading={busy === "tailor"} disabled={busy !== null || !jobDescription || !file || (analyzedNow && !scorable)}>
+      <Sparkles className="h-4 w-4" />
+      {busy === "tailor" ? "Tailoring…" : tailoredCurrent ? "Tailor Again" : "Tailor My Resume"}
+    </Button>
+  );
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 animate-fade-up">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="mx-auto max-w-5xl space-y-6 animate-fade-up">
+      <header className="space-y-4">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Resume Tailor</h1>
-          <p className="mt-1 text-sm text-muted">Tailor your resume to a job and download it as an ATS-friendly PDF or Word file.</p>
+          <p className="mt-1 text-sm text-muted">Customize your resume for a job and download an ATS-friendly version.</p>
         </div>
-        {analysis && !showInputs && (
-          <Button variant="outline" size="sm" onClick={() => setShowInputs(true)}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            New resume or job
-          </Button>
-        )}
-      </div>
+        <StepIndicator steps={steps} />
+      </header>
 
-      {error && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <span>{error}</span>
-          {file && !analyzing && showInputs && (
-            <Button size="sm" variant="outline" onClick={() => void runAnalyze()}>
-              Try again
-            </Button>
-          )}
+      {analysis && !showInputs && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface)] px-4 py-2.5 text-sm">
+          <span className="min-w-0 truncate text-muted">
+            <FileText className="mr-1.5 inline h-4 w-4 align-[-3px]" />
+            {file?.name}
+            {(jobTitle || analysis.data.job.title) && <span className="text-subtle"> · for {jobTitle || analysis.data.job.title}</span>}
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setShowInputs(true)} disabled={busy !== null}>
+            Change resume or job
+          </Button>
         </div>
       )}
 
       {showInputs && (
-        <Card className="p-5">
-          <form onSubmit={(e) => void runAnalyze(e)} className="grid gap-4 md:grid-cols-2">
-            <div
-              className={cn(
-                "flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-strong)] p-6 text-center transition-colors",
-                dragOver && "border-primary bg-[var(--primary-muted)]/30",
-              )}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-muted)] text-primary">
-                <Upload className="h-5 w-5" />
-              </div>
-              <p className="mt-3 text-sm font-medium">Upload resume</p>
-              <p className="mt-1 text-xs text-subtle">PDF, DOCX, or TXT · Max 5 MB</p>
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                className="hidden"
-                onChange={onBrowseChange}
-              />
-              <Button variant="outline" size="sm" className="mt-4" type="button" onClick={() => inputRef.current?.click()}>
-                <FileUp className="h-3.5 w-3.5" />
-                Browse files
-              </Button>
-              <p className={cn("mt-3 break-all text-xs", file ? "text-teal-400" : "text-subtle")}>
-                {file ? `${file.name} · ${(file.size / 1024).toFixed(1)} KB` : "No file selected yet"}
-              </p>
-            </div>
-            <div className="flex flex-col">
-              <label className="text-sm font-medium" htmlFor="job-description">
-                Job description
-              </label>
-              <textarea
-                id="job-description"
-                value={jd}
-                onChange={(e) => setJd(e.target.value)}
-                rows={8}
-                maxLength={20000}
-                placeholder="Paste the job description here…"
-                className="mt-2 w-full flex-1 resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--background-elevated)] p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-[var(--primary-muted)]"
-              />
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button variant="gradient" size="sm" type="submit" loading={analyzing} disabled={!file || analyzing}>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {analyzing ? "Tailoring your resume…" : upToDate ? "Back to resume" : "Tailor my resume"}
-                </Button>
-                {analysis && !analyzing && !upToDate && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowInputs(false)}>
-                    Cancel
+        <form onSubmit={(e) => void runAnalyze(e)} className="grid gap-4 md:grid-cols-2">
+          <section aria-label="Your resume" className={CARD}>
+            <h2 className="text-base font-semibold">Your Resume</h2>
+            {file ? (
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center gap-3 rounded-xl bg-[var(--background-elevated)] p-3">
+                  <FileText className="h-8 w-8 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{file.name}</p>
+                    <p className="text-xs text-subtle">
+                      {fileKind(file)} · {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+                    <Upload className="h-3.5 w-3.5" />
+                    Replace Resume
                   </Button>
-                )}
+                  <Button type="button" variant="ghost" size="sm" onClick={viewUploaded}>
+                    <Eye className="h-3.5 w-3.5" />
+                    View Resume
+                  </Button>
+                </div>
               </div>
+            ) : (
+              <div
+                className={cn(
+                  "mt-4 flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-10 text-center transition-colors",
+                  dragOver && "border-primary bg-[var(--primary-muted)]/30",
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={onDrop}
+              >
+                <Upload className="h-6 w-6 text-primary" />
+                <p className="mt-2 text-sm">Drag your resume here</p>
+                <p className="mt-0.5 text-xs text-subtle">PDF, DOCX or TXT · up to 5 MB</p>
+                <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => inputRef.current?.click()}>
+                  Browse files
+                </Button>
+              </div>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+              className="hidden"
+              onChange={onBrowseChange}
+            />
+            {fileError && (
+              <p role="alert" className="mt-3 text-xs text-red-400">
+                {fileError}
+              </p>
+            )}
+          </section>
+
+          <section aria-label="Job description" className={cn(CARD, "flex flex-col")}>
+            <label className="text-base font-semibold" htmlFor="job-description">
+              Job Description{" "}
+              <span className="text-red-400" aria-hidden>
+                *
+              </span>
+            </label>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <input className={INPUT} placeholder="Job title (optional)" aria-label="Job title (optional)" value={jobTitle} maxLength={120} onChange={(e) => setJobTitle(e.target.value)} />
+              <input className={INPUT} placeholder="Company (optional)" aria-label="Company (optional)" value={company} maxLength={120} onChange={(e) => setCompany(e.target.value)} />
             </div>
-          </form>
-        </Card>
+            <textarea
+              id="job-description"
+              value={jd}
+              onChange={(e) => {
+                setJd(e.target.value);
+                if (e.target.value.trim()) setJdError(false);
+              }}
+              onBlur={() => setJdError(!normalizeJobDescription(jd) && Boolean(jd))}
+              rows={9}
+              maxLength={JOB_DESCRIPTION_MAX_CHARS}
+              aria-required="true"
+              aria-invalid={jdError}
+              aria-describedby="job-description-help"
+              placeholder="Paste the full job description, including requirements and responsibilities…"
+              className={cn(INPUT, "mt-2 flex-1 resize-y p-3", jdError && "border-red-500/60")}
+            />
+            <p id="job-description-help" role={jdError ? "alert" : undefined} className={cn("mt-1.5 text-xs", jdError ? "text-red-400" : "text-subtle")}>
+              {jdError ? `Please paste a job description. ${JOB_DESCRIPTION_REQUIRED_MESSAGE}` : "Required. The more complete the description, the better the match."}
+            </p>
+            {failure && !analysis && (
+              <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                <span>
+                  <span className="font-medium">Analysis unavailable.</span> {failure.text}
+                </span>
+                <Button size="sm" variant="outline" onClick={failure.retry} disabled={busy !== null}>
+                  Retry
+                </Button>
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button variant="gradient" type="submit" loading={busy === "analyze"} disabled={!file || !jobDescription || busy !== null}>
+                {busy === "analyze" ? "Analyzing…" : analyzedNow ? "Continue" : "Analyze & Continue"}
+              </Button>
+              {analysis && busy === null && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowInputs(false)}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </section>
+        </form>
       )}
 
-      {analysis && finalResume && !showInputs && (
+      {analysis && report && current && (
         <>
-          <section
-            aria-roledescription="carousel"
-            aria-label="ATS resume templates"
-            onKeyDown={onCarouselKey}
-            className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-5"
+          <MatchSummary
+            report={report}
+            originalReport={analysis.data.match}
+            recommendations={recommendations}
+            scoreSource={scoreSource}
+            outdated={stale ? "inputs" : edited && !rescoreCurrent ? "edited" : null}
+            improvements={improvements}
+            action={
+              edited && !rescoreCurrent && !stale ? (
+                <Button variant="outline" onClick={() => void runRecheck()} loading={busy === "rescore"} disabled={busy !== null}>
+                  <RefreshCw className="h-4 w-4" />
+                  Re-check score
+                </Button>
+              ) : (
+                tailorAction
+              )
+            }
           >
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <h2 className="text-base font-semibold">Choose Your ATS Resume Template</h2>
-              <span className="text-xs tabular-nums text-subtle" aria-live="polite">
-                {browse + 1} of {TEMPLATES.length}
-              </span>
-            </div>
-            <div className="grid items-center gap-6 lg:grid-cols-[auto_minmax(0,1fr)]">
-              <div className="flex min-w-0 items-center justify-center gap-1.5 sm:gap-3">
-                <Button variant="outline" size="icon" className="shrink-0" onClick={() => step(-1)} aria-label="Previous template">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <button
-                  type="button"
-                  onClick={selectBrowsed}
-                  aria-label={`${browsed.name}, template ${browse + 1} of ${TEMPLATES.length}${browsed.id === template ? ", selected" : ". Select this template"}`}
-                  className={cn(
-                    "w-[300px] min-w-0 max-w-full shrink overflow-hidden rounded-lg bg-white shadow-lg ring-offset-2 ring-offset-[var(--background)] transition",
-                    browsed.id === template ? "ring-2 ring-primary" : "ring-1 ring-[var(--border)] hover:ring-[var(--border-strong)]",
-                  )}
-                >
-                  {thumbLayout?.pages[0] ? (
-                    <ResumePageSvg layout={thumbLayout} page={thumbLayout.pages[0]} className="block w-full" title={`${browsed.name} preview`} />
-                  ) : (
-                    <div className="flex aspect-[595/842] items-center justify-center text-xs text-neutral-500">
-                      {measurerFailed ? "Preview unavailable" : "Loading…"}
-                    </div>
-                  )}
-                </button>
-                <Button variant="outline" size="icon" className="shrink-0" onClick={() => step(1)} aria-label="Next template">
-                  <ChevronRight className="h-4 w-4" />
+            {showProgress && (
+              <div className="mt-4 border-t border-[var(--border)] pt-4">
+                <TailorSteps steps={progress} />
+              </div>
+            )}
+            {failure && analysis && (
+              <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                <span className="min-w-0">{failure.text}</span>
+                <Button size="sm" variant="outline" onClick={failure.retry} disabled={busy !== null}>
+                  Retry
                 </Button>
               </div>
-              <div className="min-w-0 space-y-3 text-center lg:text-left">
-                <div>
-                  <p className="text-lg font-semibold">{browsed.name}</p>
-                  <p className="mt-1 text-sm text-muted">{browsed.useCase}</p>
-                </div>
-                <ul className="space-y-1 text-xs text-subtle">
-                  {browsed.characteristics.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
-                <Button
-                  size="sm"
-                  variant={browsed.id === template ? "secondary" : "gradient"}
-                  onClick={selectBrowsed}
-                  disabled={browsed.id === template}
-                  aria-pressed={browsed.id === template}
-                >
-                  {browsed.id === template ? "Selected" : "Select Template"}
-                </Button>
-                <div className="flex justify-center gap-1.5 pt-1 lg:justify-start">
-                  {TEMPLATES.map((t, i) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setBrowse(i)}
-                      aria-label={`Show ${t.name}`}
-                      aria-current={i === browse}
-                      className={cn(
-                        "h-2 rounded-full transition-all",
-                        i === browse ? "w-5 bg-primary" : "w-2 bg-[var(--border-strong)] hover:bg-[var(--muted)]",
-                        t.id === template && i !== browse && "bg-primary/50",
+            )}
+          </MatchSummary>
+
+          <FullAnalysis
+            open={analysisOpen}
+            onToggle={() => setAnalysisOpen((v) => !v)}
+            report={report}
+            originalReport={analysis.data.match}
+            scoreSource={scoreSource}
+            recommendations={recommendations}
+            requirementWhy={requirementWhy}
+            changes={tailoredCurrent?.data.changes ?? null}
+            formatting={formatting}
+          />
+
+          <section aria-label="Resume template" className={CARD}>
+            <h2 className="text-base font-semibold">Template</h2>
+            <p className="mt-0.5 text-xs text-subtle">Changes the look only — your content stays the same.</p>
+            <div role="radiogroup" aria-label="Resume templates" className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {TEMPLATES.map((t) => {
+                const thumb = thumbs?.get(t.id);
+                const isSelected = t.id === template;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    onClick={() => {
+                      setTemplate(t.id);
+                      setStatus(null);
+                    }}
+                    className={cn(
+                      "group relative rounded-xl p-2 text-left transition-colors",
+                      isSelected ? "bg-[var(--primary-muted)] ring-2 ring-primary" : "hover:bg-[var(--surface-hover)]",
+                    )}
+                  >
+                    <div className="overflow-hidden rounded-md bg-white shadow-sm">
+                      {thumb?.pages[0] ? (
+                        <ResumePageSvg layout={thumb} page={thumb.pages[0]} className="block w-full" title={`${t.name} preview`} />
+                      ) : (
+                        <div className="flex aspect-[595/842] items-center justify-center text-[10px] text-neutral-500">{measurerFailed ? "Unavailable" : "Loading…"}</div>
                       )}
-                    />
-                  ))}
-                </div>
-              </div>
+                    </div>
+                    <p className="mt-2 text-xs font-medium leading-tight">{t.name}</p>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-subtle">{t.useCase}</p>
+                    {isSelected && (
+                      <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white">
+                        <Check className="h-3 w-3" aria-label="Selected" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </section>
 
-          <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-5">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <section aria-label="Final resume" className={CARD}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold">Final Resume Preview</h2>
+                <h2 className="text-base font-semibold">Final Resume</h2>
                 <p className="mt-0.5 text-xs text-subtle">
+                  <span className={cn("font-medium", contentKind === "original" ? "text-amber-300" : "text-foreground")}>{contentLabel}</span>
+                  {" · "}
                   {selected.name}
                   {pagesLabel && ` · ${pagesLabel}`}
-                  {appliedCount > 0 && ` · ${appliedCount} AI improvement${appliedCount === 1 ? "" : "s"} applied`}
-                  {edited && " · edited"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)} disabled={!layout}>
+                <Button size="sm" variant="ghost" onClick={() => setPreviewOpen(true)} disabled={!layout}>
                   <Eye className="h-3.5 w-3.5" />
                   Preview Resume
                 </Button>
-                <Button size="sm" variant={editing ? "secondary" : "outline"} onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
+                <Button size="sm" variant={editing ? "secondary" : "ghost"} onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
                   <Pencil className="h-3.5 w-3.5" />
                   {editing ? "Close Editor" : "Edit Content"}
-                </Button>
-                <Button size="sm" variant="gradient" onClick={() => void downloadPdf()} loading={exporting === "pdf"} disabled={!exportReady}>
-                  <Download className="h-3.5 w-3.5" />
-                  {exporting === "pdf" ? "Generating…" : "Download PDF"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={downloadDocx} loading={exporting === "docx"} disabled={!exportReady}>
-                  <Download className="h-3.5 w-3.5" />
-                  Download DOCX
                 </Button>
               </div>
             </div>
 
-            {status && (
-              <p role="status" className={cn("mb-3 text-sm", status.kind === "success" ? "text-emerald-400" : "text-red-300")}>
-                {status.text}
+            {contentKind === "original" && (
+              <p className="mt-3 text-sm text-muted">
+                {busy === "tailor"
+                  ? "Tailoring in progress — this still shows your original resume."
+                  : "This is your original resume. Use Tailor My Resume to rewrite it for this job."}
               </p>
             )}
-            {unsupportedChars.length > 0 && (
-              <p className="mb-3 text-xs text-amber-400">
-                Some characters can&apos;t be shown in the PDF fonts and appear as “?”: {unsupportedChars.join(" ")}. The DOCX keeps them.
+            {fit && !fit.validation.ok && (
+              <p role="alert" className="mt-3 text-sm text-red-300">
+                Layout check failed: {fit.validation.issues[0]} Downloads are disabled until this is fixed.
               </p>
             )}
+            {metricPrompts.length > 0 && contentKind === "tailored" && (
+              <p className="mt-3 text-xs text-amber-200">
+                Tip: add real numbers to {metricPrompts.length === 1 ? "one bullet" : `${metricPrompts.length} bullets`} if you have them. CueAI never invents metrics.
+              </p>
+            )}
+            {contentKind === "tailored" &&
+              (tailoredCurrent?.data.duplicateReview ?? []).map((d) => (
+                <p key={`${d.first}|${d.second}`} className="mt-2 text-xs text-amber-200">
+                  Possible duplicate: {d.first} and {d.second}. Both are kept — remove one with Edit Content if needed.
+                </p>
+              ))}
+            {notices.map((n) => (
+              <p key={n} className="mt-2 text-xs text-amber-300">
+                {n}
+              </p>
+            ))}
 
             {editing && (
-              <div className="mb-4">
+              <div className="mt-4">
                 <ResumeEditor
-                  key={analyzedKey}
-                  value={finalResume}
+                  key={contentKey}
+                  value={current}
                   onChange={(next) => {
                     setEdited(next);
                     setStatus(null);
@@ -464,15 +715,31 @@ export default function ResumeTailorApp() {
               </div>
             )}
 
-            {layout ? (
-              <div className="space-y-4 rounded-xl bg-black/20 p-3 sm:p-5">
-                {layout.pages.map((p, i) => (
-                  <ResumePageSvg key={i} layout={layout} page={p} title={`Page ${i + 1}`} className="mx-auto block w-full max-w-[760px] shadow-lg" />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted">{measurerFailed ? "Preview unavailable. Refresh and try again." : "Preparing preview…"}</p>
-            )}
+            <div className="mt-4 space-y-4 rounded-xl bg-black/20 p-3 sm:p-5">
+              {layout ? (
+                layout.pages.map((p, i) => (
+                  <ResumePageSvg key={i} layout={layout} page={p} title={`Page ${i + 1}`} className="mx-auto block w-full max-w-[640px] shadow-lg" />
+                ))
+              ) : (
+                <p className="py-10 text-center text-sm text-muted">{measurerFailed ? "Preview unavailable. Refresh and try again." : "Preparing preview…"}</p>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button variant="gradient" onClick={() => void downloadPdf()} loading={exporting === "pdf"} disabled={!exportReady}>
+                <Download className="h-4 w-4" />
+                {exporting === "pdf" ? "Generating…" : "Download PDF"}
+              </Button>
+              <Button variant="outline" onClick={downloadDocx} loading={exporting === "docx"} disabled={!exportReady}>
+                <Download className="h-4 w-4" />
+                Download DOCX
+              </Button>
+              {status && (
+                <p role="status" className={cn("text-sm", status.kind === "success" ? "text-emerald-400" : "text-red-300")}>
+                  {status.text}
+                </p>
+              )}
+            </div>
           </section>
         </>
       )}
@@ -490,7 +757,7 @@ export default function ResumeTailorApp() {
             <div className="mx-auto max-w-[860px] space-y-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-white">
-                  {selected.name} · {pagesLabel}
+                  {contentLabel} · {selected.name} · {pagesLabel}
                 </p>
                 <div className="flex gap-2">
                   <Button size="sm" variant="gradient" onClick={() => void downloadPdf()} loading={exporting === "pdf"} disabled={!exportReady}>

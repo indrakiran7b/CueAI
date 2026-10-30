@@ -69,7 +69,10 @@ export function MockInterviewResults({
     <>
       {report ? (
         <Card glow className="p-6">
-          <CardTitle className="mb-3">Overview</CardTitle>
+          <CardTitle className="mb-1">Overview</CardTitle>
+          <p className="mb-3 text-xs text-subtle">
+            Scores are AI estimates for practice, not an official assessment.
+          </p>
           <div className="flex flex-wrap items-start gap-6">
             <div>
               <p className={`text-4xl font-semibold ${scoreTone(report.overallScore)}`}>

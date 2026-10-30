@@ -939,25 +939,24 @@ function AdminPortalInner() {
                                         onClick={() =>
                                           void mutate(
                                             `resend-${invite.id}`,
-                                            () =>
-                                              api<{
+                                            async () => {
+                                              const data = await api<{
                                                 emailDelivery: { ok: boolean; error: string | null };
                                               }>("/api/admin/invites", {
                                                 method: "PATCH",
                                                 body: JSON.stringify({ id: invite.id }),
-                                              }),
-                                            "Invite resent.",
-                                            (data) => {
-                                              if (!data.emailDelivery.ok) {
-                                                setError(
-                                                  data.emailDelivery.error ||
-                                                    "Email was not delivered.",
-                                                );
-                                              }
+                                              });
                                               void api<{ invites: Invite[] }>("/api/admin/invites").then(
                                                 (result) => setInvites(result.invites),
                                               );
+                                              if (!data.emailDelivery.ok) {
+                                                throw new Error(
+                                                  data.emailDelivery.error || "Email was not delivered.",
+                                                );
+                                              }
+                                              return data;
                                             },
+                                            "Invite resent.",
                                           )
                                         }
                                       >
@@ -1538,32 +1537,15 @@ function AdminPortalInner() {
                     ["requireInviteForJoin", "Require an invitation to join"],
                   ] as const
                 ).map(([key, label]) => (
-                  <label key={key} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border)] p-3 text-sm">
+                  <div key={key} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--border)] p-3 text-sm">
                     <span>{label}</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(settings.privacy[key])}
-                      disabled={!can(role, "privacy.write")}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setSettings({
-                          ...settings,
-                          privacy: { ...settings.privacy, [key]: checked },
-                        });
-                        void mutate(
-                          `privacy-${key}`,
-                          () =>
-                            api<SettingsData>("/api/admin/settings", {
-                              method: "PATCH",
-                              body: JSON.stringify({ privacy: { [key]: checked } }),
-                            }),
-                          "Privacy setting saved.",
-                          setSettings,
-                        );
-                      }}
-                    />
-                  </label>
+                    <span className="text-xs text-muted">Not enforced yet</span>
+                  </div>
                 ))}
+                <p className="text-xs text-muted">
+                  These policies are not applied by CueAI yet, so they cannot be switched here. Use Retention for
+                  automatic deletion and Users &amp; Invites to control who joins.
+                </p>
               </Card>
             )}
 

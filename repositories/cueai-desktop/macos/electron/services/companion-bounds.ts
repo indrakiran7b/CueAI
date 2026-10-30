@@ -9,7 +9,7 @@ export const COMPANION_MIN_HEIGHT = 100;
 
 /** Two-row HUD: title + composer. */
 export const COMPANION_DEFAULT_WIDTH = 520;
-export const COMPANION_DEFAULT_HEIGHT = 120;
+export const COMPANION_DEFAULT_HEIGHT = 152;
 
 export const COMPANION_MENU_HEIGHT = 320;
 

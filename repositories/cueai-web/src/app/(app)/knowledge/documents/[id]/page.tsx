@@ -12,6 +12,7 @@ import {
   formatRelativeTime,
   isUnsafeDocumentText,
   knowledgeApi,
+  documentStatusLabel,
   statusLabel,
   type KnowledgeDocument,
   type KnowledgeDocumentContent,
@@ -148,7 +149,7 @@ export default function KnowledgeDocumentDetailPage() {
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
             <span>{categoryLabel(doc.category)}</span>
-            <Badge variant={statusVariant(doc.status)}>{statusLabel(doc.status)}</Badge>
+            <Badge variant={statusVariant(doc.status)}>{documentStatusLabel(doc)}</Badge>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -161,7 +162,7 @@ export default function KnowledgeDocumentDetailPage() {
               }
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Open PDF
+              Open file
             </Button>
           )}
           {canWrite && (

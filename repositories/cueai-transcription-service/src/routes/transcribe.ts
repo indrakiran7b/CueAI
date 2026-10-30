@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrDevice } from "@/lib/server/api-auth";
 import { liveCorsHeaders, withLiveCors } from "@/lib/server/live-cors";
-import { cleanPrompt, filterWhisperSegments, isPromptEcho, type WhisperSegment } from "../whisper-filter";
+import {
+  INTERVIEW_RETRY_MESSAGE,
+  assessInterviewEnglish,
+  cleanPrompt,
+  filterWhisperSegments,
+  isPromptEcho,
+  type WhisperSegment,
+} from "../whisper-filter";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -65,6 +72,7 @@ export async function POST(request: NextRequest) {
     const file = form.get("audio");
     const label = String(form.get("label") || "You").slice(0, 40);
     const context = cleanPrompt(form.get("prompt"));
+    const interviewWorkflow = String(form.get("workflow") || "").toLowerCase() === "interview";
 
     if (!(file instanceof File)) {
       return json({ error: "Audio file is required." }, 400);
@@ -95,6 +103,7 @@ export async function POST(request: NextRequest) {
     let tryGemini = !groqKey;
     let groqStatus = 0;
     let retryAfterSec = 0;
+    let detectedLanguage = "";
 
     if (groqKey) {
       const upstream = new FormData();
@@ -102,8 +111,9 @@ export async function POST(request: NextRequest) {
       upstream.append("model", GROQ_STT_MODEL);
       upstream.append("response_format", "verbose_json");
       upstream.append("temperature", "0");
-      if (process.env.GROQ_STT_LANGUAGE?.trim()) {
-        upstream.append("language", process.env.GROQ_STT_LANGUAGE.trim());
+      const language = interviewWorkflow ? "en" : process.env.GROQ_STT_LANGUAGE?.trim();
+      if (language) {
+        upstream.append("language", language);
       }
       // Vocabulary (env) + the speaker's previous words keep terms and spelling consistent.
       const vocabulary = process.env.GROQ_STT_PROMPT?.trim() || "";
@@ -119,7 +129,12 @@ export async function POST(request: NextRequest) {
         });
         groqStatus = groqRes.status;
         if (groqRes.ok) {
-          const payload = (await groqRes.json()) as { text?: string; segments?: WhisperSegment[] };
+          const payload = (await groqRes.json()) as {
+            text?: string;
+            segments?: WhisperSegment[];
+            language?: string;
+          };
+          detectedLanguage = String(payload.language || "");
           const filtered = Array.isArray(payload.segments)
             ? filterWhisperSegments(payload.segments)
             : { text: String(payload.text || "").trim(), uncertain: false };
@@ -146,13 +161,20 @@ export async function POST(request: NextRequest) {
         const { transcribeAudioWithGemini } = await import("@/lib/server/gemini");
         const buffer = Buffer.from(await file.arrayBuffer());
         text = await withTimeout(
-          transcribeAudioWithGemini(buffer, file.type || "audio/webm"),
+          transcribeAudioWithGemini(buffer, file.type || "audio/webm", {
+            englishOnly: interviewWorkflow,
+            vocabulary: context,
+          }),
           GEMINI_TIMEOUT_MS,
           "gemini_stt",
         );
         provider = "gemini";
         model = process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
         groqStatus = 0;
+        if (text === "[NON_ENGLISH_OR_UNCLEAR]") {
+          text = "";
+          uncertain = true;
+        }
       } catch (err) {
         geminiSttDisabledUntil = Date.now() + GEMINI_COOLDOWN_MS;
         console.error("gemini_transcribe_failed", err instanceof Error ? err.message.slice(0, 120) : "unknown");
@@ -174,7 +196,35 @@ export async function POST(request: NextRequest) {
 
     const providerMs = Date.now() - started;
     if (!text) {
+      if (interviewWorkflow && uncertain) {
+        return json({
+          ok: true,
+          text: "",
+          who: label,
+          empty: true,
+          retry: true,
+          reason: "non_english_or_unclear",
+          message: INTERVIEW_RETRY_MESSAGE,
+          providerMs,
+        });
+      }
       return json({ ok: true, text: "", who: label, empty: true, providerMs });
+    }
+
+    if (interviewWorkflow) {
+      const assessment = assessInterviewEnglish(text, { detectedLanguage, uncertain });
+      if (!assessment.accepted) {
+        return json({
+          ok: true,
+          text: "",
+          who: label,
+          empty: true,
+          retry: true,
+          reason: assessment.reason,
+          message: INTERVIEW_RETRY_MESSAGE,
+          providerMs,
+        });
+      }
     }
 
     // Usage accounting must not delay the transcript.

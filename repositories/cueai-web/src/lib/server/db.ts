@@ -335,6 +335,30 @@ export type DbMockInterviewData = {
   reportError?: string;
 };
 
+export type DbResumeAnalysis = {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  status: "completed" | "tailored" | "failed" | "insufficient_job_description";
+  /** SHA-256 of the extracted resume text and of the trimmed job description. */
+  resumeHash: string;
+  jdHash: string;
+  scoringVersion: string;
+  score: number | null;
+  keywordAlignment: number | null;
+  skillsMatch: number | null;
+  matched: string[];
+  partial: string[];
+  missing: string[];
+  recommendations: string[];
+  tailoredScore?: number | null;
+  tailoredHash?: string;
+  tailoredAt?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type WorkspaceStore = {
   workspace: DbWorkspace;
   users: DbUser[];
@@ -348,6 +372,8 @@ export type WorkspaceStore = {
   meetings?: DbMeeting[];
   /** Legacy standalone mock interviews; migrated into meetings on load. */
   mockInterviews?: unknown[];
+  /** Resume Tailor analysis results (scores and requirement names only; no resume text). */
+  resumeAnalyses?: DbResumeAnalysis[];
   devices?: DbDevice[];
   activeMeetingId?: string | null;
   /**

@@ -934,8 +934,15 @@ export async function transcribeAudioBlob(
 
   if (typeof window !== "undefined" && window.cueai?.transcribe) {
     const buffer = await blob.arrayBuffer();
-    const data = await window.cueai.transcribe({ data: buffer, mime, label: who, prompt });
+    const data = await window.cueai.transcribe({
+      data: buffer,
+      mime,
+      label: who,
+      prompt,
+      workflow: "interview",
+    });
     if (data.error) throw new TranscribeError(data.error, data.status ?? 0, data.retryAfter);
+    if (data.retry && data.message) throw new TranscribeError(data.message, 422);
     if (!data.text?.trim()) return null;
     return { who: data.who || who, text: data.text.trim(), uncertain: Boolean(data.uncertain) };
   }
@@ -944,6 +951,7 @@ export async function transcribeAudioBlob(
   const ext = mime.includes("wav") ? "wav" : mime.includes("ogg") ? "ogg" : "webm";
   body.append("audio", blob, `listen.${ext}`);
   body.append("label", who);
+  body.append("workflow", "interview");
   if (prompt) body.append("prompt", prompt);
   const { deviceAuthHeaders } = await import("../../../shared/device-auth-headers");
   let res: Response;
@@ -961,7 +969,14 @@ export async function transcribeAudioBlob(
       timedOut ? 504 : 0,
     );
   }
-  let data: { text?: string; who?: string; error?: string; uncertain?: boolean } = {};
+  let data: {
+    text?: string;
+    who?: string;
+    error?: string;
+    uncertain?: boolean;
+    retry?: boolean;
+    message?: string;
+  } = {};
   try {
     data = (await res.json()) as typeof data;
   } catch {
@@ -974,6 +989,7 @@ export async function transcribeAudioBlob(
       Number(res.headers.get("retry-after")) || undefined,
     );
   }
+  if (data.retry && data.message) throw new TranscribeError(data.message, 422);
   if (!data.text?.trim()) return null;
   return { who: data.who || who, text: data.text.trim(), uncertain: Boolean(data.uncertain) };
 }

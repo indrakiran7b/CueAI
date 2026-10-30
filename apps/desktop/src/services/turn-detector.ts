@@ -23,11 +23,14 @@ export type TurnConfig = {
 };
 
 export const DEFAULT_TURN_CONFIG: TurnConfig = {
-  completeSilenceMs: 650,
-  softSilenceMs: 1100,
-  neutralSilenceMs: 1000,
-  incompleteSilenceMs: 2200,
-  carryMs: 8000,
+  // A natural pause between sentences is commonly 700–1,100 ms. Finalizing
+  // sooner answers the first sentence of a multi-part question and leaves the
+  // rest as a separate (or rejected) turn.
+  completeSilenceMs: 1400,
+  softSilenceMs: 1700,
+  neutralSilenceMs: 1800,
+  incompleteSilenceMs: 2600,
+  carryMs: 12_000,
 };
 
 export type Completeness = "complete" | "soft" | "neutral" | "incomplete";

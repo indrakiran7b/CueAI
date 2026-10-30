@@ -31,7 +31,8 @@ export function registerMediaPermissionHandler() {
   });
 
   session.defaultSession.setDevicePermissionHandler((details) => {
-    const granted = details.deviceType === "audio" || details.deviceType === "unknown";
+    const deviceType = details.deviceType as string;
+    const granted = deviceType === "audio" || deviceType === "unknown";
     console.log("[PERM] device", details.deviceType, "granted", granted);
     return granted;
   });

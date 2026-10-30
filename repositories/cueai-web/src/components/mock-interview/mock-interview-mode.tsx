@@ -18,12 +18,12 @@ import { cn } from "@/lib/utils";
 
 const EXPERIENCE_LEVELS: { id: MockDifficulty; label: string }[] = [
   { id: "beginner", label: "Fresher" },
-  { id: "intermediate", label: "Some experience" },
+  { id: "intermediate", label: "Some Experience" },
   { id: "advanced", label: "Experienced" },
 ];
 
 /**
- * Live Session's Mock Interview mode: resume/role setup, the virtual interviewer, and the
+ * The Mock Interview page: resume/role setup, the virtual interviewer, and the
  * question-by-question interview. Sessions are saved to Meetings.
  */
 export function MockInterviewMode({

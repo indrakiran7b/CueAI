@@ -11,7 +11,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const webDir = path.join(repoRoot, "apps", "web");
+// The canonical web app owns device auth, live context, KB, provider routing
+// and health checks. Packaging the legacy apps/web copy caused shipped desktop
+// answers to differ materially from development.
+const webDir = path.join(repoRoot, "repositories", "cueai-web");
 const standaloneRoot = path.join(webDir, ".next", "standalone");
 const outDir = path.join(repoRoot, "apps", "desktop", "build-resources", "web");
 

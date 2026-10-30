@@ -365,6 +365,48 @@ button {
   margin-top: 10px;
 }
 
+.ov-btn.is-kb {
+  color: #5eead4;
+}
+
+.ov-kb {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ov-answer .ov-kb-status,
+.ov-answer .ov-kb-note {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.ov-kb-sources {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.ov-kb-sources li {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  user-select: text;
+}
+
+.ov-kb-file {
+  color: #e4e4e7;
+  font-weight: 500;
+}
+
+.ov-kb-excerpt {
+  color: #9a9aa3;
+  line-height: 1.45;
+}
+
 .ov-answer pre {
   margin: 10px 0;
   padding: 10px 12px;

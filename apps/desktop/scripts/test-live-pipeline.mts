@@ -15,8 +15,10 @@ const { LivePipeline } = await import("../src/services/live-pipeline");
 const { TranscriptionQueue, TranscribeError } = await import("../src/services/transcription-queue");
 const { classifyCompleteness, mergeTranscripts } = await import("../src/services/turn-detector");
 const { AutoAnswerController } = await import("../src/services/auto-answer-controller");
+const { mergeStreamChunk } = await import("../src/services/live-answer");
 const {
   clearQuestionMemory,
+  cleanQuestionText,
   evaluateQuestion,
   getRecentExchanges,
   rememberExchange,
@@ -142,7 +144,6 @@ function autoSubmit(controller: InstanceType<typeof AutoAnswerController>, u: Fi
     allowSelfQuestions: true,
     finalized: true,
     turnFinalized: true,
-    forceSystem: true,
   });
   if (!d.accept) return d;
   controller.submit({ utteranceId: u.id, text: d.question, finalizedAt: u.finalizedAt, source: "auto" });
@@ -152,7 +153,7 @@ function autoSubmit(controller: InstanceType<typeof AutoAnswerController>, u: Fi
 beforeEach(() => clearQuestionMemory());
 
 describe("turn completion", () => {
-  it("1. answers a short technical question ~650 ms after the last word", async () => {
+  it("1. answers a short technical question after the multi-sentence grace window", async () => {
     const r = rig({ script: ["What is a decorator in Python?"] });
     await r.silence(400);
     await r.speak(1200);
@@ -162,7 +163,23 @@ describe("turn completion", () => {
     assert.equal(u.text, "What is a decorator in Python?");
     assert.equal(u.completeness, "complete");
     const wait = u.finalizedAt - u.lastVoiceAt;
-    assert.ok(wait >= 650 && wait <= 700, `finalized ${wait} ms after last voice`);
+    assert.ok(wait >= 1400 && wait <= 1460, `finalized ${wait} ms after last voice`);
+  });
+
+  it("keeps a complete first sentence and its requested detail in one turn", async () => {
+    const r = rig({
+      script: [
+        "In Ruby, what is the difference between a Proc and a lambda?",
+        "Please explain argument handling and give one code example.",
+      ],
+    });
+    await r.speak(1500);
+    await r.silence(900);
+    assert.equal(r.utterances.length, 0, "a natural sentence pause must not submit early");
+    await r.speak(1400);
+    await r.silence(1800);
+    assert.equal(r.utterances.length, 1);
+    assert.match(r.utterances[0]!.text, /Proc and a lambda\?.*Please explain/);
   });
 
   it("2. keeps a long question with a mid-sentence pause as one turn", async () => {
@@ -191,7 +208,7 @@ describe("turn completion", () => {
   it("4. separates two consecutive questions", async () => {
     const r = rig({ script: ["What is a Python list?", "When would you use a tuple instead?"] });
     await r.speak(1200);
-    await r.silence(900);
+    await r.silence(1800);
     await r.speak(1400);
     await r.silence(1500);
     assert.deepEqual(
@@ -215,7 +232,7 @@ describe("turn completion", () => {
     const r = rig({ script: ["Can you explain the difference between"] });
     await r.speak(1500);
     await r.silence(3000);
-    await r.idle(9000);
+    await r.idle(13_000);
     assert.equal(r.utterances.length, 0);
     assert.deepEqual(r.drops.map((d) => d.reason), ["incomplete_expired"]);
   });
@@ -418,6 +435,23 @@ describe("auto-answer controller", () => {
     assert.equal(a.requests[2]!.question, "And what is a Service?", "outside the window it is a new question");
   });
 
+  it("merges a polite continuation instead of showing it as a separate answer", async () => {
+    const a = answerer();
+    a.controller.submit({ utteranceId: "s-1", text: "What is a Ruby Proc?", finalizedAt: 0, source: "auto" });
+    await settle();
+    a.controller.submit({
+      utteranceId: "s-2",
+      text: "Please explain return behavior and give an example.",
+      finalizedAt: 3000,
+      source: "auto",
+    });
+    await settle();
+    assert.equal(
+      a.requests[1]!.question,
+      "What is a Ruby Proc? Please explain return behavior and give an example.",
+    );
+  });
+
   it("15. keeps answering after the first answer", async () => {
     const r = rig({
       script: ["What is a hash map?", "How does Python manage memory?", "What is a race condition?"],
@@ -463,6 +497,44 @@ describe("conversation context", () => {
     assert.equal(r.utterances.length, 1);
     assert.equal(r.utterances[0]!.lane, "You", "App.tsx skips lane You before the gate");
   });
+
+  it("accepts technical requests after a language prefix or setup sentence", () => {
+    const opts = { who: "System", finalized: true, turnFinalized: true };
+    assert.equal(
+      evaluateQuestion(
+        "In Ruby, compare blocks, Procs, and lambdas, including argument handling and return behavior.",
+        opts,
+      ).accept,
+      true,
+    );
+    assert.equal(
+      evaluateQuestion(
+        "In SQL, a query is fast in development but slow in production. Walk through plans, indexes, locks, and data volume.",
+        opts,
+      ).accept,
+      true,
+    );
+  });
+
+  it("repairs only context-safe technical ASR terms before answering", () => {
+    assert.equal(
+      cleanQuestionText("Inc, write a save function to reverse a singly linked list."),
+      "In C, write a safe function to reverse a singly linked list.",
+    );
+    assert.equal(
+      cleanQuestionText("In SAP A BAP, compare ABAPI, RFC, and I document."),
+      "In SAP ABAP, compare BAPI, RFC, and IDoc.",
+    );
+    assert.equal(cleanQuestionText("Save function settings for the editor."), "Save function settings for the editor.");
+  });
+});
+
+describe("stream assembly", () => {
+  it("accepts deltas without repeating cumulative provider chunks", () => {
+    assert.equal(mergeStreamChunk("Hello", " world"), "Hello world");
+    assert.equal(mergeStreamChunk("Hello", "Hello world"), "Hello world");
+    assert.equal(mergeStreamChunk("Hello world", " world"), "Hello world");
+  });
 });
 
 describe("capture lifecycle", () => {
@@ -470,7 +542,7 @@ describe("capture lifecycle", () => {
     const r = rig({ lanes: ["You", "System"], script: ["I would start with the indexes."] });
     await r.speak(1200, "You");
     r.remove("You");
-    await r.idle(1500);
+    await r.idle(2000);
     assert.deepEqual(r.utterances.map((u) => [u.lane, u.text]), [["You", "I would start with the indexes."]]);
   });
 

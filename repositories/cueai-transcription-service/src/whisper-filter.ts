@@ -5,6 +5,42 @@ export type WhisperSegment = {
   compression_ratio?: number;
 };
 
+export const INTERVIEW_RETRY_MESSAGE = "Please ask the question in English or repeat it clearly.";
+
+const ENGLISH_LANGUAGE_NAMES = new Set(["en", "eng", "english"]);
+const NON_LATIN_LETTER = /[\u0400-\u052f\u0590-\u08ff\u0900-\u0dff\u0e00-\u0fff\u1000-\u109f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u;
+const TECHNICAL_TOKEN = /\b(?:abap|amdp|badi|bapi|cds|c\+\+|fastapi|idoc|java|javascript|mongodb|odata|postgresql|python|react|rest|rfc|sap|sql)\b/i;
+
+export type InterviewEnglishAssessment = {
+  accepted: boolean;
+  reason?: "non_english" | "uncertain";
+};
+
+/**
+ * Deterministic safety gate for the interview workflow. Provider language
+ * metadata is authoritative when present; script checks prevent non-English
+ * audio from being treated as an invented English question when it is absent.
+ * This deliberately does not rewrite recognized technical vocabulary.
+ */
+export function assessInterviewEnglish(
+  text: string,
+  opts: { detectedLanguage?: string; uncertain?: boolean } = {},
+): InterviewEnglishAssessment {
+  const value = text.trim();
+  if (!value) return { accepted: true };
+  const language = String(opts.detectedLanguage || "").trim().toLowerCase();
+  if (language && !ENGLISH_LANGUAGE_NAMES.has(language)) {
+    return { accepted: false, reason: "non_english" };
+  }
+  if (NON_LATIN_LETTER.test(value)) {
+    return { accepted: false, reason: "non_english" };
+  }
+  if (opts.uncertain && !TECHNICAL_TOKEN.test(value)) {
+    return { accepted: false, reason: "uncertain" };
+  }
+  return { accepted: true };
+}
+
 /**
  * Drop segments Whisper most likely invented over silence or noise, and flag
  * low-confidence speech. Never rewrites the recognized words.

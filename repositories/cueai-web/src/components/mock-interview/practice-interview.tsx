@@ -183,7 +183,11 @@ export function PracticeInterview({
           setPhase("results");
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setError({ message: "That mock interview could not be loaded. You can start a new one below.", action: "start" });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -418,7 +422,7 @@ export function PracticeInterview({
             )}
             {showFeedback && t.evaluation && (
               <p className="pl-10 text-xs text-muted">
-                <span className="font-medium text-foreground/80">Feedback ({t.evaluation.score}/10):</span> {t.evaluation.feedback}
+                <span className="font-medium text-foreground/80">Feedback (estimated {t.evaluation.score}/10):</span> {t.evaluation.feedback}
               </p>
             )}
           </Fragment>

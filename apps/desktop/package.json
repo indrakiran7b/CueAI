@@ -10,6 +10,8 @@
     "build": "tsc -p tsconfig.node.json --noEmit && vite build && tsc -p tsconfig.electron.json",
     "test:questions": "npx tsx --test scripts/test-question-detection.mts",
     "test:pipeline": "npx tsx --test scripts/test-live-pipeline.mts",
+    "test:menu": "npx tsx --test scripts/test-overlay-menu.mts",
+    "test:transparency": "npx tsx --test scripts/test-overlay-transparency.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win portable --x64"

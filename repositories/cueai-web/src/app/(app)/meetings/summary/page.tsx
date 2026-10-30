@@ -26,7 +26,7 @@ export default function SummaryPage() {
         </p>
       </div>
       <Card className="p-6">
-        <p className="text-sm text-muted">No meetings yet.</p>
+        <p className="text-sm text-muted">Choose a meeting in Meetings Summary to see its summary.</p>
         <div className="mt-4">
           <Link href={withDesktopParam("/meetings")}>
             {mac ? (

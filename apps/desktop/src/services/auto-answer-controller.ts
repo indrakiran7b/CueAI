@@ -71,7 +71,8 @@ type Active = {
   sawToken: boolean;
 };
 
-const CONTINUATION = /^(and|also|plus|or|then|additionally|as well as|what about|how about)\b/i;
+const CONTINUATION =
+  /^(and|also|plus|or|then|additionally|as well as|what about|how about|please (?:explain|describe|show|cover|include|give)|(?:explain|describe|show|cover|include|give) (?:the|a|an|one|how|why|what))\b/i;
 
 function normalize(text: string) {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
