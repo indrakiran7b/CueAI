@@ -38,6 +38,8 @@ const { fitResume, validateLayout } = await import("../src/lib/resume/fit");
 const { getMeasurer, buildResumePdf } = await import("../src/lib/resume/pdf");
 const { layoutResume } = await import("../src/lib/resume/layout");
 const { resumeDocumentXml, docxMatchesLayout } = await import("../src/lib/resume/docx");
+const { docxBlob } = await import("@cueai/export-service/exportDocument");
+const mammoth = await import("mammoth");
 const { previewContent } = await import("../src/components/resume/tailor-progress");
 const { TEMPLATES } = await import("../src/lib/resume/templates");
 const { readStore, updateStore } = await import("../src/lib/server/db");
@@ -574,9 +576,9 @@ describe("compact match summary and full analysis", async () => {
     const tailoredResume = experienced();
     tailoredResume.experience[0]!.bullets.push("Deployed services with Docker and Kubernetes on AWS");
     const after = matchResume(tailoredResume, job, NOW);
-    const updated = summary({ report: after, scoreSource: "tailored", improvements: 2 });
+    const updated = summary({ report: after, scoreSource: "tailored", validatedChanges: 2 });
     assert.match(updated, new RegExp(`>${after.score}</span>`));
-    assert.match(updated, new RegExp(`Updated from ${report.score} · 2 improvements made`));
+    assert.match(updated, new RegExp(`Updated from ${report.score} · 2 validated content changes`));
     assert.doesNotMatch(updated, /<table/, "no comparison table by default");
     const html = full({ report: after, scoreSource: "tailored" });
     for (const row of ["ATS match", "Keyword alignment", "Skills match", "Requirements demonstrated", "Experience relevance"]) assert.match(html, new RegExp(row));
@@ -843,6 +845,10 @@ describe("change detection, duplicate records and final validation", async () =>
     const layoutText = normalizeForCompare(fit.layout.blocks.flatMap((b) => b.runs.map((r) => r.text)).join(" "));
     const xml = resumeDocumentXml(fit.layout);
     assert.ok(docxMatchesLayout(xml, fit.layout), "DOCX matches the preview layout");
+    const docx = docxBlob(xml);
+    const reopenedDocx = normalizeForCompare(
+      (await mammoth.extractRawText({ buffer: Buffer.from(await docx.arrayBuffer()) })).value,
+    );
     const pdf = await buildResumePdf(resume, "classic");
     assert.equal(pdf.pageCount, fit.pageCount, "PDF pages = preview pages");
     const { text } = await extractText(await getDocumentProxy(pdf.bytes), { mergePages: true });
@@ -854,6 +860,7 @@ describe("change detection, duplicate records and final validation", async () =>
       assert.ok(layoutText.includes(head), `preview has ${c.section}`);
       assert.ok(pdfText.includes(head), `PDF has ${c.section}`);
       assert.ok(normalizeForCompare(xml.replace(/<[^>]+>/g, " ")).includes(head), `DOCX has ${c.section}`);
+      assert.ok(reopenedDocx.includes(head), `reopened DOCX has ${c.section}`);
     }
     assert.ok(!pdfText.includes(normalizeForCompare("Engineer who likes clean code")), "PDF is not the original");
   });
@@ -866,7 +873,7 @@ describe("change detection, duplicate records and final validation", async () =>
     ]);
     assert.equal(again.rewrites.length, 0);
     const counts = countChanges(again.changes);
-    assert.equal(counts.improved, false);
+    assert.equal(counts.hasMeaningfulChanges, false);
     assert.equal(counts.rewritten + counts.added, 0);
     assert.ok(again.changes.every((c) => c.kind === "unchanged"), again.changes.map((c) => `${c.kind} ${c.section}`).join("; "));
   });
@@ -1370,12 +1377,23 @@ describe("JD-based tailoring: one source resume, two job descriptions", () => {
 
   it("invalid AI output during generation is reported, never shown as a tailored resume", async () => {
     const c = CASES[1]!;
-    replies = [fakeModel(c), "{not json"];
+    replies = [fakeModel(c), "{not json", "{still not json"];
     const res = await post(analyzePost, "/api/resume/analyze", uploadForm(c.jd, "\ninvalid"));
     assert.equal(res.status, 502);
     const body = (await res.json()) as TailorBody;
     assert.match(String(body.error), /unreadable tailoring result/);
     assert.equal(body.tailored, undefined);
+  });
+
+  it("repairs malformed generation output once, then validates the recovered candidate", async () => {
+    const c = CASES[1]!;
+    replies = [fakeModel(c), "{not json", fakeModel(c)];
+    const res = await post(analyzePost, "/api/resume/analyze", uploadForm(c.jd, "\nrepaired output"));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as TailorBody;
+    assert.ok(body.tailored?.resume);
+    assert.equal(body.timings?.outputRepair, 1);
+    assert.equal(aiCalls.length, 4, "analysis, malformed generation, one output repair, and the existing fact-check follow-up");
   });
 
   it("a JD too thin to score returns 422 with its analysis and makes no generation call", async () => {
@@ -1395,7 +1413,7 @@ describe("JD-based tailoring: one source resume, two job descriptions", () => {
     const good = await post(analyzePost, "/api/resume/analyze", uploadForm(c.jd, "\nlast valid"));
     assert.equal(good.status, 200);
     const valid = ((await good.json()) as TailorBody).tailored!;
-    replies = [fakeModel(c), "{not json"];
+    replies = [fakeModel(c), "{not json", "{still not json"];
     const bad = await post(analyzePost, "/api/resume/analyze", uploadForm(c.jd, "\nlast valid, then failed"));
     assert.equal(bad.status, 502);
     assert.equal(((await bad.json()) as TailorBody).tailored, undefined);

@@ -51,6 +51,7 @@ import {
 } from "./services/screen-context";
 import type { ScreenshotResult } from "./types/companion";
 import { OverlayMenu } from "./components/OverlayMenu";
+import { AnswerContent } from "./components/AnswerContent";
 import { ResizeHandles } from "./components/ResizeHandles";
 import { TransparencyControl } from "./components/TransparencyControl";
 import { useOverlayTransparency } from "./lib/use-overlay-transparency";
@@ -61,19 +62,6 @@ function formatElapsed(ms: number) {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function answerLines(text: string) {
-  const bullets = text
-    .split(/\n+/)
-    .map((line) => line.replace(/^[-*•]\s*/, "").replace(/^#{1,6}\s+/, "").trim())
-    .filter((line) => Boolean(line) && !/^```[\w#+.-]*$/.test(line));
-  if (bullets.length > 1) return bullets;
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  return sentences.length > 1 ? sentences.slice(0, 6) : [text.trim()];
 }
 
 export default function App() {
@@ -766,11 +754,7 @@ export default function App() {
           ) : streaming && !hasAnswer ? (
             <p className="ov-muted">Thinking…</p>
           ) : (
-            <div className="ov-answer">
-              {answerLines(answer || "Waiting for a question.").map((line, index) => (
-                <p key={index}>{line}</p>
-              ))}
-            </div>
+            <AnswerContent answer={answer || "Waiting for a question."} />
           )}
         </section>
       )}

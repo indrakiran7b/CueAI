@@ -265,7 +265,25 @@ test("setup validation requires a job role and applies defaults", () => {
   assert.equal(ok.setup.interviewType, "mixed");
   assert.equal(ok.setup.difficulty, "intermediate");
   assert.equal(ok.setup.jobDescription, undefined);
-  assert.deepEqual([10, 20, 30].map((d) => logic.questionLimitFor(d as 10 | 20 | 30)), [5, 8, 12]);
+  assert.deepEqual([10, 20, 30].map((d) => logic.questionLimitFor(d as 10 | 20 | 30)), [10, 20, 30]);
+});
+
+test("10 and 20 question interviews follow the exact 70/20/10 distribution", () => {
+  for (const [total, expected] of [
+    [10, { project: 7, technical: 2, hr_scenario: 1 }],
+    [20, { project: 14, technical: 4, hr_scenario: 2 }],
+  ] as const) {
+    assert.deepEqual(logic.questionDistribution(total), expected);
+    const plan = logic.questionCategoryPlan(total);
+    assert.equal(plan.length, total);
+    assert.deepEqual(
+      plan.reduce(
+        (counts, category) => ({ ...counts, [category]: counts[category] + 1 }),
+        { project: 0, technical: 0, hr_scenario: 0 },
+      ),
+      expected,
+    );
+  }
 });
 
 test("profile grounding drops skills, roles and certifications not in the resume", () => {
@@ -383,7 +401,8 @@ test("start creates a mock interview meeting with one question, retry-safe and w
   assert.equal(m.title, "Mock Interview · Frontend Developer");
   assert.equal(m.mock.status, "active");
   assert.equal(m.mock.turns.length, 1);
-  assert.equal(m.mock.questionLimit, 5);
+  assert.equal(m.mock.questionLimit, 10);
+  assert.equal(m.mock.turns[0].category, "project");
   assert.equal(m.mock.setup.difficulty, "beginner");
   assert.equal(m.mock.setup.interviewType, "technical");
   assert.ok(m.mock.welcome);
@@ -394,6 +413,7 @@ test("start creates a mock interview meeting with one question, retry-safe and w
   const opening = seenBodies.find((b) => b.includes("Start the interview")) || "";
   assert.ok(opening.includes("Expense Tracker"), "resume content feeds the questions");
   assert.ok(opening.includes("Build React UIs"), "job description feeds the questions");
+  assert.match(opening, /PROJECT question/);
 
   const calls = seenAuth.length;
   assert.equal(calls - before, 2, "profile + opening question");
@@ -428,10 +448,12 @@ test("the next question appears only after an answer; answers and evaluations ar
   assert.deepEqual(body.mock.turns[0].evaluation.missing, ["Impact metrics"]);
   assert.deepEqual(body.mock.turns[0].evaluation.correct, ["Named the React and Express stack"]);
   assert.equal(body.mock.turns[0].answerSource, "voice");
-  assert.equal(body.mock.turns[1].kind, "follow_up");
+  assert.equal(body.mock.turns[1].kind, "main");
+  assert.equal(body.mock.turns[1].category, logic.questionCategoryPlan(10)[1]);
   const lastPrompt = seenBodies.at(-1) || "";
   assert.ok(lastPrompt.includes("I built it with React and Express."), "previous answer feeds the next question");
   assert.ok(lastPrompt.includes("never repeat these"), "asked questions are listed to avoid repeats");
+  assert.match(lastPrompt, /required category/);
 
   const saved = (await readStore()).meetings!.find((x) => x.id === meetingId)!;
   assert.equal(saved.mock!.turns[0].answer, "I built it with React and Express.");

@@ -86,7 +86,7 @@ const BEHAVIORAL =
   /\b(tell me about a time|describe a (time|situation)|give (me )?an example of a time|a time when you|tell me about a difficult bug|how do you (handle|deal with) (conflict|pressure|stress|criticism|failure|deadlines)|(biggest|greatest) (weakness|strength)|why should we hire|why do you want (to work|this (job|role))|where do you see yourself|disagree(d)? with (your|a) (manager|teammate|colleague))\b/i;
 
 const CODING =
-  /\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution|report)\b|\bimplement\b[^?.]{0,70}\b(rate limiter|cache|queue|stack|tree|graph|service)\b|\bwrite (a|an|the) (sql |python |java |javascript |abap )?(query|program|function|report)\b|\b(a |the )?program (to|that|for)\b|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers|intervals)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+|abap)\b|^(given\b[^?.]{0,40}\b)?(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?|intervals?)\b/i;
+  /\b(write|implement|code|program)\b[^?.]{0,60}\b(function|program|code|query|class|method|script|algorithm|solution|report)\b|\bimplement\b[^?.]{0,70}\b(rate limiter|cache|queue|stack|tree|graph|service)\b|\bwrite (a|an|the) (sql |python |java |javascript |abap )?(query|program|function|report)\b|\b(a |the )?program (to|that|for)\b|\b(reverse|sort|find|count|remove|merge)\b[^?.]{0,40}\b(array|list|string|linked list|duplicates|words|numbers|intervals)\b[^?.]{0,30}\b(in|using) (python|java|javascript|sql|c\+\+|abap)\b|^(given\b[^?.]{0,40}\b)?(merge|flatten|reverse|sort|rotate|dedupe|deduplicate|remove duplicates (from|in)|find (the )?(second )?(largest|smallest|max|min|duplicates?|missing))\b[^?]{0,60}\b(arrays?|lists?|strings?|numbers?|elements?|integers?|intervals?)\b|^find\b[^?]{0,30}\b(?:second|third|n(?:th)?)[- ]highest salary\b/i;
 
 /** Past-tense personal questions are about the candidate's own work, so they need the resume. */
 const PERSONAL_PAST =
@@ -151,7 +151,7 @@ const LANGUAGES: [RegExp, string][] = [
   [/\babap\b/i, "ABAP"],
   [/\bpython\b/i, "Python"],
   [/\btype ?script\b/i, "TypeScript"],
-  [/\bjava ?script\b|\bnode(\.js| js)?\b/i, "JavaScript"],
+  [/\bjava ?script\b|\bnode(\.js| js)?\b|\breact(?:\.js| js)?\b/i, "JavaScript"],
   [/\bjava\b/i, "Java"],
   [/\bc\+\+|\bc plus plus\b|\bcpp\b/i, "C++"],
   [/\bc#|\bc sharp\b/i, "C#"],
@@ -160,8 +160,9 @@ const LANGUAGES: [RegExp, string][] = [
   [/\bkotlin\b/i, "Kotlin"],
   [/\bswift\b/i, "Swift"],
   [/\brust\b/i, "Rust"],
+  [/\bruby\b/i, "Ruby"],
   [/\bphp\b/i, "PHP"],
-  [/\bc language\b|\busing c\b|\bin c\b|\binc,?\s+(?=(?:write|implement|code|program|function)\b)/i, "C"],
+  [/\bc language\b|\busing c(?!\s*(?:\+\+|#))\b|\bin c(?!\s*(?:\+\+|#))\b|\binc,?\s+(?=(?:write|implement|code|program|function)\b)/i, "C"],
 ];
 
 export type LanguageSelection = {
@@ -170,7 +171,33 @@ export type LanguageSelection = {
 };
 
 function languageIn(text: string): string | undefined {
-  return LANGUAGES.find(([re]) => re.test(text))?.[1];
+  return LANGUAGES.map(([re, language], priority) => ({
+    language,
+    priority,
+    index: text.search(re),
+  }))
+    .filter((match) => match.index >= 0)
+    .sort((a, b) => a.index - b.index || a.priority - b.priority)[0]?.language;
+}
+
+function resumeSkillText(context: string): string {
+  const normalized = context.replace(/\r/g, "");
+  const section = /(?:^|\n)\s*(?:technical\s+)?skills?\s*:?\s*\n?([\s\S]*?)(?=\n\s*(?:experience|employment|projects?|education|certifications?|achievements?|summary|profile)\s*:?\s*(?:\n|$)|$)/i.exec(
+    normalized,
+  )?.[1];
+  return section?.trim() || normalized;
+}
+
+function languageFromResume(context: string): string | undefined {
+  const skills = resumeSkillText(context);
+  const cIndex = skills.search(/(?:^|[,;|/\s])C(?=$|[,;|/\s])/);
+  const found = LANGUAGES.map(([re, language], priority) => ({
+    language,
+    priority,
+    index: skills.search(re),
+  })).filter((match) => match.index >= 0);
+  if (cIndex >= 0) found.push({ language: "C", priority: LANGUAGES.length, index: cIndex });
+  return found.sort((a, b) => a.index - b.index || a.priority - b.priority)[0]?.language;
 }
 
 /**
@@ -194,13 +221,16 @@ export function selectProgrammingLanguage(input: {
   if (DATABASE.test(input.question) && /\b(query|sql|database)\b/i.test(input.question)) {
     return { language: "SQL", source: "question_context" };
   }
+  if (/\b(?:second|third|n(?:th)?)[- ]highest salary\b|\bemployees?\b[^?.]{0,40}\bsalar(?:y|ies)\b/i.test(input.question)) {
+    return { language: "SQL", source: "question_context" };
+  }
   const conversation = [
     ...(input.history || []).slice(-4).flatMap((h) => [h.question, h.answer]),
     ...(input.transcript || []).slice(-6).map((l) => l.text),
   ].join("\n");
   const established = languageIn(conversation);
   if (established) return { language: established, source: "conversation" };
-  const resumeLanguage = languageIn(input.verifiedContext || "");
+  const resumeLanguage = languageFromResume(input.verifiedContext || "");
   if (resumeLanguage) return { language: resumeLanguage, source: "resume" };
   const roleLanguage = languageIn(input.targetRole || "");
   if (roleLanguage) return { language: roleLanguage, source: "target_role" };

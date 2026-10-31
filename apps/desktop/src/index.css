@@ -358,6 +358,80 @@ button {
   margin-top: 10px;
 }
 
+.ov-structured-answer {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.ov-answer-section h3 {
+  margin: 0 0 5px;
+  color: #b7b7c2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ov-answer-section p {
+  margin: 0;
+  color: #f4f4f5;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.ov-answer-section p + p {
+  margin-top: 8px;
+}
+
+.ov-code-block {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(161, 161, 170, 0.28);
+  border-radius: 9px;
+  background: rgba(8, 9, 12, 0.94);
+}
+
+.ov-card .ov-code-block > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(161, 161, 170, 0.2);
+  padding: 7px 9px;
+  color: #d4d4d8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ov-card .ov-code-block > header button {
+  flex: none;
+  border: 1px solid rgba(161, 161, 170, 0.25);
+  background: rgba(39, 39, 42, 0.85);
+  color: #e4e4e7;
+}
+
+.ov-code-block pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  tab-size: 4;
+  white-space: pre;
+}
+
+.ov-code-block code {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #e6edf3;
+  white-space: pre;
+  user-select: text;
+}
+
 .resize-edge {
   position: absolute;
   z-index: 50;

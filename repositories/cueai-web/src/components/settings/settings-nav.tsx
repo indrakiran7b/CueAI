@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Bell,
@@ -10,7 +10,6 @@ import {
   KeyRound,
   Monitor,
   Palette,
-  Shield,
   Sparkles,
   Trash2,
   User,
@@ -35,7 +34,6 @@ type NavGroup = {
 const PRIMARY: NavItem[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "models", label: "AI Providers & Models", icon: Sparkles },
-  { id: "privacy", label: "Privacy", icon: Shield },
 ];
 
 const APPEARANCE_GROUP: NavGroup = {
@@ -104,10 +102,7 @@ export function SettingsNav({
 }) {
   const tail = TAIL.filter((item) => admin || !item.adminOnly);
   const [appearanceOpen, setAppearanceOpen] = useState(() => APPEARANCE_SECTION_IDS.has(section));
-
-  useEffect(() => {
-    if (APPEARANCE_SECTION_IDS.has(section)) setAppearanceOpen(true);
-  }, [section]);
+  const showAppearance = appearanceOpen || APPEARANCE_SECTION_IDS.has(section);
 
   function selectPrimary(id: string) {
     if (id !== APPEARANCE_GROUP.id) setAppearanceOpen(false);
@@ -143,7 +138,7 @@ export function SettingsNav({
           active={section === APPEARANCE_GROUP.id}
           onClick={() => selectAppearance()}
         />
-        {appearanceOpen && (
+        {showAppearance && (
           <div className="cue-settings-nav-subgroup" role="group" aria-label="Appearance related">
             {APPEARANCE_GROUP.children.map((child) => (
               <NavButton

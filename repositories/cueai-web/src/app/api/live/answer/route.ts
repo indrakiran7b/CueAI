@@ -162,10 +162,14 @@ async function gatherLiveContext(
     meetingId: null,
     knowledgeMeta: { knowledgeUsed: false, sourceType: "general_ai", sources: [] },
   };
-  const { needsLiveKnowledge, retrieveKnowledgeForMeeting } = await import(
-    "@/lib/server/knowledge-retrieve"
-  );
-  const wantKb = !input.skipKnowledge && needsLiveKnowledge(input.prompt);
+  const meetingTask =
+    !input.isTest && !input.history.length
+      ? import("@/lib/server/meetings").then((module) => module.resolveAnswerBriefing(session))
+      : null;
+  const knowledgeModule = input.skipKnowledge
+    ? null
+    : await withBudget(import("@/lib/server/knowledge-retrieve"), null);
+  const wantKb = Boolean(knowledgeModule?.needsLiveKnowledge(input.prompt));
   const wantPersonal = input.analysis.needsPersonalContext;
   const wantBriefing =
     wantKb || !input.history.length || (wantPersonal && !input.sessionContext.includes("CANDIDATE RESUME"));
@@ -176,8 +180,9 @@ async function gatherLiveContext(
 
   const briefingTask = wantBriefing
     ? (async () => {
-        const { resolveAnswerBriefing } = await import("@/lib/server/meetings");
-        const resolved = await resolveAnswerBriefing(session);
+        const resolved = meetingTask
+          ? await meetingTask
+          : await (await import("@/lib/server/meetings")).resolveAnswerBriefing(session);
         out.meetingId = input.isTest ? null : resolved.meeting?.id || null;
         if (!input.isTest && !input.history.length && resolved.meeting?.answers?.length) {
           out.history = resolved.meeting.answers
@@ -205,8 +210,8 @@ async function gatherLiveContext(
             out.sessionContext = fromStore;
           }
         }
-        if (wantKb) {
-          const kb = await retrieveKnowledgeForMeeting(input.prompt, {
+        if (wantKb && knowledgeModule) {
+          const kb = await knowledgeModule.retrieveKnowledgeForMeeting(input.prompt, {
             workspaceId: session.workspaceId,
             meetingId: out.meetingId || undefined,
             documentIds: resolved.briefing.documentIds,

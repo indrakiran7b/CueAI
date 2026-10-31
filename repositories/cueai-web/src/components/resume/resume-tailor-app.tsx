@@ -295,7 +295,7 @@ export default function ResumeTailorApp() {
       if (!next?.resume || !next.match || !next.changes?.length) {
         throw new StageError("rewrite", "Tailoring came back incomplete. Your previous resume is unchanged.");
       }
-      if (next.jdHash !== base.jdHash || !next.changeCounts?.improved) {
+      if (next.jdHash !== base.jdHash || !next.changeCounts?.hasMeaningfulChanges) {
         throw new StageError("rewrite", "Tailoring did not produce a validated result for this job description. Your previous resume is unchanged.");
       }
       if (seq !== requestSeq.current || key !== inputKeyRef.current) return;
@@ -304,7 +304,15 @@ export default function ResumeTailorApp() {
       setRescore(null);
       setEditing(false);
       const made = next.changeCounts.rewritten + next.changeCounts.added;
-      setStatus({ kind: "success", text: `Resume updated: ${made} improvement${made === 1 ? "" : "s"} made.` });
+      const before = base.match.score ?? 0;
+      const after = next.match.score ?? before;
+      setStatus({
+        kind: "success",
+        text:
+          after > before
+            ? `Resume validated: match improved from ${before} to ${after}, with ${made} content change${made === 1 ? "" : "s"}.`
+            : `Resume validated with ${made} content change${made === 1 ? "" : "s"}; the match score remains ${after}. No score improvement is claimed.`,
+      });
     } catch (err) {
       fail(seq, err, () => void runTailor());
     } finally {
@@ -396,9 +404,10 @@ export default function ResumeTailorApp() {
   const showProgress = busy === "tailor" || failedAt !== null || (Boolean(tailoredCurrent) && tailoredValid !== true);
   const pagesLabel = fit ? `${fit.pageCount} page${fit.pageCount === 1 ? "" : "s"}` : "";
   const contentLabel = contentKind === "tailored" ? (tailoredValid ? "Tailored" : "Tailored · checking layout") : contentKind === "edited" ? "Edited" : "Original";
-  const improvements = scoreSource === "tailored" && tailoredCurrent ? tailoredCurrent.data.changeCounts.rewritten + tailoredCurrent.data.changeCounts.added : null;
+  const validatedChanges = scoreSource === "tailored" && tailoredCurrent ? tailoredCurrent.data.changeCounts.rewritten + tailoredCurrent.data.changeCounts.added : null;
   const metricPrompts = tailoredCurrent?.data.metricPrompts ?? [];
   const notices = [
+    ...(analysis?.data.extraction?.warnings ?? []),
     ...(fit?.validation.warnings ?? []),
     ...(unsupportedChars.length ? [`Some characters can't be shown in the PDF fonts and appear as “?”: ${unsupportedChars.join(" ")}. The DOCX keeps them.`] : []),
   ];
@@ -556,7 +565,7 @@ export default function ResumeTailorApp() {
             recommendations={recommendations}
             scoreSource={scoreSource}
             outdated={stale ? "inputs" : edited && !rescoreCurrent ? "edited" : null}
-            improvements={improvements}
+            validatedChanges={validatedChanges}
             action={
               edited && !rescoreCurrent && !stale ? (
                 <Button variant="outline" onClick={() => void runRecheck()} loading={busy === "rescore"} disabled={busy !== null}>

@@ -11,6 +11,7 @@ import {
   type MockDuration,
   type MockInterviewType,
   type MockQuestionFeedback,
+  type MockQuestionCategory,
   type MockReadiness,
   type MockReport,
   type MockReportCategory,
@@ -103,6 +104,46 @@ export function mockMeetingTitle(setup: MockSetup): string {
 export function questionLimitFor(duration: MockDuration): number {
   return MOCK_QUESTION_LIMIT[duration];
 }
+
+export function questionDistribution(total: number): Record<MockQuestionCategory, number> {
+  const count = Math.max(1, Math.floor(total));
+  const project = Math.floor(count * 0.7);
+  const technical = Math.floor(count * 0.2);
+  return { project, technical, hr_scenario: count - project - technical };
+}
+
+/** Smooth deterministic ordering while preserving exact 70/20/10 integer quotas. */
+export function questionCategoryPlan(total: number): MockQuestionCategory[] {
+  const count = Math.max(1, Math.floor(total));
+  const quotas = questionDistribution(count);
+  const categories: MockQuestionCategory[] = ["project", "technical", "hr_scenario"];
+  const used: Record<MockQuestionCategory, number> = { project: 0, technical: 0, hr_scenario: 0 };
+  const plan: MockQuestionCategory[] = [];
+  for (let index = 0; index < count; index++) {
+    const step = index + 1;
+    const next = categories
+      .filter((category) => used[category] < quotas[category])
+      .sort(
+        (a, b) =>
+          (step * quotas[b]) / count -
+            used[b] -
+            ((step * quotas[a]) / count - used[a]) ||
+          categories.indexOf(a) - categories.indexOf(b),
+      )[0]!;
+    used[next] += 1;
+    plan.push(next);
+  }
+  return plan;
+}
+
+const QUESTION_CATEGORY_GUIDANCE: Record<MockQuestionCategory, string> = {
+  project:
+    "PROJECT question. Ground it in a real project from the resume and probe one distinct angle: architecture, problem, contribution, technology choice, database/API design, challenge, error handling, security, performance, testing, deployment, decision, or future improvement. Do not assume an unstated feature.",
+  technical:
+    "TECHNICAL SKILL question. Use a skill explicitly present in the resume or clearly required by the target role. Ask a focused concept, coding, database, framework, API, debugging, or optimization question; do not introduce an unrelated technology.",
+  hr_scenario:
+    "HR OR SCENARIO question. Ask one concise question about teamwork, conflict, deadlines, learning, production problem-solving, strengths/weaknesses, or career goals. Do not turn it into a project-detail question.",
+};
 
 const STOPWORDS = new Set([
   "and", "the", "for", "with", "from", "into", "using", "of", "in", "on", "at", "to", "a", "an",
@@ -231,11 +272,11 @@ export function describeCandidate(
   return parts.join("\n\n");
 }
 
-export function buildOpeningPrompt(candidate: string): string {
+export function buildOpeningPrompt(candidate: string, category: MockQuestionCategory = "project"): string {
   return [
     candidate,
     "",
-    "Start the interview. Write a short welcome (max 2 sentences, no name assumptions) and the first question.",
+    `Start the interview. Write a short welcome (max 2 sentences, no name assumptions) and the first question. ${QUESTION_CATEGORY_GUIDANCE[category]}`,
     'Return JSON: {"welcome":"...","question":"...","topic":"short topic label"}',
   ].join("\n");
 }
@@ -261,6 +302,7 @@ export function buildTurnPrompt(input: {
   turns: MockTurn[];
   allowFollowUp: boolean;
   isLast: boolean;
+  nextCategory?: MockQuestionCategory;
 }): string {
   const current = input.turns[input.turns.length - 1];
   const asked = input.turns.map((t, i) => `${i + 1}. ${t.question}`).join("\n");
@@ -275,7 +317,9 @@ export function buildTurnPrompt(input: {
     "Be specific and fair; refer to what they actually said. A skipped question scores 0.",
     input.isLast
       ? 'This was the final question. Set next to {"type":"end"}.'
-      : input.allowFollowUp
+      : input.nextCategory
+        ? `Ask a new main question in this required category: ${QUESTION_CATEGORY_GUIDANCE[input.nextCategory]} Set next.type to "main".`
+        : input.allowFollowUp
         ? "Then choose the next step: a follow-up that probes a gap or vague point in this answer, or a new main question on a different topic."
         : "Then ask a new main question on a different topic (no follow-up).",
     `Questions already asked (never repeat these):\n${asked}`,

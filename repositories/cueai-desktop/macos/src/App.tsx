@@ -38,7 +38,6 @@ import {
   type FinalUtterance,
 } from "../../shared/live-pipeline";
 import { isFirstMeaningfulAnswer } from "../../shared/speech-capture";
-import { answerBlocks } from "../../shared/answer-blocks";
 import {
   cleanQuestionText,
   clearQuestionMemory,
@@ -60,6 +59,7 @@ import {
 } from "./services/audio-listen";
 import type { ScreenshotResult } from "./types/companion";
 import { ResizeHandles } from "./components/ResizeHandles";
+import { AnswerContent } from "./components/AnswerContent";
 import {
   humanizeFetchError,
   type AudioSessionSnapshot,
@@ -1072,17 +1072,9 @@ export default function App() {
               </div>
             ) : (
               <div className="cue-answer">
-                {answerBlocks(
-                  answer || "Ask a question, or press Screen to read what’s in front of you.",
-                ).map((block, i) =>
-                  block.kind === "code" ? (
-                    <pre key={i} aria-label={block.lang ? `${block.lang} code` : "code"}>
-                      <code>{block.text}</code>
-                    </pre>
-                  ) : (
-                    <p key={i}>{block.text}</p>
-                  ),
-                )}
+                <AnswerContent
+                  answer={answer || "Ask a question, or press Screen to read what’s in front of you."}
+                />
                 {kbMeta && <KnowledgeBaseFooter meta={kbMeta} />}
               </div>
             )}

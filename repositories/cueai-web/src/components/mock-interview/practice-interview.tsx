@@ -404,6 +404,15 @@ export function PracticeInterview({
         <Badge variant="info">
           Question {mock.turns.length} of {mock.questionLimit}
         </Badge>
+        {current?.category && (
+          <Badge>
+            {current.category === "project"
+              ? "Project"
+              : current.category === "technical"
+                ? "Technical"
+                : "HR / Scenario"}
+          </Badge>
+        )}
         {current?.kind === "follow_up" && <Badge>Follow-up</Badge>}
         {paused && <Badge variant="warning">Paused</Badge>}
       </div>

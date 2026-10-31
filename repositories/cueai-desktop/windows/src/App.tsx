@@ -61,7 +61,6 @@ import {
   type Exchange,
   type FinalUtterance,
 } from "../../shared/live-pipeline";
-import { answerBlocks } from "../../shared/answer-blocks";
 import {
   configureMeetingPersist,
   persistFailedQuestion,
@@ -73,6 +72,7 @@ import {
 } from "./services/screen-context";
 import type { ScreenshotResult } from "./types/companion";
 import { ResizeHandles } from "./components/ResizeHandles";
+import { AnswerContent } from "./components/AnswerContent";
 
 const KB_STATUS_LABEL: Record<KnowledgeBaseStatus, string> = {
   answered: "Answered from your Knowledge Base",
@@ -1080,15 +1080,7 @@ export default function App() {
             <p className="ov-muted">Thinking…</p>
           ) : (
             <div className="ov-answer">
-              {answerBlocks(answer || "Waiting for a question.").map((block, i) =>
-                block.kind === "code" ? (
-                  <pre key={i} aria-label={block.lang ? `${block.lang} code` : "code"}>
-                    <code>{block.text}</code>
-                  </pre>
-                ) : (
-                  <p key={i}>{block.text}</p>
-                ),
-              )}
+              <AnswerContent answer={answer || "Waiting for a question."} />
               {kbMeta && <KnowledgeBaseFooter meta={kbMeta} />}
             </div>
           )}

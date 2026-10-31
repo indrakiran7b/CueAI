@@ -20,11 +20,11 @@ import {
   buildTurnPrompt,
   canAskAnother,
   describeCandidate,
-  followUpAllowed,
   groundProfile,
   mockMeetingTitle,
   parseReport,
   parseTurnResult,
+  questionCategoryPlan,
   questionLimitFor,
 } from "@/lib/mock-interview-logic";
 import type {
@@ -196,6 +196,8 @@ export async function createMockMeeting(
   }
 
   const savedProfile = await savedProfileFor(session);
+  const questionLimit = questionLimitFor(input.setup.durationMin);
+  const categoryPlan = questionCategoryPlan(questionLimit);
   const [profile, opening] = await Promise.all([
     extractProfile(session, resumeText, input.signal),
     generateAi({
@@ -203,7 +205,10 @@ export async function createMockMeeting(
       userId: session.userId,
       workspaceId: session.workspaceId,
       system: INTERVIEWER_SYSTEM,
-      prompt: buildOpeningPrompt(describeCandidate(input.setup, EMPTY_PROFILE, resumeText, savedProfile)),
+      prompt: buildOpeningPrompt(
+        describeCandidate(input.setup, EMPTY_PROFILE, resumeText, savedProfile),
+        categoryPlan[0],
+      ),
       jsonObject: true,
       maxOutputTokens: 400,
       temperature: 0.6,
@@ -247,11 +252,12 @@ export async function createMockMeeting(
           id: randomUUID().slice(0, 8),
           kind: "main",
           question,
+          category: categoryPlan[0],
           topic: typeof parsed?.topic === "string" ? parsed.topic.trim().slice(0, 60) : undefined,
           askedAt: now.toISOString(),
         },
       ],
-      questionLimit: questionLimitFor(input.setup.durationMin),
+      questionLimit,
       endsAt: new Date(now.getTime() + input.setup.durationMin * 60_000).toISOString(),
       updatedAt: now.toISOString(),
     },
@@ -323,6 +329,7 @@ export async function answerMockMeeting(
   };
   const turns = [...m.mock.turns.slice(0, -1), answered];
   const moreAllowed = canAskAnother({ turns, questionLimit: m.mock.questionLimit, endsAt: m.mock.endsAt });
+  const nextCategory = moreAllowed ? questionCategoryPlan(m.mock.questionLimit)[turns.length] : undefined;
 
   // Persist the answer before the AI call so it survives provider failures or a closed tab.
   await updateStore((s) => {
@@ -346,8 +353,9 @@ export async function answerMockMeeting(
       prompt: buildTurnPrompt({
         candidate: describeCandidate(m.mock.setup, m.mock.profile, m.mock.resumeText, savedProfile),
         turns,
-        allowFollowUp: moreAllowed && followUpAllowed(turns),
+        allowFollowUp: false,
         isLast: !moreAllowed,
+        nextCategory,
       }),
       jsonObject: true,
       maxOutputTokens: 600,
@@ -379,8 +387,9 @@ export async function answerMockMeeting(
     parsed && moreAllowed && parsed.next.type !== "end"
       ? {
           id: randomUUID().slice(0, 8),
-          kind: parsed.next.type === "follow_up" && followUpAllowed(turns) ? "follow_up" : "main",
+          kind: "main",
           question: parsed.next.question,
+          category: nextCategory,
           topic: parsed.next.topic || undefined,
           askedAt: now,
         }

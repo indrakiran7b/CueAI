@@ -313,11 +313,11 @@ export function diffResume(original: StructuredResume, final: StructuredResume, 
 
 export type ChangeCounts = Record<TailorChange["kind"], number> & {
   /** Content really changed: a line was rewritten or supported content was added. */
-  improved: boolean;
+  hasMeaningfulChanges: boolean;
 };
 
 export function countChanges(changes: TailorChange[]): ChangeCounts {
   const n = { rewritten: 0, added: 0, removed: 0, reordered: 0, unchanged: 0 };
   for (const c of changes) n[c.kind]++;
-  return { ...n, improved: n.rewritten + n.added > 0 };
+  return { ...n, hasMeaningfulChanges: n.rewritten + n.added > 0 };
 }

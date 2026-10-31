@@ -12,6 +12,7 @@
     "test:pipeline": "npx tsx --test scripts/test-live-pipeline.mts",
     "test:menu": "npx tsx --test scripts/test-overlay-menu.mts",
     "test:transparency": "npx tsx --test scripts/test-overlay-transparency.mts",
+    "test:answer-content": "npx tsx --test scripts/test-answer-content.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win portable --x64"

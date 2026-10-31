@@ -122,6 +122,21 @@ describe("question analysis", () => {
     );
     assert.deepEqual(
       selectProgrammingLanguage({
+        question: "Write a program to find duplicates in an array.",
+        verifiedContext:
+          "SKILLS\nLanguages: Python, SQL, C\nFrameworks: React\n\nPROJECTS\nLegacy utility written in Java.",
+      }),
+      { language: "Python", source: "resume" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({
+        question: "Reverse a string.",
+        verifiedContext: "SKILLS\nLanguages: C, Python, SQL\n\nEXPERIENCE\nBuilt Python services.",
+      }),
+      { language: "C", source: "resume" },
+    );
+    assert.deepEqual(
+      selectProgrammingLanguage({
         question: "Write a program to find duplicates.",
         targetRole: "ABAP developer working with SAP.",
       }),
@@ -135,11 +150,35 @@ describe("question analysis", () => {
 
   it("routes SQL and SAP coding from the question context", () => {
     assert.equal(analyzeQuestion("Write a query to find duplicate customer rows.").language, "SQL");
+    assert.equal(analyzeQuestion("Find the second-highest salary.").language, "SQL");
     assert.equal(analyzeQuestion("Write a report to read an internal table in SAP.").language, "ABAP");
     assert.equal(
       analyzeQuestion("Inc, write a safe function to reverse a linked list.").language,
       "C",
     );
+  });
+
+  it("honors explicit interviewer languages across the supported interview set", () => {
+    const cases = [
+      ["Python", "Python"],
+      ["C", "C"],
+      ["C++", "C++"],
+      ["Java", "Java"],
+      ["ABAP", "ABAP"],
+      ["C#", "C#"],
+      ["React", "JavaScript"],
+      ["Node.js", "JavaScript"],
+      ["Ruby", "Ruby"],
+    ] as const;
+    for (const [requested, expected] of cases) {
+      assert.deepEqual(
+        selectProgrammingLanguage({
+          question: `Write the solution in ${requested}.`,
+          verifiedContext: "SKILLS\nLanguages: Python, SQL, C",
+        }),
+        { language: expected, source: "explicit" },
+      );
+    }
   });
 });
 

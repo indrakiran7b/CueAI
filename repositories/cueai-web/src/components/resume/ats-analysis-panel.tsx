@@ -75,7 +75,7 @@ export type MatchSummaryProps = {
   /** Why the shown score may be out of date. */
   outdated: "inputs" | "edited" | null;
   /** Content changes the tailoring made (rewritten or added), once tailored. */
-  improvements?: number | null;
+  validatedChanges?: number | null;
   /** The one primary action for this stage. */
   action?: ReactNode;
   children?: ReactNode;
@@ -107,7 +107,8 @@ export function MatchSummary(p: MatchSummaryProps) {
               {compare && (
                 <p className="mt-2 text-xs text-subtle">
                   Updated from {compare.score}
-                  {p.improvements != null && ` · ${p.improvements} improvement${p.improvements === 1 ? "" : "s"} made`}
+                  {p.validatedChanges != null &&
+                    ` · ${p.validatedChanges} validated content change${p.validatedChanges === 1 ? "" : "s"}`}
                 </p>
               )}
             </div>

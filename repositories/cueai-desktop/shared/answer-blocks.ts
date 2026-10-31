@@ -1,5 +1,30 @@
 export type AnswerBlock = { kind: "text" | "code"; text: string; lang?: string };
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  py: "Python",
+  python: "Python",
+  js: "JavaScript",
+  javascript: "JavaScript",
+  ts: "TypeScript",
+  typescript: "TypeScript",
+  java: "Java",
+  c: "C",
+  cpp: "C++",
+  "c++": "C++",
+  cs: "C#",
+  csharp: "C#",
+  "c#": "C#",
+  sql: "SQL",
+  abap: "ABAP",
+  ruby: "Ruby",
+  rb: "Ruby",
+};
+
+function languageLabel(raw: string) {
+  const value = raw.trim();
+  return LANGUAGE_LABELS[value.toLowerCase().replace(/[^\w#+-]/g, "")] || value || undefined;
+}
+
 /**
  * Splits an answer into display blocks. Fenced code keeps its exact indentation;
  * prose is split into bullet lines or sentences for easy reading while speaking.
@@ -11,7 +36,7 @@ export function answerBlocks(text: string): AnswerBlock[] {
   for (const m of text.matchAll(fence)) {
     blocks.push(...proseBlocks(text.slice(last, m.index)));
     const code = m[2]!.replace(/\s+$/, "");
-    if (code.trim()) blocks.push({ kind: "code", text: code, lang: m[1]!.trim() || undefined });
+    if (code.trim()) blocks.push({ kind: "code", text: code, lang: languageLabel(m[1]!) });
     last = m.index! + m[0].length;
   }
   blocks.push(...proseBlocks(text.slice(last)));

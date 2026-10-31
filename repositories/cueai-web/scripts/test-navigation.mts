@@ -74,3 +74,11 @@ test("opening the Mock Interview page does not start a live session", () => {
   assert.match(src, /<MockInterviewMode/);
   assert.ok(!/startLive|startMeeting|getUserMedia|\/api\/meetings\/start/.test(src), "no live session or mic start on load");
 });
+
+test("Privacy is hidden from Settings navigation without removing privacy implementation", () => {
+  const nav = readFileSync(path.join(ROOT, "src", "components", "settings", "settings-nav.tsx"), "utf8");
+  assert.doesNotMatch(nav, /id:\s*"privacy"/);
+  const page = readFileSync(path.join(ROOT, "src", "app", "(app)", "settings", "page.tsx"), "utf8");
+  assert.match(page, /section === "privacy"/, "privacy settings implementation remains intact");
+  assert.ok(existsSync(path.join(ROOT, "src", "app", "api", "admin", "retention", "cleanup", "route.ts")));
+});

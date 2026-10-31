@@ -365,6 +365,37 @@ button {
   margin-top: 10px;
 }
 
+.ov-structured-answer {
+  display: grid;
+  gap: 10px;
+}
+
+.ov-code-block {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(5, 7, 10, 0.92);
+}
+
+.ov-card .ov-code-block > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 7px 9px;
+  color: #d4d4d8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ov-card .ov-code-block > header button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(39, 39, 42, 0.9);
+  color: #f4f4f5;
+}
+
 .ov-btn.is-kb {
   color: #5eead4;
 }
@@ -408,12 +439,10 @@ button {
 }
 
 .ov-answer pre {
-  margin: 10px 0;
+  max-height: 320px;
+  margin: 0;
   padding: 10px 12px;
-  overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
+  overflow: auto;
   user-select: text;
 }
 

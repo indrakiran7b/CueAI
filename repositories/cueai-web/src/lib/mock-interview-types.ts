@@ -20,8 +20,10 @@ export const MOCK_INTERVIEW_TYPES: { id: MockInterviewType; label: string }[] = 
 
 export const MOCK_DURATIONS: MockDuration[] = [10, 20, 30];
 
-/** Questions (main + follow-ups) per session length. */
-export const MOCK_QUESTION_LIMIT: Record<MockDuration, number> = { 10: 5, 20: 8, 30: 12 };
+/** One evaluated question per requested interview minute. */
+export const MOCK_QUESTION_LIMIT: Record<MockDuration, number> = { 10: 10, 20: 20, 30: 30 };
+
+export type MockQuestionCategory = "project" | "technical" | "hr_scenario";
 
 export type MockResumeProfile = {
   education: string[];
@@ -58,6 +60,8 @@ export type MockTurn = {
   kind: "main" | "follow_up";
   question: string;
   topic?: string;
+  /** Server-assigned category from the deterministic 70/20/10 plan. */
+  category?: MockQuestionCategory;
   askedAt: string;
   answer?: string;
   answeredAt?: string;
