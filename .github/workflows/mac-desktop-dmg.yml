@@ -1,0 +1,55 @@
+name: Mac desktop DMG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, separation]
+    paths:
+      - "repositories/cueai-desktop/macos/**"
+      - "repositories/cueai-desktop/shared/**"
+      - "repositories/cueai-web/**"
+      - "repositories/cueai-desktop/scripts/dist-mac.cjs"
+      - "repositories/cueai-desktop/scripts/prepare-desktop-web.cjs"
+      - ".github/workflows/mac-desktop-dmg.yml"
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            repositories/cueai-web/package-lock.json
+            repositories/cueai-desktop/macos/package-lock.json
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install mac desktop deps
+        run: npm ci --prefix repositories/cueai-desktop/macos
+
+      - name: Install web deps
+        run: npm ci --prefix repositories/cueai-web
+
+      - name: Build DMG
+        run: npm run dist:mac
+
+      - name: List release artifacts
+        run: |
+          ls -la repositories/cueai-desktop/macos/release/
+          shasum -a 256 repositories/cueai-desktop/macos/release/*.dmg || true
+
+      - name: Upload macOS DMG installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: cueai-mac-dmg-${{ github.run_number }}
+          path: |
+            repositories/cueai-desktop/macos/release/*.dmg
+            repositories/cueai-desktop/macos/release/*.zip
+          if-no-files-found: error
+          retention-days: 30
