@@ -1,0 +1,21 @@
+{
+  "product": "CueAI Desktop",
+  "platform": "darwin",
+  "version": "1.0.8",
+  "cloudUrl": "https://cueai.wayfinderops.com",
+  "embeddedWebSource": "cueai-web",
+  "electronDir": "repositories/cueai-desktop/macos",
+  "frontend": "Packaged app loads https://cueai.wayfinderops.com for login, OTP, and live features unless CUEAI_WEB_URL is set in workspace .env.",
+  "signing": "unsigned-testing-build",
+  "artifacts": {
+    "dmg_arm64": "CueAI-macOS-arm64.dmg",
+    "dmg_x64": "CueAI-macOS-x64.dmg",
+    "zip_arm64": "CueAI-macOS-arm64.zip",
+    "zip_x64": "CueAI-macOS-x64.zip"
+  },
+  "notes": [
+    "Unsigned testing build — use Right-click → Open on first launch.",
+    "System audio on macOS uses display capture path; grant Screen Recording when prompted.",
+    "Microphone permission required for Auto Answer."
+  ]
+}

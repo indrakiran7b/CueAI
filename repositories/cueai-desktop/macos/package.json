@@ -1,6 +1,6 @@
 {
   "name": "@cueai/desktop-mac",
-  "version": "1.0.0",
+  "version": "1.0.8",
   "private": true,
   "description": "CueAI for macOS — menu bar companion with a native HUD",
   "author": "CueAI",
@@ -13,7 +13,7 @@
     "dist:mac": "npm run dist",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
     "pack": "npm run build && electron-builder --dir --mac",
-    "dist": "npm run build && electron-builder --mac dmg zip --universal"
+    "dist": "npm run build && electron-builder --mac dmg zip"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -53,6 +53,10 @@
       {
         "from": "../shared/build-resources/web",
         "to": "web"
+      },
+      {
+        "from": "../shared/build-resources/build-manifest.json",
+        "to": "build-manifest.json"
       }
     ],
     "mac": {
@@ -62,18 +66,14 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "universal"
-          ]
+          "arch": ["arm64", "x64"]
         },
         {
           "target": "zip",
-          "arch": [
-            "universal"
-          ]
+          "arch": ["arm64", "x64"]
         }
       ],
-      "artifactName": "CueAI-${version}-${arch}.${ext}",
+      "artifactName": "CueAI-macOS-${arch}.${ext}",
       "darkModeSupport": true,
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
