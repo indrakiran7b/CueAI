@@ -18,6 +18,13 @@ permissions:
 jobs:
   dmg:
     runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      AUTH_SECRET: cueai-ci-build-secret-not-for-production
+      AUTH_URL: http://127.0.0.1:3002
+      NEXT_PUBLIC_SKIP_AUTH: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +40,14 @@ jobs:
         run: |
           npm ci --prefix repositories/cueai-web
           npm ci --prefix repositories/cueai-desktop/macos
+
+      - name: Write web env for production build
+        run: |
+          printf '%s\n' \
+            'AUTH_SECRET=cueai-ci-build-secret-not-for-production' \
+            'AUTH_URL=http://127.0.0.1:3002' \
+            'NEXT_PUBLIC_SKIP_AUTH=false' \
+            > repositories/cueai-web/.env.production
 
       - name: Build DMG
         run: node repositories/cueai-desktop/scripts/dist-mac.cjs
@@ -53,6 +68,7 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: cueai-macos-1.0.8-${{ github.run_number }}

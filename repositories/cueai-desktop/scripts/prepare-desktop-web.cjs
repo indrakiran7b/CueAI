@@ -28,15 +28,27 @@ function copyDir(src, dest) {
 
 mustExist(standaloneRoot, "Next standalone build");
 
-// Next nests by package path in the monorepo (web/… or legacy apps/web/…)
-const nestedCandidates = [
-  path.join(standaloneRoot, "web"),
-  path.join(standaloneRoot, "apps", "web"),
-];
-const nested = nestedCandidates.find((p) =>
-  fs.existsSync(path.join(p, "server.js"))
-);
-const serverDir = nested ?? standaloneRoot;
+// Next nests by package path in the monorepo (repositories/cueai-web, web/, apps/web/).
+function findServerDir(root, depth) {
+  if (fs.existsSync(path.join(root, "server.js"))) return root;
+  if (depth <= 0) return null;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === "node_modules" || entry.name.startsWith(".")) {
+      continue;
+    }
+    const found = findServerDir(path.join(root, entry.name), depth - 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+const serverDir = findServerDir(standaloneRoot, 4) ?? standaloneRoot;
 
 if (!fs.existsSync(path.join(serverDir, "server.js"))) {
   throw new Error("Could not find server.js in Next standalone output");
