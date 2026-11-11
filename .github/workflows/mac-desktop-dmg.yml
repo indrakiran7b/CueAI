@@ -20,24 +20,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: |
-            package-lock.json
             repositories/cueai-web/package-lock.json
             repositories/cueai-desktop/macos/package-lock.json
 
-      - name: Install root deps
-        run: npm ci
-
-      - name: Install mac desktop deps
-        run: npm ci --prefix repositories/cueai-desktop/macos
-
-      - name: Install web deps
-        run: npm ci --prefix repositories/cueai-web
+      - name: Install web + mac desktop deps
+        run: |
+          npm ci --prefix repositories/cueai-web
+          npm ci --prefix repositories/cueai-desktop/macos
 
       - name: Build DMG
-        run: npm run dist:mac
+        run: node repositories/cueai-desktop/scripts/dist-mac.cjs
 
       - name: List release artifacts
         run: |
