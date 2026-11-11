@@ -55,7 +55,7 @@
         "to": "web"
       },
       {
-        "from": "../shared/build-resources/build-manifest.json",
+        "from": "../shared/build-resources/build-manifest.mac.json",
         "to": "build-manifest.json"
       }
     ],

@@ -3,7 +3,7 @@ name: Mac desktop DMG
 on:
   workflow_dispatch:
   push:
-    branches: [main, separation]
+    branches: [main, separation, build/macos-dmg-1.0.8]
     paths:
       - "repositories/cueai-desktop/macos/**"
       - "repositories/cueai-desktop/shared/**"
@@ -11,6 +11,9 @@ on:
       - "repositories/cueai-desktop/scripts/dist-mac.cjs"
       - "repositories/cueai-desktop/scripts/prepare-desktop-web.cjs"
       - ".github/workflows/mac-desktop-dmg.yml"
+
+permissions:
+  contents: write
 
 jobs:
   dmg:
@@ -48,3 +51,15 @@ jobs:
             repositories/cueai-desktop/macos/release/*.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cueai-macos-1.0.8-${{ github.run_number }}
+          name: CueAI macOS 1.0.8 (build ${{ github.run_number }})
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            repositories/cueai-desktop/macos/release/*.dmg
+            repositories/cueai-desktop/macos/release/*.zip
