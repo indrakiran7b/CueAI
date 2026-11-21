@@ -955,6 +955,68 @@ export async function stopMicListen(): Promise<Blob | null> {
   return null;
 }
 
+async function captureSystemStream(
+  getSourceId: () => Promise<string | null>,
+): Promise<MediaStream> {
+  if (typeof navigator.mediaDevices.getDisplayMedia === "function") {
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
+      if (display.getAudioTracks().length) {
+        display.getVideoTracks().forEach((t) => {
+          t.enabled = false;
+        });
+        pipelineLog("audio", "System audio via getDisplayMedia (loopback)");
+        return display;
+      }
+      stopStream(display);
+    } catch (err) {
+      pipelineLog("audio", "getDisplayMedia loopback failed — trying desktop source", {
+        error: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+      });
+    }
+  }
+
+  const sourceId = await getSourceId();
+  if (!sourceId) {
+    throw new Error(
+      "System audio is not available. Grant Screen Recording in System Settings, then try again.",
+    );
+  }
+
+  const constraints = {
+    audio: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: sourceId,
+      },
+    },
+    video: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: sourceId,
+        maxWidth: 1280,
+        maxHeight: 720,
+        maxFrameRate: 5,
+      },
+    },
+  } as unknown as MediaStreamConstraints;
+
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  stream.getVideoTracks().forEach((t) => {
+    t.enabled = false;
+  });
+  if (!stream.getAudioTracks().length) {
+    stopStream(stream);
+    throw new Error(
+      "No system audio track. Enable Screen Recording for CueAI, then toggle System audio again.",
+    );
+  }
+  return stream;
+}
+
 async function startSystemAudioListenInternal(
   getSourceId: () => Promise<string | null>
 ): Promise<void> {
@@ -990,34 +1052,9 @@ async function startSystemAudioListenInternal(
         ok = true;
         return;
       }
-      const sourceId = await getSourceId();
-      if (!sourceId) {
-        throw new Error(
-          "System audio is not available. Grant Screen Recording in System Settings, then try again."
-        );
-      }
-
       if (systemStream) await releaseSystemCapture();
 
-      const constraints = {
-        audio: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-          },
-        },
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-            maxWidth: 1280,
-            maxHeight: 720,
-            maxFrameRate: 5,
-          },
-        },
-      } as unknown as MediaStreamConstraints;
-
-      systemStream = await navigator.mediaDevices.getUserMedia(constraints);
+      systemStream = await captureSystemStream(getSourceId);
       if (!systemWanted) {
         await releaseSystemCapture();
         setSystemState("idle");
@@ -1105,29 +1142,43 @@ export async function syncListenSources(opts: {
   bindDeviceWatch();
   let micBlob: Blob | null = null;
   let systemBlob: Blob | null = null;
+  const errors: string[] = [];
 
-  if (opts.mic) {
-    if (!streamAlive(micStream) || !captureRunning("mic")) {
-      try {
-        await startMicListen();
-      } catch (err) {
-        console.log("[Audio] Microphone start failed:", err instanceof Error ? err.message : err);
+  await Promise.all([
+    (async () => {
+      if (opts.mic) {
+        if (!streamAlive(micStream) || !captureRunning("mic")) {
+          try {
+            await startMicListen();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Mic failed";
+            errors.push(msg);
+            console.log("[Audio] Microphone start failed:", msg);
+          }
+        }
+      } else {
+        micBlob = await stopMicListen();
       }
-    }
-  } else {
-    micBlob = await stopMicListen();
-  }
+    })(),
+    (async () => {
+      if (opts.systemAudio) {
+        if (!streamAlive(systemStream) || !captureRunning("system")) {
+          try {
+            await startSystemAudioListen(opts.getDesktopSourceId);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "System audio failed";
+            errors.push(msg);
+            console.log("[Audio] System audio start failed:", msg);
+          }
+        }
+      } else {
+        systemBlob = await stopSystemAudioListen();
+      }
+    })(),
+  ]);
 
-  if (opts.systemAudio) {
-    if (!streamAlive(systemStream) || !captureRunning("system")) {
-      try {
-        await startSystemAudioListen(opts.getDesktopSourceId);
-      } catch (err) {
-        console.log("[Audio] System audio start failed:", err instanceof Error ? err.message : err);
-      }
-    }
-  } else {
-    systemBlob = await stopSystemAudioListen();
+  if (errors.length && liveConfig) {
+    liveConfig.onError(errors.join(" · "));
   }
 
   return { micBlob, systemBlob };

@@ -1,4 +1,4 @@
-import { session, systemPreferences } from "electron";
+import { desktopCapturer, screen, session, systemPreferences } from "electron";
 import { macOSSystemAudio } from "../platform/macos";
 
 export type ListenSources = {
@@ -62,6 +62,33 @@ export function registerMediaPermissionHandler() {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
     return isCapturePermission(permission as string);
   });
+
+  // macOS 13+ system audio via ScreenCaptureKit loopback (same API as Windows).
+  try {
+    session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+      try {
+        const primary = screen.getPrimaryDisplay();
+        const sources = await desktopCapturer.getSources({
+          types: ["screen"],
+          thumbnailSize: { width: 1, height: 1 },
+        });
+        const matched =
+          sources.find((s) => s.display_id && String(primary.id) === String(s.display_id)) ||
+          sources.find((s) => s.id === `screen:${primary.id}:0`) ||
+          sources[0];
+        if (!matched) {
+          callback({});
+          return;
+        }
+        callback({ video: matched, audio: "loopback" });
+      } catch (err) {
+        console.error("[AUDIO] displayMedia handler failed", err);
+        callback({});
+      }
+    });
+  } catch (err) {
+    console.error("[AUDIO] setDisplayMediaRequestHandler unavailable", err);
+  }
 }
 
 /** macOS desktop source id for system-audio capture. Null when unauthorized. */

@@ -37,6 +37,7 @@ export class MacOSSystemAudioService {
 
   async getDesktopAudioSourceId(): Promise<string | null> {
     const result = await this.probe({ requestIfNeeded: true });
+    if (!result.available || !result.sourceId) return null;
     return result.sourceId;
   }
 
@@ -85,6 +86,7 @@ export class MacOSSystemAudioService {
 
       const matched =
         sources.find((s) => s.display_id && String(primary.id) === String(s.display_id)) ||
+        sources.find((s) => s.id === `screen:${primary.id}:0`) ||
         sources[0];
 
       if (!matched?.id) {
