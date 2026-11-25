@@ -2,6 +2,7 @@ import { app } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import {
   readWorkspaceEnvFile,
@@ -17,6 +18,9 @@ export const EMBEDDED_WEB_PORT = 39100;
  * Packaged builds never use this — they spawn standalone Next on EMBEDDED_WEB_PORT.
  */
 export const DEV_WEB_ORIGIN = "http://127.0.0.1:3002";
+
+/** Used when a packaged install has no build manifest. Customers do not set this. */
+const PACKAGED_CLOUD_URL = "https://cueai.wayfinderops.com";
 
 let child: ChildProcess | null = null;
 let webOrigin: string | null = null;
@@ -58,14 +62,21 @@ export function waitForWebServer(url: string, timeoutMs = 45000): Promise<void> 
         );
         return;
       }
-      const req = http.get(target, { timeout: 8000 }, (res) => {
-        res.resume();
-        if ((res.statusCode ?? 500) < 500) {
-          finish();
-          return;
-        }
-        retry();
-      });
+      let req: http.ClientRequest;
+      try {
+        const client = new URL(target).protocol === "https:" ? https : http;
+        req = client.get(target, { timeout: 8000 }, (res) => {
+          res.resume();
+          if ((res.statusCode ?? 500) < 500) {
+            finish();
+            return;
+          }
+          retry();
+        });
+      } catch (err) {
+        finish(err instanceof Error ? err : new Error("Could not reach the CueAI server."));
+        return;
+      }
       req.on("error", () => retry());
       req.on("timeout", () => {
         req.destroy();
@@ -94,14 +105,30 @@ export function waitForWebServer(url: string, timeoutMs = 45000): Promise<void> 
  * secrets in the user's app data instead of baked into the executable, and lets
  * testers swap keys without a rebuild.
  */
+function packagedCloudUrl(): string | null {
+  if (!app.isPackaged) return null;
+  try {
+    const manifestPath = path.join(process.resourcesPath, "build-manifest.json");
+    if (fs.existsSync(manifestPath)) {
+      const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { cloudUrl?: string };
+      const fromManifest = parsed.cloudUrl?.trim();
+      if (fromManifest) return normalizeWebOrigin(fromManifest);
+    }
+  } catch {
+    // The address below still opens the live site.
+  }
+  return PACKAGED_CLOUD_URL;
+}
+
 function remoteWebUrl(): string | null {
   try {
     const url = resolveWorkspaceEnv(app.getPath("userData"), "CUEAI_WEB_URL");
-    return url ? normalizeWebOrigin(url) : null;
+    if (url) return normalizeWebOrigin(url);
   } catch {
     const url = process.env.CUEAI_WEB_URL?.trim();
-    return url ? normalizeWebOrigin(url) : null;
+    if (url) return normalizeWebOrigin(url);
   }
+  return packagedCloudUrl();
 }
 
 function buildChildEnv(root: string): NodeJS.ProcessEnv {
@@ -122,7 +149,7 @@ function buildChildEnv(root: string): NodeJS.ProcessEnv {
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    ...fileEnv,
+    ...fileEnv, // Workspace .env wins over the launching shell so remote clients need no rebuild.
     ELECTRON_RUN_AS_NODE: "1",
     NODE_ENV: "production",
     PORT: String(EMBEDDED_WEB_PORT),
@@ -155,6 +182,7 @@ export async function startEmbeddedWebServer(): Promise<string> {
   if (remote) {
     webOrigin = remote;
     console.log("[web] Using remote CueAI server:", webOrigin);
+    await waitForWebServer(webOrigin);
     return webOrigin;
   }
 
