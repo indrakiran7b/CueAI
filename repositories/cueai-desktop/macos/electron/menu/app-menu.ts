@@ -1,4 +1,4 @@
-import { Menu, app, BrowserWindow } from "electron";
+import { Menu, BrowserWindow } from "electron";
 import { hideCompanion, showCompanion, toggleCompanion } from "../windows/companion-window";
 import { openMacOSPrivacySettings } from "../platform/macos";
 
@@ -18,7 +18,7 @@ export function installMacAppMenu(getMainWindow: () => BrowserWindow | null) {
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: "CueAI",
             submenu: [
               { role: "about" as const, label: "About CueAI" },
               { type: "separator" as const },

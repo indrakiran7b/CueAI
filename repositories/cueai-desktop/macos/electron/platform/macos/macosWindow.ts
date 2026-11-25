@@ -1,4 +1,4 @@
-import { nativeTheme, type BrowserWindow, type BrowserWindowConstructorOptions } from "electron";
+import { app, nativeTheme, type BrowserWindow, type BrowserWindowConstructorOptions } from "electron";
 
 export function applyMacAppearance() {
   if (process.platform !== "darwin") return;
@@ -66,6 +66,9 @@ export async function presentCompanionWindow(win: BrowserWindow): Promise<boolea
   }
 
   win.show();
+  if (process.platform === "darwin") {
+    app.focus({ steal: true });
+  }
   if (!win.isVisible()) {
     win.showInactive();
     win.show();

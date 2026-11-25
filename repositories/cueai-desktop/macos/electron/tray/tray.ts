@@ -3,24 +3,11 @@ import { showCompanion, toggleCompanion, hideCompanion } from "../windows/compan
 
 let tray: Tray | null = null;
 
+const MENU_BAR_ICON =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAYAAAAehFoBAAAAfUlEQVR42u3YQRKAIAwEQf7/6fgGYxYdma3KyQPNQQhZyxhj0qmbhYG+Cq+hwkC3wCtcKOw4GgWuzYXCPkZPLhIHdxbofh9BT2G76Ag4tbkouPNDCRYs+CQw6ljDXRyfuppxzQ+yvcQ18L7p/vRydpCCHFVhh4HIcasx5oRc17QZEgQMEXoAAAAASUVORK5CYII=";
+
 function menuBarIcon() {
-  const size = 18;
-  const canvas = Buffer.alloc(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x - 8.5;
-      const dy = y - 8.5;
-      const i = (y * size + x) * 4;
-      const ring = Math.abs(Math.sqrt(dx * dx + dy * dy) - 6.2) < 1.15;
-      const core = dx * dx + dy * dy <= 4.5;
-      const on = ring || core;
-      canvas[i] = 255;
-      canvas[i + 1] = 255;
-      canvas[i + 2] = 255;
-      canvas[i + 3] = on ? 230 : 0;
-    }
-  }
-  const image = nativeImage.createFromBuffer(canvas, { width: size, height: size });
+  const image = nativeImage.createFromDataURL(MENU_BAR_ICON);
   image.setTemplateImage(true);
   return image;
 }
