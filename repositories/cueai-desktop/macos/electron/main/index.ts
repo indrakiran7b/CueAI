@@ -20,7 +20,6 @@ import {
   startEmbeddedWebServer,
   stopEmbeddedWebServer,
 } from "../services/web-server";
-import { trustCueaiServerCertificate } from "../services/trust-cueai-cert";
 import { markAppQuitting } from "../services/app-lifecycle";
 import { getMeetingSession } from "../services/screen-share";
 import {
@@ -74,7 +73,6 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     console.log("[ELECTRON] Starting Electron");
-    trustCueaiServerCertificate();
     try {
       await startEmbeddedWebServer();
     } catch (err) {
