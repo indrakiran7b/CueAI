@@ -753,6 +753,7 @@ async function releaseSystemCapture() {
   systemPcm = null;
   releaseTap(systemTap);
   systemTap = null;
+  releaseSystemVideoSink();
   stopStream(systemStream);
   systemStream = null;
   setSystemLevel(0);
@@ -848,6 +849,32 @@ function releaseTap(tap: LevelTap | null) {
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
+}
+
+// macOS ScreenCaptureKit ends the system-audio track if the desktop video
+// track is disabled or stopped. Keep it enabled on a muted, hidden element.
+let systemVideoSink: HTMLVideoElement | null = null;
+
+function keepSystemVideoAlive(stream: MediaStream) {
+  for (const track of stream.getVideoTracks()) track.enabled = true;
+  if (typeof document === "undefined") return;
+  if (!systemVideoSink) {
+    systemVideoSink = document.createElement("video");
+    systemVideoSink.muted = true;
+    systemVideoSink.playsInline = true;
+    systemVideoSink.setAttribute("aria-hidden", "true");
+    systemVideoSink.style.cssText =
+      "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(systemVideoSink);
+  }
+  if (systemVideoSink.srcObject !== stream) systemVideoSink.srcObject = stream;
+  void systemVideoSink.play().catch(() => undefined);
+}
+
+function releaseSystemVideoSink() {
+  if (!systemVideoSink) return;
+  systemVideoSink.pause();
+  systemVideoSink.srcObject = null;
 }
 
 export function subscribeListenLevels(cb: (state: ListenActiveState) => void) {
@@ -965,9 +992,7 @@ async function captureSystemStream(
         audio: true,
       });
       if (display.getAudioTracks().length) {
-        display.getVideoTracks().forEach((t) => {
-          t.enabled = false;
-        });
+        keepSystemVideoAlive(display);
         pipelineLog("audio", "System audio via getDisplayMedia (loopback)");
         return display;
       }
@@ -1005,9 +1030,7 @@ async function captureSystemStream(
   } as unknown as MediaStreamConstraints;
 
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  stream.getVideoTracks().forEach((t) => {
-    t.enabled = false;
-  });
+  keepSystemVideoAlive(stream);
   if (!stream.getAudioTracks().length) {
     stopStream(stream);
     throw new Error(
@@ -1061,9 +1084,7 @@ async function startSystemAudioListenInternal(
         ok = true;
         return;
       }
-      systemStream.getVideoTracks().forEach((t) => {
-        t.enabled = false;
-      });
+      keepSystemVideoAlive(systemStream);
       console.log("[Audio] System audio stream started");
       console.log("[Audio] System audio tracks:", systemStream.getAudioTracks().length);
       const liveTrack = liveAudioTrack(systemStream);
