@@ -12,8 +12,8 @@
     "build:mac": "npm run build",
     "dist:mac": "npm run dist",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.electron.json",
-    "pack": "npm run build && electron-builder --dir --mac",
-    "dist": "npm run build && electron-builder --mac dmg zip"
+    "pack": "npm run build && electron-builder --dir --mac --arm64 --x64",
+    "dist": "npm run build && electron-builder --mac dmg zip --arm64 --x64"
   },
   "dependencies": {
     "clsx": "^2.1.1",

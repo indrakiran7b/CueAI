@@ -55,7 +55,11 @@ jobs:
       - name: List release artifacts
         run: |
           ls -la repositories/cueai-desktop/macos/release/
-          shasum -a 256 repositories/cueai-desktop/macos/release/*.dmg || true
+          test -f repositories/cueai-desktop/macos/release/CueAI-macOS-arm64.dmg
+          test -f repositories/cueai-desktop/macos/release/CueAI-macOS-x64.dmg
+          test -f repositories/cueai-desktop/macos/release/CueAI-macOS-arm64.zip
+          test -f repositories/cueai-desktop/macos/release/CueAI-macOS-x64.zip
+          shasum -a 256 repositories/cueai-desktop/macos/release/*.dmg
 
       - name: Upload macOS DMG installers
         uses: actions/upload-artifact@v4
@@ -79,3 +83,14 @@ jobs:
           files: |
             repositories/cueai-desktop/macos/release/*.dmg
             repositories/cueai-desktop/macos/release/*.zip
+
+      - name: Publish Intel installer on the linked 1.0.8 release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cueai-macos-1.0.8-5
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            repositories/cueai-desktop/macos/release/CueAI-macOS-x64.dmg
+            repositories/cueai-desktop/macos/release/CueAI-macOS-x64.zip
